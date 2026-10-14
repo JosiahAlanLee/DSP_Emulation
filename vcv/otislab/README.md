@@ -17,6 +17,10 @@
 > **2.3.3:** panel layout fix. Switches and buttons now sit below their labels
 > instead of on top of them, and LOOP and MODE show each position's name
 > beside the lever stop (top to bottom: PING/FWD/OFF, FRM/SCAN/SEG).
+>
+> **2.3.4:** REWORK fades its change in and out over the first and last 64
+> samples of the region, so the boundaries with untouched audio no longer
+> click when POSITION/SIZE modulation plays across them.
 
 
 A VCV Rack 2 module for sampling a modular system and playing samples through
