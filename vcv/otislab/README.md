@@ -1,5 +1,10 @@
 # OTIS Sampler — first working prototype
 
+> **2.1.0 in this repo (2026-10-14):** per-voice VCA input through the ES5505 volume table,
+> polyphonic K1/K2 CV, optional 1.5 ms declick fades, and patch saving that no longer
+> stalls the audio thread. See [Changes in 2.1.0](#changes-in-210). This version must be
+> built from source; the 2.0.0 prebuilt binary is not included because it predates these changes.
+
 A VCV Rack 2 module for sampling a modular system and playing samples through
 MAME-derived ES5505 integer interpolation and filter arithmetic. Built for an
 existing audio/CV setup such as Digi003 → ES-3/ES-6/ES-7 over ADAT on Ubuntu.
@@ -10,10 +15,10 @@ ESP effects, EPS envelopes, instrument formats and the original input/output
 analog circuits are not included. The scope and numerical validation are in
 [docs/VALIDATION.md](docs/VALIDATION.md).
 
-## Install the supplied Linux build
+## Install a Linux build
 
-The delivery ZIP contains `OtisLab-2.0.0-lin-x64.vcvplugin` and this source tree.
-The binary targets Rack 2 on Linux x86-64, glibc 2.35 or newer (Ubuntu 22.04+).
+The original 2.0.0 delivery ZIP contained a prebuilt `OtisLab-2.0.0-lin-x64.vcvplugin`.
+For 2.1.0, build from source (below) and use the `.vcvplugin` from `dist/`. That binary targets Rack 2 on Linux x86-64, glibc 2.35 or newer (Ubuntu 22.04+).
 It was built against Rack SDK 2.6.4. Older systems should build from source.
 
 1. In Rack, use **Help → Open user folder**, then quit Rack.
@@ -69,7 +74,9 @@ recording, the previous sample can continue to play. Record gain clips into
 | **REC** | Record while high; panel switch and CV are ORed |
 | **LOOP** | Off / forward / ping-pong, bottom to top on the switch |
 | **REV** | Reverse initial direction; changing it also changes active voices |
-| **START / END / K1 / K2 CV** | Adds CV/10 to the knob value, then clamps to 0–1; bipolar CV works |
+| **START / END CV** | Adds CV/10 to the knob value, then clamps to 0–1; bipolar CV works. Mono (all voices) |
+| **K1 / K2 CV** | Polyphonic: channel *n* sets voice *n*'s coefficient (knob + CV/10, clamped 0–1). A mono cable applies to every voice |
+| **VCA** | Polyphonic per-voice level through the chip's own 8-bit log volume register. 0–10 V; 10 V = unity; unpatched = unity. Default response is chip log (CV linear in register, ~6 dB per 0.52 V, so a linear ADSR gives a dB-linear envelope); the context menu offers linear amplitude, still stepped through the chip table |
 | **L / R** | Identical mono audio for now; reserved for later stereo effects |
 | **EOC** | Combined pulse at any voice's end/loop crossing |
 | **POS** | First active voice's sample position, 0–10 V |
@@ -104,6 +111,10 @@ record controls before rearming. The small red **FULL** indicator lights.
 - Load the included original synthetic demo.
 - Export the finished sample as a 16-bit mono WAV.
 - Select gated playback.
+- Declick release/retrigger (on by default): gated release and retriggering a sounding voice
+  fade over ~1.5 ms of chip time instead of cutting. A retrigger restarts after the fade,
+  so onsets are delayed by that amount. Turn off for the original hard cuts.
+- VCA CV response: chip log (default) or linear amplitude.
 - Select the chip output clock: 29.76 kHz (up to 16 Rack voices), 44.64 kHz (14),
   or 78.125 kHz (8). Lowering the voice limit stops excess voices.
 - Select four chip filter topologies.
@@ -166,3 +177,23 @@ patch. Report pitch setting, chip clock, host rate and which artifact differs
 from your expectations. This tests whether the selected playback model is the
 one you want. Original ESP effects need a separate execution core plus effect
 programs and initialization data; they are not simulated by a generic reverb.
+
+## Changes in 2.1.0
+
+- **Per-voice level (VCA input).** Voices are still summed to one output, so external
+  envelopes previously could only shape the whole mix. Each voice now passes through the
+  ES5505's 8-bit log volume table (4-bit exponent, 4-bit mantissa, as in MAME
+  `compute_tables(8,4,4)`), with register 0xC0 = exact unity. CV never drives a voice above
+  unity. Patch a polyphonic envelope (one channel per gate channel) into VCA for per-note
+  amplitude shaping.
+- **Polyphonic K1/K2 CV.** Per-voice filter envelopes are now possible.
+- **Declick fades** (host feature, not chip behaviour), described above.
+- **Non-blocking save.** Rack calls `dataToJson` on every autosave. It used to copy the whole
+  sample under the lock the audio thread uses, and the audio thread outputs silence when it
+  cannot take that lock. The engine now publishes a sequence counter; the UI thread copies the
+  finished sample without the lock (retrying if a recording completes mid-copy) and reuses the
+  encoded sample until it changes.
+- New input id `LEVEL_IN` is appended after the existing inputs, so 2.0.0 patches load with
+  their cables intact. New settings (`linearLevel`, `declick`) default to off/on when absent.
+
+Verification for these changes is in [docs/VALIDATION.md](docs/VALIDATION.md#210-changes).

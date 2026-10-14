@@ -30,9 +30,11 @@ for row,labels in [(151,['PITCH','START','END','K1']),(211,['REC RATE','REC GAIN
 for i,label in enumerate(['PLAY','REC','LOOP','REV']): parts.append(text(label,45+80*i,233,10,'#f1b875'))
 parts.append(text('OFF / FWD / PING',205,255,6.5))
 parts.append(text('FULL',302,255,6,'#f1b875'))
-for y,labels in [(277,['AUDIO','V/OCT','GATE','REC','START','END']),(327,['K1','K2','L','R','EOC','POS'])]:
-    for i,label in enumerate(labels):
-        parts.append(text(label,30+54*i,y,9,'#80ddc7' if (y==327 and i>=2) else '#d5dfde'))
+for i,label in enumerate(['AUDIO','V/OCT','GATE','REC','START','END']):
+    parts.append(text(label,30+54*i,277,9))
+# Bottom row: 3 inputs (K1, K2, VCA) + 4 outputs, 46 px apart.
+for i,label in enumerate(['K1','K2','VCA','L','R','EOC','POS']):
+    parts.append(text(label,27+46*i,327,9,'#80ddc7' if i>=3 else '#d5dfde'))
 parts.append(text('ES5505 PLAYBACK / CV CONTROL',165,370,8,'#899e9b'))
 panel=''.join(parts)+'</svg>'
 (root/'res/OtisSampler.svg').write_text(panel)
@@ -42,8 +44,8 @@ preview.append(text('PCM 1.40s  29.76k / CHIP 29.76k',20,83,9,'#80ddc7',False))
 for y in [125,187]:
     for x in [45,125,205,285]:
         preview.append(f'<circle cx="{x}" cy="{y}" r="15" fill="#111717" stroke="#81918e" stroke-width="1.4"/><path d="M{x} {y-12}V{y-4}" stroke="#d5dfde" stroke-width="2"/>')
-for y in [292,341]:
-    for x in [30,84,138,192,246,300]:
+for y,xs in [(292,[30,84,138,192,246,300]),(341,[27+46*i for i in range(7)])]:
+    for x in xs:
         preview.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#9ba6a1"/><circle cx="{x}" cy="{y}" r="7.5" fill="#313939"/><circle cx="{x}" cy="{y}" r="5" fill="#090e0d"/>')
 preview.append('<circle cx="45" cy="242" r="5" fill="#4dc595"/>')
 for x in [125,205,285]: preview.append(f'<rect x="{x-5}" y="236" width="10" height="14" rx="2" fill="#aeb7b3"/><circle cx="{x}" cy="239" r="3" fill="#2c3635"/>')

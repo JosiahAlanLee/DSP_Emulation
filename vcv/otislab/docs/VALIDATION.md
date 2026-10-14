@@ -104,3 +104,32 @@ Expert Sleepers ADAT interfaces:
 https://www.expert-sleepers.co.uk/es3.html
 https://www.expert-sleepers.co.uk/es6.html
 https://www.expert-sleepers.co.uk/es7.html
+
+## 2.1.0 changes
+
+Checked 2026-10-14 by a second reviewer (Claude), separately from the 2.0.0 checks above.
+
+- MAME `es5506.cpp` fetched independently (SHA-256 matches the hash above). Filter
+  arithmetic, pole history and the four topologies were compared by reading; they match.
+- The included reference comparison was rebuilt against mardlib commit `6230f38` and passes.
+- An additional randomized comparison against the mardlib core: 4,000 trials, each with
+  full-range random 16-bit data, random K1/K2, random filter topology, direction and loop
+  mode, increments up to ~15.6x and random loop regions of 200–3,200 samples, 3,000 ticks
+  each. 12,000,000 samples, zero mismatches. The same run with a random per-trial volume
+  register applied through the new volume table also gives zero mismatches against the
+  reference's left output.
+- Note: the mardlib core and this engine both derive from MAME, so agreement validates the
+  port, not hardware accuracy.
+- Engine tests extended (volume table values, per-voice level ratio, declick release and
+  retrigger, snapshot/sequence behaviour); pass normally and under ASan/UBSan.
+- Concurrency stress: one thread finishing a short live recording every few microseconds,
+  another snapshotting continuously for 3 s; ~21 M snapshots, zero torn copies. The lock
+  fallback was needed only when retries were exhausted under that artificial churn.
+- `src/plugin.cpp` and `src/OtisSampler.cpp` compile warning-free against Rack v2.6.4
+  headers with Rack's compile flags. Not linked or loaded: libRack was not available in the
+  build environment, and nothing was run inside Rack.
+- Panel regenerated with `tools/make_assets.py` (VCA jack added; bottom row now seven jacks
+  at 46 px spacing). The demo WAV regenerates byte-identically.
+- The snapshot path reads the sample buffer while the audio thread may swap it; this is a
+  benign data race validated by the sequence counter (a seqlock), not a formally race-free
+  design. Thread sanitizer will report it.

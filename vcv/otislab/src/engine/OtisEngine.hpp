@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <atomic>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
 namespace otis {
@@ -27,6 +29,32 @@ inline int32_t shiftFloor(int64_t x, int bits) {
     int64_t d = int64_t(1) << bits;
     return static_cast<int32_t>(x >= 0 ? x/d : -((-x+d-1)/d));
 }
+// ES5505 8-bit log volume: 4-bit exponent, 4-bit mantissa (MAME compute_tables(8,4,4)).
+// output = (sample * table[reg]) >> 11, arithmetic shift. 0xc0 is exactly unity; 0 is silence.
+constexpr uint8_t unityVolume = 0xc0;
+inline const std::array<int32_t,256>& volumeTable() {
+    static const std::array<int32_t,256> table = [] {
+        std::array<int32_t,256> t{};
+        for(int i=0;i<256;i++) { uint32_t exponent=(i>>4)&15, mantissa=(i&15)|16; t[i]=int32_t((mantissa<<11)>>(16-exponent)); }
+        return t;
+    }();
+    return table;
+}
+inline int32_t applyVolume(int32_t x, uint8_t reg) {
+    int64_t p=int64_t(x)*volumeTable()[reg];
+    return static_cast<int32_t>(p>=0 ? p>>11 : -((-p+2047)>>11)); // floor, as MAME rshift_signed
+}
+// Level CV (0..1) to a volume register, never above unity.
+// Chip mode: register is linear in CV, so 10 V = 0xc0 and each 0.52 V is about 6 dB (dB-linear, like a log VCA).
+// Linear mode: nearest register to a linear amplitude CV/10, still quantized through the chip table.
+inline uint8_t levelRegister(float level, bool linear) {
+    double v=std::isfinite(level) ? clamp(double(level),0.0,1.0) : 0.0;
+    if(!linear) return uint8_t(std::lround(v*unityVolume));
+    if(v<=0) return 0;
+    const auto& t=volumeTable(); double target=v*2048.0; int best=0; double err=1e30;
+    for(int i=0;i<=unityVolume;i++) { double e=std::fabs(t[i]-target); if(e<err) { err=e; best=i; } }
+    return uint8_t(best);
+}
 struct Sample {
     std::vector<int16_t> pcm;
     double rate = captureRate(5);
@@ -36,6 +64,10 @@ struct Voice {
     bool running=false, reverse=false;
     uint32_t accumulator=0, start=0, end=0, frequency=0;
     uint16_t k1=0xfff0, k2=0xfff0;
+    uint8_t volume=unityVolume;
+    // Host-side declick (not chip behaviour): linear fade over fadeLength chip samples.
+    int fadeRemaining=0, fadeLength=0;
+    bool restartAfterFade=false;
     int filterMode=2, loop=0;
     std::array<int32_t,6> pole{}; // 1,2,previous2,3,previous3,4
     int32_t lowpass(int32_t x, uint16_t k, int32_t previous) {
@@ -135,9 +167,12 @@ struct Biquad {
 };
 struct Controls {
     std::array<float,16> pitch{};
+    // Per-voice filter coefficients and level (0..1). Level 1 = chip register 0xc0 = unity.
+    std::array<float,16> k1v,k2v,level;
     float start=0,end=1,k1=1,k2=1,outputGain=1,recordGain=1;
     int channels=1,loop=0,filterMode=2,captureIndex=5,engineMode=0;
-    bool reverse=false,gated=false;
+    bool reverse=false,gated=false,linearLevel=false,declick=true;
+    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); }
 };
 struct Engine {
     Sample sample,recordBuffer;
@@ -152,6 +187,26 @@ struct Engine {
     bool recordFull=false;
     double endPulse=0;
     Controls controls;
+    // Sequence counter for the finished sample: odd while sample buffer/frames/rate are being replaced.
+    // Lets a non-audio thread copy the finished sample without taking a lock the audio thread needs.
+    std::atomic<uint32_t> sampleSequence{0};
+    void beginSampleChange() { sampleSequence.fetch_add(1,std::memory_order_acq_rel); }
+    void endSampleChange() { sampleSequence.fetch_add(1,std::memory_order_release); }
+    uint32_t sequence() const { return sampleSequence.load(std::memory_order_acquire); }
+    // Copy the finished sample from a non-audio thread. Retries if the audio thread swaps buffers
+    // mid-copy (e.g. a live recording finishes). Both buffers are always memoryWords long and are
+    // only freed by install(), which runs on the same (UI) thread as callers of this function.
+    bool snapshot(std::vector<int16_t>& out,double& rate,uint32_t& seq,int attempts=16) const {
+        for(int a=0;a<attempts;a++) {
+            uint32_t before=sampleSequence.load(std::memory_order_acquire);
+            if(before&1) { std::this_thread::yield(); continue; }
+            const int16_t* data=sample.pcm.data(); size_t n=std::min(frames,memoryWords); double r=sample.rate;
+            out.assign(data,data+n);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if(sampleSequence.load(std::memory_order_relaxed)==before) { rate=r; seq=before; return true; }
+        }
+        return false;
+    }
     Engine() { setHostRate(48000); }
     void setHostRate(double rate) {
         hostRate=clamp(rate,8000.0,384000.0);
@@ -162,10 +217,14 @@ struct Engine {
     void stopAll() { for(auto& v:voices) v.running=false; }
     void install(std::vector<int16_t>& pcm,double rate) {
         stopAll(); recording=false; recordFull=false;
-        frames=std::min(pcm.size(),memoryWords);
+        size_t newFrames=std::min(pcm.size(),memoryWords);
         // Caller prepares the capacity off the audio thread.
-        pcm.resize(memoryWords,0); sample.pcm.swap(pcm);
+        pcm.resize(memoryWords,0);
+        beginSampleChange();
+        frames=newFrames;
+        sample.pcm.swap(pcm);
         sample.rate=clamp(rate,1000.0,384000.0);
+        endSampleChange();
         for(auto& c:conversion) c.reset();
         chipPhase=0;
     }
@@ -179,17 +238,39 @@ struct Engine {
         if(!recording) return;
         recording=false;
         if(recordFrames<2) return;
-        stopAll(); sample.pcm.swap(recordBuffer.pcm); sample.rate=recordBuffer.rate; frames=recordFrames;
+        stopAll();
+        beginSampleChange();
+        sample.pcm.swap(recordBuffer.pcm); sample.rate=recordBuffer.rate; frames=recordFrames;
+        endSampleChange();
         for(auto& c:conversion) c.reset();
         chipPhase=0;
+    }
+    // Declick fade length in chip samples (about 1.5 ms at the current chip clock).
+    int fadeSamples() const { return std::max(1,int(std::lround(chipRates[clamp(controls.engineMode,0,2)]*0.0015))); }
+    void start(Voice& v) {
+        v=Voice(); v.running=true; v.reverse=controls.reverse;
+        bounds(v); v.accumulator=v.reverse ? v.end : v.start;
     }
     void trigger(int channel) {
         int mode=clamp(controls.engineMode,0,2);
         if(channel<0 || channel>=voiceLimits[mode] || frames<2) return;
-        auto& v=voices[channel]; v=Voice(); v.running=true; v.reverse=controls.reverse;
-        bounds(v); v.accumulator=v.reverse ? v.end : v.start;
+        auto& v=voices[channel];
+        if(controls.declick && v.running) {
+            // Fade the sounding note out, then restart; costs ~1.5 ms of onset latency.
+            if(v.fadeRemaining==0) { v.fadeLength=fadeSamples(); v.fadeRemaining=v.fadeLength; }
+            v.restartAfterFade=true;
+            return;
+        }
+        start(v);
     }
-    void release(int channel) { if(controls.gated && channel>=0 && channel<16) voices[channel].running=false; }
+    void release(int channel) {
+        if(!controls.gated || channel<0 || channel>=16) return;
+        auto& v=voices[channel];
+        if(!v.running) return;
+        v.restartAfterFade=false;
+        if(controls.declick) { if(v.fadeRemaining==0) { v.fadeLength=fadeSamples(); v.fadeRemaining=v.fadeLength; } }
+        else v.running=false;
+    }
     void bounds(Voice& v) {
         size_t a=std::min(size_t(clamp(controls.start,0.f,1.f)*(frames-1)),frames-2);
         size_t b=std::max(a+1,std::min(size_t(clamp(controls.end,0.f,1.f)*(frames-1)),frames-1));
@@ -215,16 +296,29 @@ struct Engine {
         for(int i=0;i<voiceLimits[mode];i++) if(voices[i].running) {
             auto& v=voices[i]; bounds(v);
             v.frequency=Voice::pitchIncrement(sample.rate/chipRates[mode]*std::exp2(clamp(double(controls.pitch[i]),-10.0,10.0)));
-            v.k1=uint16_t(clamp(controls.k1,0.f,1.f)*4095)<<4;
-            v.k2=uint16_t(clamp(controls.k2,0.f,1.f)*4095)<<4;
+            v.k1=uint16_t(uint16_t(clamp(controls.k1v[i],0.f,1.f)*4095)<<4);
+            v.k2=uint16_t(uint16_t(clamp(controls.k2v[i],0.f,1.f)*4095)<<4);
+            v.volume=levelRegister(controls.level[i],controls.linearLevel);
             v.filterMode=clamp(controls.filterMode,0,3); v.loop=clamp(controls.loop,0,2);
         }
         chipPhase+=chipRates[mode]/hostRate;
         while(chipPhase>=1) {
             int64_t sum=0; bool ended=false;
-            for(int i=0;i<voiceLimits[mode];i++) sum+=voices[i].tick(sample,frames,ended);
+            for(int i=0;i<voiceLimits[mode];i++) {
+                auto& v=voices[i];
+                if(!v.running) continue;
+                bool voiceEnded=false;
+                int32_t x=applyVolume(v.tick(sample,frames,voiceEnded),v.volume);
+                if(voiceEnded) ended=true;
+                if(v.fadeRemaining>0) {
+                    x=static_cast<int32_t>(int64_t(x)*v.fadeRemaining/v.fadeLength);
+                    // Done fading, or a one-shot reached its end mid-fade: stop, or restart a pending retrigger.
+                    if(--v.fadeRemaining==0 || !v.running) { bool restart=v.restartAfterFade; v.fadeRemaining=0; if(restart) start(v); else v.running=false; }
+                }
+                sum+=x;
+            }
             if(ended) endPulse=.001;
-            // Unity host volume; the original EPS envelope/volume controller is not emulated.
+            // Per-voice chip volume (ES5505 log table) is applied above; no EPS envelope generator.
             conversion[mode].push(float(sum)/32768.f);
             chipPhase-=1;
         }

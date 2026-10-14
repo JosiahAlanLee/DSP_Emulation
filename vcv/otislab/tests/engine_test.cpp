@@ -25,7 +25,12 @@ int main() {
     e->install(sine,16000); e->controls.loop=1; e->trigger(0);
     double energy=0; for(int i=0;i<48000;i++) { float x=e->process(0); assert(std::isfinite(x)); energy+=x*x; }
     assert(energy>1000 && e->playing());
-    e->controls.gated=true; e->release(0); assert(!e->playing());
+    // Gated release with declick (default) fades for ~1.5 ms of chip time, then stops.
+    e->controls.gated=true; e->release(0); assert(e->playing());
+    for(int i=0;i<200;i++) e->process(0);
+    assert(!e->playing());
+    // Without declick the release is immediate, as in the original prototype.
+    e->controls.declick=false; e->trigger(0); e->release(0); assert(!e->playing()); e->controls.declick=true;
     e->controls.gated=false; e->trigger(0); e->release(0); assert(e->playing());
     e->stopAll();
     // Reverse one-shot reaches its lower boundary and terminates without wrapping the address.
@@ -67,5 +72,37 @@ int main() {
     e->recordFrames=memoryWords-1; e->recordPhase=.99;
     e->process(0); assert(!e->recording && e->recordFull && e->frames==memoryWords);
     assert(e->sample.pcm.data()==buffer);
-    std::cout<<"PASS: pitch registers, PCM/WAV persistence, reverse, tiny loops, voice limits, 21 capture-clock cases, capacity\n";
+    // ES5505 volume table: 0xc0 is unity, 0 silent, one exponent step is 6 dB, never above unity from CV.
+    assert(volumeTable()[unityVolume]==2048 && volumeTable()[0]==0 && volumeTable()[0xb0]==1024);
+    assert(applyVolume(12345,unityVolume)==12345 && applyVolume(-3,0xb0)==-2 && applyVolume(3,0xb0)==1);
+    assert(levelRegister(1,false)==unityVolume && levelRegister(0,false)==0 && levelRegister(2,false)==unityVolume);
+    assert(levelRegister(1,true)==unityVolume && levelRegister(.5f,true)==0xb0 && levelRegister(0,true)==0);
+    assert(levelRegister(std::nanf(""),false)==0);
+    // Per-voice level: voice 1 at half amplitude, voice 0 silent.
+    {
+        auto f=std::make_unique<Engine>(); std::vector<int16_t> dc(30000,8000); f->install(dc,captureRate(5));
+        f->controls.loop=1; f->controls.level[0]=0; f->controls.level[1]=1; f->controls.linearLevel=true;
+        f->trigger(1); for(int i=0;i<2000;i++) f->process(0);
+        float full=f->process(0); f->controls.level[1]=.5f; for(int i=0;i<2000;i++) f->process(0);
+        float half=f->process(0); assert(std::abs(half/full-.5f)<.01f);
+        f->trigger(0); for(int i=0;i<2000;i++) f->process(0); assert(std::abs(f->process(0)-half)<1e-4f);
+    }
+    // Declicked retrigger: the voice fades, then restarts from the start point.
+    {
+        auto f=std::make_unique<Engine>(); std::vector<int16_t> ramp(30000); for(size_t i=0;i<ramp.size();i++) ramp[i]=int16_t(i);
+        f->install(ramp,captureRate(5)); f->trigger(0); for(int i=0;i<4800;i++) f->process(0);
+        uint32_t before=f->voices[0].accumulator; f->trigger(0);
+        assert(f->voices[0].restartAfterFade && f->voices[0].accumulator==before);
+        for(int i=0;i<200;i++) f->process(0);
+        assert(f->playing() && !f->voices[0].restartAfterFade && f->voices[0].accumulator<before);
+    }
+    // Snapshot copies the finished sample and tracks changes through the sequence counter.
+    {
+        auto f=std::make_unique<Engine>(); std::vector<int16_t> a(5000,7); f->install(a,22050);
+        std::vector<int16_t> copy; double r=0; uint32_t s1=0; assert(f->snapshot(copy,r,s1));
+        assert(copy.size()==5000 && copy[4999]==7 && r==22050 && (s1&1)==0);
+        f->controls.captureIndex=4; f->startRecord(); for(int i=0;i<4800;i++) f->process(.25f); f->stopRecord();
+        uint32_t s2=0; assert(f->snapshot(copy,r,s2) && s2!=s1 && copy.size()==f->frames && r==captureRate(4));
+    }
+    std::cout<<"PASS: pitch registers, PCM/WAV persistence, reverse, tiny loops, voice limits, 21 capture-clock cases, capacity, volume table, per-voice level, declick, snapshot\n";
 }
