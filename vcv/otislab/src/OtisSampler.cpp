@@ -80,13 +80,11 @@ struct OtisSampler : Module {
         try { if(pcm.empty()) throw std::runtime_error("No finished sample to export"); otis::writeWav(path,pcm.data(),pcm.size(),rate); }
         catch(const std::exception& e) { std::lock_guard<std::mutex> guard(nameMutex); lastError=e.what(); WARN("OtisLab: %s",e.what()); }
     }
-    // Copy the finished sample without blocking the audio thread; falls back to the lock only if
-    // recordings keep completing during the copy.
+    // Copy under the separate finished-sample lock. Publication is deferred if
+    // needed; the audio thread keeps playing and never waits for this copy.
     void copyFinishedSample(std::vector<int16_t>& pcm,double& rate) {
         uint32_t seq=0;
-        if(engine.snapshot(pcm,rate,seq)) return;
-        std::lock_guard<std::mutex> guard(engineMutex);
-        pcm.assign(engine.sample.pcm.begin(),engine.sample.pcm.begin()+engine.frames); rate=engine.sample.rate;
+        engine.snapshot(pcm,rate,seq);
     }
     void process(const ProcessArgs& args) override {
         // Never wait on UI/file operations from the audio thread. Rare contention outputs silence.
@@ -152,8 +150,8 @@ struct OtisSampler : Module {
         uint32_t seq=engine.sequence();
         if(!pcmCacheValid || seq!=pcmCacheSequence || (seq&1)) {
             std::vector<int16_t> pcm; double rate=0; uint32_t got=0;
-            if(engine.snapshot(pcm,rate,got)) { pcmCacheSequence=got; pcmCacheValid=true; }
-            else { copyFinishedSample(pcm,rate); pcmCacheValid=false; }
+            engine.snapshot(pcm,rate,got);
+            pcmCacheSequence=got; pcmCacheValid=true;
             pcmCacheRate=rate; pcmCacheText=otis::encodePcm(pcm.data(),pcm.size());
         }
         double rate=pcmCacheRate;

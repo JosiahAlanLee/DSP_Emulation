@@ -7,7 +7,7 @@
 #include <cmath>
 #include <atomic>
 #include <cstdint>
-#include <thread>
+#include <mutex>
 #include <vector>
 
 namespace otis {
@@ -185,41 +185,40 @@ struct Engine {
     int currentMode=0;
     bool recording=false;
     bool recordFull=false;
+    bool capturePending=false, restartCapture=false;
     double endPulse=0;
     Controls controls;
-    // Sequence counter for the finished sample: odd while sample buffer/frames/rate are being replaced.
-    // Lets a non-audio thread copy the finished sample without taking a lock the audio thread needs.
+    // Only finished-sample metadata/buffers use this lock. Snapshot readers may wait;
+    // the audio writer uses try_lock and defers publication, never playback.
+    // Other Engine state still belongs to its single processing/control thread.
+    mutable std::mutex sampleMutex;
+    // Revision for the serialized PCM cache; not a substitute for synchronization.
     std::atomic<uint32_t> sampleSequence{0};
     void beginSampleChange() { sampleSequence.fetch_add(1,std::memory_order_acq_rel); }
     void endSampleChange() { sampleSequence.fetch_add(1,std::memory_order_release); }
     uint32_t sequence() const { return sampleSequence.load(std::memory_order_acquire); }
-    // Copy the finished sample from a non-audio thread. Retries if the audio thread swaps buffers
-    // mid-copy (e.g. a live recording finishes). Both buffers are always memoryWords long and are
-    // only freed by install(), which runs on the same (UI) thread as callers of this function.
-    bool snapshot(std::vector<int16_t>& out,double& rate,uint32_t& seq,int attempts=16) const {
-        for(int a=0;a<attempts;a++) {
-            uint32_t before=sampleSequence.load(std::memory_order_acquire);
-            if(before&1) { std::this_thread::yield(); continue; }
-            const int16_t* data=sample.pcm.data(); size_t n=std::min(frames,memoryWords); double r=sample.rate;
-            out.assign(data,data+n);
-            std::atomic_thread_fence(std::memory_order_acquire);
-            if(sampleSequence.load(std::memory_order_relaxed)==before) { rate=r; seq=before; return true; }
-        }
-        return false;
+    // Copy on a non-audio thread. The buffer cannot become record memory (or be
+    // replaced/freed by install) until this copy releases sampleMutex.
+    bool snapshot(std::vector<int16_t>& out,double& rate,uint32_t& seq) const {
+        std::lock_guard<std::mutex> guard(sampleMutex);
+        out.assign(sample.pcm.begin(),sample.pcm.begin()+std::min(frames,memoryWords));
+        rate=sample.rate; seq=sampleSequence.load(std::memory_order_relaxed);
+        return true;
     }
     Engine() { setHostRate(48000); }
     void setHostRate(double rate) {
         hostRate=clamp(rate,8000.0,384000.0);
         for(int i=0;i<3;i++) conversion[i].configure(chipRates[i],hostRate);
         chipPhase=0;
-        if(recording) stopRecord();
+        stopRecord();
     }
     void stopAll() { for(auto& v:voices) v.running=false; }
     void install(std::vector<int16_t>& pcm,double rate) {
-        stopAll(); recording=false; recordFull=false;
+        stopAll(); recording=false; recordFull=false; capturePending=false; restartCapture=false;
         size_t newFrames=std::min(pcm.size(),memoryWords);
         // Caller prepares the capacity off the audio thread.
         pcm.resize(memoryWords,0);
+        std::lock_guard<std::mutex> guard(sampleMutex);
         beginSampleChange();
         frames=newFrames;
         sample.pcm.swap(pcm);
@@ -228,22 +227,46 @@ struct Engine {
         for(auto& c:conversion) c.reset();
         chipPhase=0;
     }
-    void startRecord() {
+    void beginRecording() {
         recording=true; recordFull=false; recordFrames=0; recordPhase=0; previousRecord=0;
         recordBuffer.rate=captureRate(controls.captureIndex);
         const double q[3]={.517638090205,.707106781187,1.931851652578};
         for(int i=0;i<3;i++) recordFilters[i].lowpass(hostRate,.45*recordBuffer.rate,q[i]);
     }
+    void startRecord() {
+        if(capturePending) {
+            // Do not overwrite a completed take while a snapshot pins the old
+            // playback buffer. Start the requested capture after publication.
+            restartCapture=true;
+            publishRecording();
+            return;
+        }
+        restartCapture=false;
+        beginRecording();
+    }
     void stopRecord() {
-        if(!recording) return;
-        recording=false;
-        if(recordFrames<2) return;
+        restartCapture=false; // A falling gate also cancels a queued start.
+        if(recording) {
+            recording=false;
+            capturePending=recordFrames>=2;
+        }
+        publishRecording();
+    }
+    bool publishRecording() {
+        if(!capturePending) return false;
+        std::unique_lock<std::mutex> guard(sampleMutex,std::try_to_lock);
+        if(!guard.owns_lock()) return false;
         stopAll();
         beginSampleChange();
         sample.pcm.swap(recordBuffer.pcm); sample.rate=recordBuffer.rate; frames=recordFrames;
         endSampleChange();
+        capturePending=false;
         for(auto& c:conversion) c.reset();
         chipPhase=0;
+        bool restart=restartCapture; restartCapture=false;
+        guard.unlock();
+        if(restart) beginRecording();
+        return true;
     }
     // Declick fade length in chip samples (about 1.5 ms at the current chip clock).
     int fadeSamples() const { return std::max(1,int(std::lround(chipRates[clamp(controls.engineMode,0,2)]*0.0015))); }
@@ -278,6 +301,7 @@ struct Engine {
         if(v.accumulator<v.start || v.accumulator>v.end) v.accumulator=v.reverse ? v.end : v.start;
     }
     float process(float input) {
+        if(capturePending) publishRecording();
         if(recording) {
             float x=std::isfinite(input) ? input*controls.recordGain : 0;
             for(auto& f:recordFilters) x=f.process(x);

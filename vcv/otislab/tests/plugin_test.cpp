@@ -10,7 +10,7 @@ int main() {
     void* handle=dlopen("./plugin.so",RTLD_NOW|RTLD_LOCAL);
     if(!handle) { std::cerr<<dlerror()<<"\n"; return 1; }
     auto initialize=reinterpret_cast<void(*)(Plugin*)>(dlsym(handle,"init")); assert(initialize);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.0.0"; initialize(&plugin);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.1.1"; initialize(&plugin);
     assert(plugin.models.size()==1);
     auto model=plugin.models.front();
     auto a=std::unique_ptr<engine::Module>(model->createModule());
@@ -48,8 +48,17 @@ int main() {
     a->inputs[2].channels=1; a->inputs[1].channels=1;
     a->inputs[2].setVoltage(0); a->inputs[1].setVoltage(1); a->process(args);
     a->inputs[2].setVoltage(10); a->process(args); assert(a->lights[0].getBrightness()>0);
+    a->inputs[2].setVoltage(0); a->process(args);
+    assert(a->lights[0].getBrightness()>0); // default declick fades instead of cutting
+    for(int i=0;i<200;i++) a->process(args);
+    assert(a->lights[0].getBrightness()==0);
+    for(int i=0;i<200;i++) a->process(args); // also drain the output converter
+    assert(std::abs(a->outputs[0].getVoltage())<1e-6f);
+    auto hardCut=json_object(); json_object_set_new(hardCut,"gated",json_true());
+    json_object_set_new(hardCut,"declick",json_false()); a->dataFromJson(hardCut); json_decref(hardCut);
+    a->inputs[2].setVoltage(10); a->process(args); assert(a->lights[0].getBrightness()>0);
     a->inputs[2].setVoltage(0); a->process(args); assert(a->lights[0].getBrightness()==0);
     a.reset(); b.reset();
-    std::cout<<"PASS: plugin.so dynamic load, Rack module creation, patch sample round-trip, deterministic dual-mono playback, CV record gate\n";
+    std::cout<<"PASS: plugin.so dynamic load, Rack module creation, patch sample round-trip, deterministic dual-mono playback, CV record gate, faded and hard gate release\n";
     // Plugin destructor owns the models. Keep the library loaded through its destruction.
 }

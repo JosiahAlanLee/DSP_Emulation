@@ -130,6 +130,29 @@ Checked 2026-10-14 by a second reviewer (Claude), separately from the 2.0.0 chec
   build environment, and nothing was run inside Rack.
 - Panel regenerated with `tools/make_assets.py` (VCA jack added; bottom row now seven jacks
   at 46 px spacing). The demo WAV regenerates byte-identically.
-- The snapshot path reads the sample buffer while the audio thread may swap it; this is a
-  benign data race validated by the sequence counter (a seqlock), not a formally race-free
-  design. Thread sanitizer will report it.
+- The original 2.1.0 snapshot path read ordinary vector/metadata state while the
+  audio thread could swap it. Its sequence counter did not make those accesses
+  race-free under C++; the successful stress run above did not establish safety.
+  This path is replaced in 2.1.1 below.
+
+## 2.1.1 snapshot fix
+
+- Finished sample pointer, length, rate and PCM copying share `sampleMutex`.
+  An audio-thread publication only tries that lock: it retains the completed
+  record buffer on failure, continues playback and retries in `process()`.
+  Subsequent recording cannot overwrite that pending take; rearm/cancel is explicit.
+- The sequence counter is retained only to invalidate the serialized PCM cache.
+  Snapshot readers do not speculatively read mutable non-atomic state.
+- The old engine-lock fallback in save/export is removed.
+- Deterministic tests hold a snapshot lock while processing audio: playback remains
+  nonzero, a finished capture is deferred, a queued start begins after publication,
+  and a falling gate cancels the queue without losing the completed take.
+- Concurrent reader/producer test verifies revision, sample rate, length and final
+  PCM value across 200 completed takes. It passes normally, under ThreadSanitizer
+  with no reports, and under AddressSanitizer/UndefinedBehaviorSanitizer. Leak
+  checking is disabled here for the runtime restriction documented above.
+- Portable engine tests pass; plugin links warning-free against Rack SDK 2.6.4.
+- The actual compiled plugin's Rack API harness passes sample restoration,
+  deterministic playback, CV recording, declicked gate release and optional hard
+  gate release. The default fade is allowed to finish before checking silence.
+- No live Rack GUI, PipeWire or ADAT hardware test is claimed.

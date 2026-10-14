@@ -25,3 +25,10 @@ creates the audition WAV. `reference_compare.cpp` requires a separate checkout
 of mardlib's EPS emulator. It is not part of the distributed plugin build.
 See its header for compiler commands; it uses only reference code in that
 separate checkout and does not distribute it.
+
+`make -C tests test` also runs `snapshot_test`: it pins a finished sample during
+playback and checks deferred capture publication, queued starts and cancellation.
+Its concurrent producer/reader checks complete generation consistency across
+200 takes. Run `make -C tests thread-sanitize` to exercise it under ThreadSanitizer.
+All snapshot readers run off the audio thread; processing remains a single-writer
+operation. Module control/import callers retain their existing processing lock.
