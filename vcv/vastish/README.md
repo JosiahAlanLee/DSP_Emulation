@@ -42,6 +42,26 @@ imported (including EPS files) through VAST. Right-click the module and choose
 Loading, saving and freeing happen on the UI thread; the audio thread only swaps
 a pointer and never allocates or waits.
 
+### Following OTIS (2.2.0)
+
+Put Vastish **directly to the right of an OTIS Sampler** and tick **Follow OTIS
+on the left** in Vastish's menu. Its SAMPLE wave then tracks OTIS's finished
+sample: load a WAV in OTIS, record a new take, or press REWORK, and Vastish
+picks up the result on the next screen refresh, labelled `OTIS: <name>`. This
+is the K2000-reads-EPS-files idea, without the EPROM.
+
+- The link reads OTIS's finished sample memory (16-bit, at OTIS's own rate) and
+  plays it through Vastish's clean interpolation, F1–F3 and envelopes. A take
+  still being recorded is not shared until it finishes.
+- Move OTIS away and the menu says the link is not found; the last sample stays.
+  Loading a WAV or clearing the sample in Vastish turns following off.
+- The followed sample is saved in the Vastish patch too, so the patch still
+  plays if OTIS is absent.
+
+The two plugins talk through a small versioned C interface
+(`vcv/shared/SampleShare.hpp`), checked by plugin slug, model slug, a magic
+number and a version, so mismatched builds refuse to link rather than crash.
+
 ## CV and audio levels
 
 | Port | Meaning |

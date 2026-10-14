@@ -21,6 +21,10 @@
 > **2.3.4:** REWORK fades its change in and out over the first and last 64
 > samples of the region, so the boundaries with untouched audio no longer
 > click when POSITION/SIZE modulation plays across them.
+>
+> **2.4.0:** shares its finished sample with a module placed directly to its
+> right. Vastish 2.2.0+ can follow it (Vastish menu → Follow OTIS on the left),
+> so recordings and REWORK generations play through Vastish's VAST chain.
 
 
 A VCV Rack 2 module for sampling a modular system and playing samples through
