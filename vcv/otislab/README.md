@@ -9,6 +9,10 @@
 >
 > **2.3.1:** REWORK now RMS-matches its result to the source region, so repeated
 > generations keep their level instead of losing ~4.5 dB each time.
+>
+> **2.3.2:** fixes a crash when the module browser or panel draws OTIS. The
+> display requested `DejaVuSansMono.ttf`, which Rack 2 does not ship; it now uses
+> Rack's ShareTechMono and falls back safely if a font fails to load.
 
 
 A VCV Rack 2 module for sampling a modular system and playing samples through

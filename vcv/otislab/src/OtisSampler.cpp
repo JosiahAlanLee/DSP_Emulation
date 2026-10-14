@@ -226,7 +226,10 @@ struct OtisSampler : Module {
 struct SampleDisplay : widget::Widget {
     OtisSampler* module=nullptr;
     void draw(const DrawArgs& args) override {
-        auto font=APP->window->loadFont(asset::system("res/fonts/DejaVuSansMono.ttf"));
+        // Rack 2 ships ShareTechMono, not DejaVu Sans Mono; a failed load returns null.
+        auto font=APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+        if(!font) font=APP->window->uiFont;
+        if(!font) return;
         nvgFontFaceId(args.vg,font->handle); nvgFontSize(args.vg,10);
         nvgTextAlign(args.vg,NVG_ALIGN_LEFT|NVG_ALIGN_TOP);
         nvgFillColor(args.vg,nvgRGB(126,225,202));
