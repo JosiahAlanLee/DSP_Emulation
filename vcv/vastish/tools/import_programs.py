@@ -11,7 +11,9 @@ names = list(pd['defaults']())
 # Keep actual generator order; enum names shield the engine from ordering changes.
 fnames = ['NONE'] + [f[0] for f in pd['FUNCS']]
 sources = pd['SOURCES']
-waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE']
+# SAMPLE is a native-only addition (not in the Pd patch): plays the loaded WAV,
+# K2000-style, as the oscillator feeding F1-F3.
+waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE', 'SAMPLE']
 shapes = ['COSINE', 'TRI', 'SAW', 'SQUARE', 'S&H']
 eqs = ['A+B','A-B','A*B','(A+B)/2','MAX','MIN','ABS(A-B)','A*(B+1)/2']
 algs = [v[0] for v in pd['ALGS'].values()]
@@ -21,7 +23,7 @@ def spec(n):
     lo, hi = -128, 135
     if n == 'alg': lo, hi, opts = 1, 6, algs
     elif n == 'master': lo, hi = -60, 24
-    elif n.endswith('-wave'): lo, hi, opts = 0,4,waves
+    elif n.endswith('-wave'): lo, hi, opts = 0,len(waves)-1,waves
     elif n.endswith('-pw'): lo, hi = .01,.99
     elif n.endswith('-type'): lo, hi, opts = 0,14,fnames
     elif n.endswith(('-s1','-s2')) or n.startswith('fun') and n.endswith(('-a','-b')): lo,hi,opts = 0,11,sources

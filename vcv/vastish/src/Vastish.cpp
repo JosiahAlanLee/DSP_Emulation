@@ -1,6 +1,15 @@
 #include "plugin.hpp"
 #include "engine/Engine.hpp"
+#include "../../shared/SampleFile.hpp"
+#include <osdialog.h>
 #include <atomic>
+// A loaded sample. Immutable once published; owned by the handoff below.
+struct SampleSlot {
+    dspemu::MonoSample data; vastish::SampleView view;
+    explicit SampleSlot(dspemu::MonoSample s={}) : data(std::move(s)) {
+        view.pcm=data.pcm.empty() ? nullptr : data.pcm.data(); view.frames=data.pcm.size(); view.rate=data.rate;
+    }
+};
 using namespace vastish;
 struct Vastish : Module {
     enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, INPUTS };
@@ -11,6 +20,33 @@ struct Vastish : Module {
     std::array<VoiceInput,8> in{};
     std::atomic<int> requestedProgram{-1}, displayedProgram{1};
     std::atomic<bool> requestedPanic{false};
+    // Sample handoff (SAMPLE pitch wave). The UI thread publishes into pendingSample;
+    // the audio thread adopts it only when retiredSample is empty, moving its old
+    // sample there; the UI thread deletes retired samples. The audio thread never
+    // allocates, frees or waits.
+    static constexpr size_t MAX_SAMPLE_FRAMES=size_t(1)<<21; // ~44 s at 48 kHz
+    std::atomic<SampleSlot*> pendingSample{nullptr}, retiredSample{nullptr};
+    SampleSlot* liveSample=nullptr; // audio thread only
+    SampleSlot* uiSample=nullptr;   // UI thread: most recently published
+    std::atomic<bool> sampleLoop{false};
+    std::string sampleError;        // UI thread
+    const SampleSlot* encodedFor=nullptr; std::string encodedPcm; // dataToJson cache
+    void collectSamples() { if(auto* r=retiredSample.exchange(nullptr,std::memory_order_acq_rel)) delete r; }
+    void publishSample(SampleSlot* s) {
+        collectSamples(); uiSample=s;
+        if(auto* stale=pendingSample.exchange(s,std::memory_order_acq_rel)) delete stale; // never reached audio
+    }
+    void loadSampleFile(const std::string& path) {
+        try { publishSample(new SampleSlot(dspemu::loadWavMono(path,MAX_SAMPLE_FRAMES))); sampleError.clear(); }
+        catch(const std::exception& e) { sampleError=e.what(); WARN("Vastish: %s",e.what()); }
+    }
+    std::string sampleLabel() const {
+        if(!uiSample || !uiSample->view.valid()) return "NO SAMPLE";
+        return uiSample->data.name+(uiSample->data.truncated ? " [TRUNCATED]" : "");
+    }
+    ~Vastish() {
+        delete liveSample; delete pendingSample.load(); delete retiredSample.load();
+    }
     Vastish() {
         config(PARAM_COUNT,INPUTS,OUTPUTS,LIGHTS);
         const auto& meta=metadata();
@@ -59,7 +95,13 @@ struct Vastish : Module {
             if(!triggers[i].isHigh()) in[i].gate=false;
             active|=in[i].gate;
         }
-        auto y=engine.tick(p,in,std::max(1,channels));
+        if(!retiredSample.load(std::memory_order_acquire))
+            if(auto* s=pendingSample.exchange(nullptr,std::memory_order_acq_rel)) {
+                if(liveSample) retiredSample.store(liveSample,std::memory_order_release);
+                liveSample=s;
+            }
+        SampleView view; if(liveSample) { view=liveSample->view; view.loop=sampleLoop.load(std::memory_order_relaxed); }
+        auto y=engine.tick(p,in,std::max(1,channels),liveSample ? &view : nullptr);
         outputs[LEFT_OUT].setVoltage(y[0]*5); outputs[RIGHT_OUT].setVoltage(y[1]*5);
         const int source[]={11,1,2,3,4,5,6};
         int n=std::max(1,channels);
@@ -71,9 +113,35 @@ struct Vastish : Module {
         lights[FAULT_LIGHT].setBrightness(engine.faults?1:0);
         (void)args;
     }
-    json_t* dataToJson() override { json_t* j=json_object(); json_object_set_new(j,"program",json_integer(displayedProgram.load())); return j; }
+    json_t* dataToJson() override {
+        json_t* j=json_object(); json_object_set_new(j,"program",json_integer(displayedProgram.load()));
+        json_object_set_new(j,"sampleLoop",json_boolean(sampleLoop.load()));
+        collectSamples();
+        if(uiSample && uiSample->view.valid()) {
+            // Rack autosaves often; encode each sample once.
+            if(encodedFor!=uiSample) { encodedPcm=dspemu::encodePcm16(uiSample->data.pcm.data(),uiSample->data.pcm.size()); encodedFor=uiSample; }
+            json_t* s=json_object();
+            json_object_set_new(s,"name",json_string(uiSample->data.name.c_str()));
+            json_object_set_new(s,"rate",json_real(uiSample->data.rate));
+            json_object_set_new(s,"pcm16le",json_string(encodedPcm.c_str()));
+            json_object_set_new(j,"sample",s);
+        }
+        return j;
+    }
     void dataFromJson(json_t* j) override {
         json_t* v=json_object_get(j,"program"); if(json_is_integer(v)) displayedProgram=int(vastish::clamp(float(json_integer_value(v)),0,5));
+        sampleLoop=json_is_true(json_object_get(j,"sampleLoop"));
+        json_t* s=json_object_get(j,"sample");
+        if(!s) return;
+        try {
+            dspemu::MonoSample m;
+            const char* text=json_string_value(json_object_get(s,"pcm16le"));
+            if(!text) throw std::runtime_error("Saved sample has no PCM");
+            m.pcm=dspemu::decodePcm16(text,MAX_SAMPLE_FRAMES); m.rate=json_number_value(json_object_get(s,"rate"));
+            if(!std::isfinite(m.rate) || m.rate<1000 || m.rate>384000 || m.pcm.size()<2) throw std::runtime_error("Invalid saved sample");
+            const char* name=json_string_value(json_object_get(s,"name")); m.name=name ? name : "RESTORED SAMPLE";
+            publishSample(new SampleSlot(std::move(m))); sampleError.clear();
+        } catch(const std::exception& e) { sampleError=e.what(); WARN("Vastish: %s",e.what()); }
     }
 };
 struct Selector : app::ParamWidget {
@@ -86,6 +154,9 @@ struct Selector : app::ParamWidget {
         nvgFontFaceId(args.vg,font->handle); nvgFontSize(args.vg,10); nvgTextAlign(args.vg,NVG_ALIGN_CENTER|NVG_ALIGN_MIDDLE);
         nvgFillColor(args.vg,nvgRGB(135,225,200));
         std::string value=q?q->getDisplayValueString():"—";
+        // The SAMPLE wave shows which sample is loaded.
+        if(q && q->paramId==PITCH_WAVE && choice(q->getValue(),SAMPLE_WAVE)==SAMPLE_WAVE)
+            if(auto* v=dynamic_cast<Vastish*>(module)) value=v->sampleLabel();
         nvgFontSize(args.vg,std::min(10.f,(box.size.x-8)/std::max(1.f,float(value.size())*.65f)));
         nvgText(args.vg,box.size.x*.5,box.size.y*.5,value.c_str(),nullptr);
         ParamWidget::draw(args);
@@ -148,6 +219,10 @@ struct VastishWidget : ModuleWidget {
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(180,14),m,Vastish::GATE_LIGHT));
         addChild(createLightCentered<SmallLight<RedLight>>(Vec(180,27),m,Vastish::FAULT_LIGHT));
     }
+    void step() override {
+        if(auto* m=dynamic_cast<Vastish*>(module)) m->collectSamples();
+        ModuleWidget::step();
+    }
     void appendContextMenu(Menu* menu) override {
         auto* m=dynamic_cast<Vastish*>(module); if(!m) return;
         menu->addChild(new MenuSeparator);
@@ -155,6 +230,18 @@ struct VastishWidget : ModuleWidget {
             for(int k=0;k<6;++k) child->addChild(createMenuItem(programNames[k],"",[m,k]{m->requestedProgram=k;}));
         }));
         menu->addChild(createMenuItem("Panic / silence held gates","",[m]{m->requestedPanic=true;}));
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Sample: "+m->sampleLabel()));
+        if(!m->sampleError.empty()) menu->addChild(createMenuLabel("Error: "+m->sampleError));
+        menu->addChild(createMenuItem("Load sample WAV…","",[m]() {
+            auto filters=osdialog_filters_parse("WAV:wav,WAV"); char* path=osdialog_file(OSDIALOG_OPEN,nullptr,nullptr,filters); osdialog_filters_free(filters);
+            if(!path) return;
+            m->loadSampleFile(path); std::free(path);
+            if(m->sampleError.empty()) m->params[PITCH_WAVE].setValue(SAMPLE_WAVE);
+        }));
+        menu->addChild(createBoolMenuItem("Loop sample","",[m]{return m->sampleLoop.load();},[m](bool on){m->sampleLoop=on;}));
+        menu->addChild(createMenuItem("Clear sample","",[m]{ m->publishSample(new SampleSlot()); }));
+        menu->addChild(createMenuLabel("SAMPLE wave: 0 V / C4 plays at recorded pitch"));
         menu->addChild(createMenuLabel("Eight voices • 0 V = C4 • gate > 1 V"));
         menu->addChild(createMenuLabel("Audio: ±1 DSP = ±5 V. Envelopes: 0–10 V."));
         menu->addChild(createMenuLabel("Programs are starting points; all edits save in the Rack patch."));

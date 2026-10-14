@@ -26,6 +26,7 @@ jobs:
           make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
           make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
           vcv/vastish/tests/engine_test
+          (cd vcv/vastish/tests && ./sample_test)
           vcv/vastish/tests/adapter_test
           vcv/vastish/tests/reference_compare
           cd vcv/vastish

@@ -6,8 +6,10 @@ RACK_DIR ?= ../../../../deps/Rack-SDK
 # Test executables never call them, so allow them to stay unresolved at link time.
 RACK_TEST_LDFLAGS = -Wl,--allow-shlib-undefined
 PD_DIR ?= ../../../../pd-reference
-all: engine_test plugin_test adapter_test render
+all: engine_test sample_test plugin_test adapter_test render
 engine_test: engine_test.cpp ../src/engine/*.hpp
+	$(CXX) $(CXXFLAGS) $< -o $@
+sample_test: sample_test.cpp ../src/engine/*.hpp ../../shared/SampleFile.hpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 render: render.cpp ../src/engine/*.hpp
 	$(CXX) $(CXXFLAGS) $< -o $@
@@ -20,7 +22,7 @@ reference_compare: reference_compare.cpp reference_bob.o reference_filters.o ref
 check: engine_test
 	./engine_test
 clean:
-	rm -f engine_test plugin_test adapter_test render reference_compare *.o
+	rm -f engine_test sample_test plugin_test adapter_test render reference_compare *.o
 .PHONY: all check clean
 adapter_test: adapter_test.cpp ../src/Vastish.cpp ../src/engine/*.hpp
 	$(CXX) $(CXXFLAGS) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include $< -L$(RACK_DIR) -Wl,-rpath,$(abspath $(RACK_DIR)) -lRack $(RACK_TEST_LDFLAGS) -o $@
