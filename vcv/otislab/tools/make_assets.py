@@ -30,9 +30,12 @@ parts=['<svg xmlns="http://www.w3.org/2000/svg" width="540" height="380" viewBox
  text('OTIS',17,30,22,'#80ddc7',False),text('SAMPLER',87,30,12,'#d5dfde',False),text('LAB / 01',283,30,10,'#f1b875',True)]
 for row,labels in [(151,['PITCH','START','END','K1']),(211,['REC RATE','REC GAIN','LEVEL','K2'])]:
     for i,label in enumerate(labels): parts.append(text(label,45+80*i,row,10))
-for i,label in enumerate(['PLAY','REC','LOOP','REV']): parts.append(text(label,45+80*i,233,10,'#f1b875'))
-parts.append(text('OFF / FWD / PING',205,255,6.5))
-parts.append(text('FULL',302,255,6,'#f1b875'))
+# Switch row (band y=218..262): titles above, controls centred at y=246.
+# Rack's CKSSThree is 13.5x28.3 px with value 0 at the bottom, so position
+# names sit beside the lever at its three stops; CKSS is 14x20.6 px.
+for i,label in enumerate(['PLAY','REC','LOOP','REV']): parts.append(text(label,45+80*i,229,10,'#f1b875'))
+for label,y in [('PING',238.5),('FWD',248),('OFF',257.5)]: parts.append(text(label,216,y,6,center=False))
+parts.append(text('FULL',302,258,6,'#f1b875'))
 for i,label in enumerate(['AUDIO','V/OCT','GATE','REC','START','END']):
     parts.append(text(label,30+54*i,277,9))
 # Bottom row: 3 inputs (K1, K2, VCA) + 4 outputs, 46 px apart.
@@ -42,14 +45,15 @@ parts.append(text('ES5505 PLAYBACK / CV CONTROL',165,370,8,'#899e9b'))
 # LAB column: non-authentic extensions. Knobs at y=125/187, CV jacks at y=292/341.
 parts.append(text('LAB',360,85,10,'#f1b875'))
 parts.append(text('WINDOW',435,85,10,'#f1b875'))
-parts.append(text('REWORK',510,85,10,'#f1b875'))
+parts.append(text('REWORK',506,85,9,'#f1b875'))  # stays inside the display box
 parts.append(text('CLOCK',360,151,9)); parts.append(text('INTERP',360,211,9))
 parts.append(text('CLK CV',360,277,8)); parts.append(text('INT CV',360,327,8))
 parts.append(text('POSITION',435,151,9)); parts.append(text('SIZE',435,211,9))
-parts.append(text('MODE',435,233,9,'#f1b875')); parts.append(text('SEG / SCAN / FRM',435,255,6))
+parts.append(text('MODE',435,229,9,'#f1b875'))
+for label,y in [('FRM',238.5),('SCAN',248),('SEG',257.5)]: parts.append(text(label,446,y,6,center=False))
 parts.append(text('POS CV',435,277,8)); parts.append(text('SIZE CV',435,327,8))
-parts.append(text('COARSE / FINE',510,151,7)); parts.append(text('AMOUNT',510,211,9))
-parts.append(text('REWORK',510,233,9,'#f1b875')); parts.append(text('BUSY',529,255,5))
+parts.append(text('COARSE / FINE',508,151,6.5)); parts.append(text('AMOUNT',510,211,9))
+parts.append(text('REWORK',510,229,9,'#f1b875')); parts.append(text('BUSY',529,258,5))
 parts.append(text('TRIG',510,277,8)); parts.append(text('AMT CV',510,327,8))
 parts.append(text('ASR-INSPIRED / ORIGINAL LAB ALGORITHMS',435,370,6,'#899e9b'))
 panel=''.join(parts)+'</svg>'
@@ -63,9 +67,12 @@ for y in [125,187]:
 for y,xs in [(292,[30,84,138,192,246,300,360,435,510]),(341,[27+46*i for i in range(7)]+[360,435,510])]:
     for x in xs:
         preview.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#9ba6a1"/><circle cx="{x}" cy="{y}" r="7.5" fill="#313939"/><circle cx="{x}" cy="{y}" r="5" fill="#090e0d"/>')
-preview.append('<circle cx="45" cy="242" r="5" fill="#4dc595"/>')
-for x in [125,205,285,435]: preview.append(f'<rect x="{x-5}" y="236" width="10" height="14" rx="2" fill="#aeb7b3"/><circle cx="{x}" cy="239" r="3" fill="#2c3635"/>')
-preview.append('<circle cx="510" cy="242" r="5" fill="#303b35"/><circle cx="529" cy="242" r="2" fill="#756a21"/>')
+# Preview switches at Rack's real component sizes (CKSS 14x20.6, CKSSThree 13.5x28.3).
+preview.append('<circle cx="45" cy="246" r="7" fill="#4dc595"/>')
+for x,h in [(125,20.6),(205,28.3),(285,20.6),(435,28.3)]:
+    preview.append(f'<rect x="{x-7}" y="{246-h/2:.1f}" width="14" height="{h}" rx="2" fill="#111"/><rect x="{x-5}" y="{246+h/2-9:.1f}" width="10" height="7" fill="#777"/>')
+preview.append('<circle cx="510" cy="246" r="7" fill="#303b35"/><circle cx="529" cy="246" r="3" fill="#756a21"/>')
+preview.append('<circle cx="143" cy="246" r="3" fill="#5a2020"/><circle cx="302" cy="246" r="3" fill="#5a2020"/>')
 preview.append(text('REWORK: READY',335,64,9,'#80ddc7',False))
 (root/'docs/panel-preview.svg').write_text(''.join(preview)+'</svg>')
 

@@ -13,6 +13,10 @@
 > **2.3.2:** fixes a crash when the module browser or panel draws OTIS. The
 > display requested `DejaVuSansMono.ttf`, which Rack 2 does not ship; it now uses
 > Rack's ShareTechMono and falls back safely if a font fails to load.
+>
+> **2.3.3:** panel layout fix. Switches and buttons now sit below their labels
+> instead of on top of them, and LOOP and MODE show each position's name
+> beside the lever stop (top to bottom: PING/FWD/OFF, FRM/SCAN/SEG).
 
 
 A VCV Rack 2 module for sampling a modular system and playing samples through
