@@ -1,9 +1,9 @@
 name: OtisLab native Linux
 on:
   push:
-    paths: ['vcv/otislab/**', '.github/workflows/otislab.yml']
+    paths: ['vcv/otislab/**', 'vcv/shared/**', '.github/workflows/otislab.yml']
   pull_request:
-    paths: ['vcv/otislab/**', '.github/workflows/otislab.yml']
+    paths: ['vcv/otislab/**', 'vcv/shared/**', '.github/workflows/otislab.yml']
   workflow_dispatch:
 permissions:
   contents: read

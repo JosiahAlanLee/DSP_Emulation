@@ -1,9 +1,9 @@
 name: Vastish native Linux
 on:
   push:
-    paths: ['vcv/vastish/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+    paths: ['vcv/vastish/**', 'vcv/shared/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
   pull_request:
-    paths: ['vcv/vastish/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+    paths: ['vcv/vastish/**', 'vcv/shared/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
   workflow_dispatch:
 permissions:
   contents: read

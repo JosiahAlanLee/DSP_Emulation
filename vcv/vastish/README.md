@@ -22,6 +22,26 @@ Rack shared-library API; a live GUI/audio-device session still needs testing.
    source. Drag knobs; right-click a knob for exact numeric entry. Patch saves
    retain edits. The name shows the last loaded program, even after edits.
 
+## Samples (2.1.0)
+
+The PITCH wave selector has a native-only sixth option, **SAMPLE**, that plays a
+WAV file as the oscillator feeding F1–F3, the way the K2000 played samples it
+imported (including EPS files) through VAST. Right-click the module and choose
+**Load sample WAV…**; the selector switches to SAMPLE and shows the file name.
+
+- 0 V (C4) plays the sample at its recorded pitch; V/OCT transposes from there.
+  The sample's own rate is respected, so a 29.76 kHz OTIS export plays in tune.
+- Each voice restarts the sample on its gate. Playback is one-shot unless
+  **Loop sample** is ticked (whole-sample forward loop).
+- Any PCM 8/16/24/32-bit or float WAV loads; stereo is mixed to mono and stored
+  as 16-bit, up to 2,097,152 frames (about 44 s at 48 kHz).
+- The sample is saved inside the Rack patch, so patches stay self-contained.
+- Playback is clean 4-point Hermite interpolation, not ES5505 emulation; for the
+  EPS character, export from OTIS and load that.
+
+Loading, saving and freeing happen on the UI thread; the audio thread only swaps
+a pointer and never allocates or waits.
+
 ## CV and audio levels
 
 | Port | Meaning |
