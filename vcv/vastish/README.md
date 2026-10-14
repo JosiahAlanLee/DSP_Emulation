@@ -94,6 +94,12 @@ HIPASS is input minus `lop~`; LP4 uses the `bob~` two-substep RK4 solver.
 The amp envelope is squared, pan is equal-power, master gain slews over 50 ms,
 and stereo output passes through the Pd-style 5 Hz DC blocker.
 
+Only the voices you patch cost CPU. Voices above the incoming polyphony channel
+count sleep once their gate is low and their amp envelope has finished (a voice
+that is still releasing keeps running). A mono patch of Ladder Bass measured
+about 15% of one core before this (2.0.1) and about 2% after; output is
+bit-identical, since a finished voice contributes exactly zero.
+
 This is a port of **Vastish**, not an exact Kurzweil VAST implementation or an
 EPS/OTIS sampler. It has no sample layers, ROM requirements or dedicated effects
 bank. Full-patch bit identity is not promised: Rack gate events use sample timing,

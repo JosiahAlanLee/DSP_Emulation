@@ -59,7 +59,7 @@ struct Vastish : Module {
             if(!triggers[i].isHigh()) in[i].gate=false;
             active|=in[i].gate;
         }
-        auto y=engine.tick(p,in);
+        auto y=engine.tick(p,in,std::max(1,channels));
         outputs[LEFT_OUT].setVoltage(y[0]*5); outputs[RIGHT_OUT].setVoltage(y[1]*5);
         const int source[]={11,1,2,3,4,5,6};
         int n=std::max(1,channels);

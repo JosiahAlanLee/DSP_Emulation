@@ -65,10 +65,17 @@ struct Engine {
     Engine() { (void)cosineTable(); for(int i=0;i<8;++i) voices[i]=Voice(307+i*1009); prepare(48000); }
     void prepare(float sr) { sampleRate=sr; for(auto& v:voices) v.prepare(sr); }
     void panic() { for(auto& v:voices) v.panic(); for(auto& d:dc) d.last=0; }
-    std::array<float,2> tick(const Parameters& p,const std::array<VoiceInput,8>& inputs) {
+    // usedVoices = polyphony channels actually patched. With the default of 8 every
+    // voice free-runs, as in the Pd clone (the reference tests rely on this). Voices
+    // at or above usedVoices are skipped once their gate is low and their amp
+    // envelope has finished, so a mono patch no longer pays for eight voices; a
+    // voice that is still releasing keeps running until its tail ends.
+    std::array<float,2> tick(const Parameters& p,const std::array<VoiceInput,8>& inputs,int usedVoices=8) {
         std::array<float,2> sum{};
-        // All voices free-run, as in the Pd clone, including disconnected channels.
-        for(int i=0;i<8;++i) { auto y=voices[i].tick(p,inputs[i],sampleRate); sum[0]+=y[0]; sum[1]+=y[1]; }
+        for(int i=0;i<8;++i) {
+            if(i>=usedVoices && !inputs[i].gate && !voices[i].gate && voices[i].env[0].stage==Envelope::Idle) continue;
+            auto y=voices[i].tick(p,inputs[i],sampleRate); sum[0]+=y[0]; sum[1]+=y[1];
+        }
         float gain=dbgain(p[MASTER]); if(gain!=master.target) master.set(gain,50,sampleRate);
         gain=master.tick();
         for(int c=0;c<2;++c) {

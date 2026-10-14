@@ -42,6 +42,24 @@ int main() {
         double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
         std::cout<<"program="<<program<<" sr="<<rate<<" eight_voice_cpu_seconds_per_audio_second="<<seconds<<"\n";
     }
+    // Sleeping unpatched voices must not change the audio of the voices in use,
+    // including a voice whose channel disappears while it is still releasing.
+    for(int program=0;program<6;++program) {
+        Engine all,used; auto params=programs()[program];
+        std::array<VoiceInput,8> in{}; in[0].note=43; in[1].note=55; in[0].velocity=in[1].velocity=.9f;
+        for(int i=0;i<96000;++i) {
+            in[0].gate=(i%24000)<15000; in[1].gate=i<20000;
+            int channels=i<20000 ? 2 : 1; // channel 2 is unplugged mid-release
+            auto a=all.tick(params,in), b=used.tick(params,in,channels);
+            assert(a[0]==b[0] && a[1]==b[1]);
+        }
+    }
+    {
+        Engine eng; auto params=programs()[1]; std::array<VoiceInput,8> in{}; in[0].gate=true; in[0].note=48;
+        auto t0=std::chrono::steady_clock::now();
+        for(int i=0;i<48000;++i) eng.tick(params,in,1);
+        std::cout<<"mono_ladder_bass_cpu_seconds_per_audio_second="<<std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count()<<"\n";
+    }
     // Every function and endpoint must remain finite at all supported test rates.
     std::mt19937 rng(17);
     for(float rate:{44100.f,48000.f,96000.f}) for(int type=0;type<=14;++type) {
@@ -51,5 +69,5 @@ int main() {
             float y=f.tick(type,x,i%2?135:-20,i%3?40:-.98f,rate); assert(std::isfinite(y));
         }
     }
-    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, all function endpoints, zero steady-state allocations\n";
+    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, all function endpoints, zero steady-state allocations\n";
 }
