@@ -70,7 +70,9 @@ int main() {
         assert(reworkLoop(b,128,2048,.7,1,1234) && a==b);
         assert(std::equal(a.begin(),a.begin()+128,source.begin()));
         assert(std::equal(a.begin()+2048,a.end(),source.begin()+2048));
-        assert(a[128]==a[2047]); // full-wet seam endpoints agree
+        // Region edges stay continuous with the untouched neighbours (no clicks).
+        assert(std::abs(a[128]-source[128])<=8 && std::abs(a[2047]-source[2047])<=8);
+        assert(!std::equal(a.begin()+256,a.begin()+1920,source.begin()+256));
         auto c=source; reworkLoop(c,128,2048,.7,1,1235); assert(c!=a);
         for(size_t n:{2u,3u,7u,31u,256u}) for(float smooth:{0.f,.5f,1.f}) {
             std::vector<int16_t> tiny(n,32767); assert(!reworkLoop(tiny,0,n,smooth,1,5));

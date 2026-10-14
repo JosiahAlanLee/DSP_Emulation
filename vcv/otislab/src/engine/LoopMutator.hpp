@@ -39,19 +39,35 @@ inline bool reworkLoop(std::vector<int16_t>& pcm,size_t begin,size_t end,
         float w=float(.5+.5*std::cos(pi*i/seam)), mean=(result[i]+result[n-1-i])*.5f;
         result[i]+=(mean-result[i])*w; result[n-1-i]+=(mean-result[n-1-i])*w;
     }
+    // Only [begin,end) is rewritten, so taper the change to zero at both edges.
+    // Without this the region boundaries jump by up to full scale and click
+    // whenever a moving window or position CV plays across them.
+    size_t edge=std::min(n/4,size_t(64));
+    std::vector<float> taper(n,1.f);
+    for(size_t i=0;i<n;++i) {
+        size_t d=std::min(i,n-1-i);
+        if(d<edge) taper[i]=float(.5-.5*std::cos(pi*(d+.5)/edge));
+    }
     // Overlap-adding uncorrelated grains and normalizing by the summed window
     // weight averages them, which costs several dB per generation (and the
-    // dry/wet blend of decorrelated material loses more). Match the blended
-    // region's RMS to the source so repeated rework keeps its level.
-    double sourcePower=0,mixPower=0;
+    // dry/wet blend of decorrelated material loses more). Choose the gain g on
+    // the processed blend m so that out = s + t*(g*m - s) has the source's
+    // power: |(1-t)s|^2 + 2g<(1-t)s, t*m> + g^2|t*m|^2 = |s|^2.
+    double P=0,A=0,B=0,C=0;
     for(size_t i=0;i<n;++i) {
         result[i]=source[i]+amount*(result[i]-source[i]);
-        sourcePower+=double(source[i])*source[i]; mixPower+=double(result[i])*result[i];
+        double s=source[i], dry=(1-taper[i])*s, wet=taper[i]*result[i];
+        P+=s*s; A+=dry*dry; B+=dry*wet; C+=wet*wet;
     }
-    float gain=mixPower>1e-9 ? clamp(float(std::sqrt(sourcePower/mixPower)),.25f,4.f) : 1.f;
+    float gain=1;
+    if(C>1e-9) {
+        double disc=B*B-C*(A-P);
+        gain=clamp(float((-B+std::sqrt(std::max(0.0,disc)))/C),.25f,4.f);
+    }
     bool changed=false;
     for(size_t i=0;i<n;++i) {
-        int16_t v=int16_t(clamp<long>(std::lround(result[i]*gain),-32768,32767));
+        float processed=result[i]*gain;
+        int16_t v=int16_t(clamp<long>(std::lround(source[i]+taper[i]*(processed-source[i])),-32768,32767));
         changed|=v!=pcm[begin+i]; pcm[begin+i]=v;
     }
     return changed;
