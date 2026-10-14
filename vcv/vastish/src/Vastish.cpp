@@ -4,6 +4,7 @@
 #include "../../shared/SampleShare.hpp"
 #include <osdialog.h>
 #include <atomic>
+#include <cctype>
 // A loaded sample. Immutable once published; owned by the handoff below.
 struct SampleSlot {
     dspemu::MonoSample data; vastish::SampleView view;
@@ -77,6 +78,16 @@ struct Vastish : Module {
         return dspemu::validShare(p) ? static_cast<const dspemu::SampleShareV1*>(p) : nullptr;
     }
     void setFollowOtis(bool on) { followOtis=on; followedShare=nullptr; followedAny=false; if(!on) linkState=LINK_OFF; }
+    // Compact form for the panel selector: no "OTIS: " prefix or ".wav" extension;
+    // a left arrow marks a sample that comes from OTIS.
+    std::string sampleShortLabel() const {
+        if(!uiSample || !uiSample->view.valid()) return "NO SAMPLE";
+        std::string n=uiSample->data.name; bool fromOtis=false;
+        if(n.rfind("OTIS: ",0)==0) { n=n.substr(6); fromOtis=true; }
+        if(n.size()>4) { std::string ext=n.substr(n.size()-4); for(auto& c:ext) c=char(std::tolower(uint8_t(c))); if(ext==".wav") n.resize(n.size()-4); }
+        if(n.empty()) n="SAMPLE";
+        return fromOtis ? "\xe2\x97\x80 "+n : n;
+    }
     std::string sampleLabel() const {
         if(!uiSample || !uiSample->view.valid()) return "NO SAMPLE";
         return uiSample->data.name+(uiSample->data.truncated ? " [TRUNCATED]" : "");
@@ -193,10 +204,24 @@ struct Selector : app::ParamWidget {
         nvgFontFaceId(args.vg,font->handle); nvgFontSize(args.vg,10); nvgTextAlign(args.vg,NVG_ALIGN_CENTER|NVG_ALIGN_MIDDLE);
         nvgFillColor(args.vg,nvgRGB(135,225,200));
         std::string value=q?q->getDisplayValueString():"—";
-        // The SAMPLE wave shows which sample is loaded.
+        // The SAMPLE wave shows which sample is loaded: a short name, marked with an
+        // arrow when it comes from OTIS on the left, truncated rather than shrunk.
+        bool sampleName=false;
         if(q && q->paramId==PITCH_WAVE && choice(q->getValue(),SAMPLE_WAVE)==SAMPLE_WAVE)
-            if(auto* v=dynamic_cast<Vastish*>(module)) value=v->sampleLabel();
-        nvgFontSize(args.vg,std::min(10.f,(box.size.x-8)/std::max(1.f,float(value.size())*.65f)));
+            if(auto* v=dynamic_cast<Vastish*>(module)) { value=v->sampleShortLabel(); sampleName=true; }
+        if(sampleName) {
+            nvgFontSize(args.vg,9);
+            float avail=box.size.x-8; float bounds[4];
+            auto width=[&](const std::string& s) { return nvgTextBounds(args.vg,0,0,s.c_str(),nullptr,bounds); };
+            if(width(value)>avail) {
+                while(value.size()>1 && width(value+"\xe2\x80\xa6")>avail) {
+                    value.pop_back();
+                    while(!value.empty() && (uint8_t(value.back())&0xC0)==0x80) value.pop_back(); // keep UTF-8 whole
+                }
+                value+="\xe2\x80\xa6";
+            }
+        } else
+            nvgFontSize(args.vg,std::min(10.f,(box.size.x-8)/std::max(1.f,float(value.size())*.65f)));
         nvgText(args.vg,box.size.x*.5,box.size.y*.5,value.c_str(),nullptr);
         ParamWidget::draw(args);
     }

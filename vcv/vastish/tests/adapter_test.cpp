@@ -36,6 +36,7 @@ int main() {
         s.params[PITCH_WAVE].setValue(SAMPLE_WAVE); s.inputs[Vastish::GATE_IN].setVoltage(10);
         double energy=0; for(int i=0;i<4800;++i) { s.process(args); energy+=std::pow(s.outputs[0].getVoltage(),2); }
         assert(energy>1e-3 && s.liveSample && s.liveSample->data.name=="three.wav" && s.sampleLabel()=="three.wav");
+        assert(s.sampleShortLabel()=="three");
         assert(s.pendingSample.load()==nullptr && s.retiredSample.load()==nullptr);
         s.publishSample(new SampleSlot(one)); s.process(args);
         assert(s.liveSample->data.name=="one.wav" && s.retiredSample.load()!=nullptr);
@@ -84,6 +85,7 @@ int main() {
         v.followShare(&share);
         assert(v.linkState==Vastish::LINK_CONNECTED && v.uiSample && v.uiSample->data.pcm==fake.pcm);
         assert(v.uiSample->data.rate==fake.rate && v.sampleLabel()=="OTIS: bright-demo.wav");
+        assert(v.sampleShortLabel()=="\xe2\x97\x80 bright-demo");
         int copies=fake.copies; v.followShare(&share); assert(fake.copies==copies); // unchanged: no copy
         fake.rev=3; fake.pcm[0]=1234; v.followShare(&share); assert(fake.copies==copies && v.uiSample->data.pcm[0]==0); // mid-change: wait
         fake.rev=4; v.followShare(&share); assert(v.uiSample->data.pcm[0]==1234); // REWORK/record lands
