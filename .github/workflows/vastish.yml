@@ -1,9 +1,9 @@
 name: Vastish native Linux
 on:
   push:
-    paths: ['vcv/vastish/**', 'vcv/shared/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+    paths: ['vcv/vastish/**', 'vcv/shared/**', 'vcv/otislab/src/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
   pull_request:
-    paths: ['vcv/vastish/**', 'vcv/shared/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+    paths: ['vcv/vastish/**', 'vcv/shared/**', 'vcv/otislab/src/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +28,10 @@ jobs:
           vcv/vastish/tests/engine_test
           (cd vcv/vastish/tests && ./sample_test)
           vcv/vastish/tests/adapter_test
+          # Cross-plugin OTIS link against OtisLab's compiled binary.
+          make -C vcv/otislab -j2 RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/vastish/tests link_test RACK_DIR=/tmp/Rack-SDK
+          (cd vcv/vastish/tests && ./link_test)
           vcv/vastish/tests/reference_compare
           cd vcv/vastish
           LD_LIBRARY_PATH=/tmp/Rack-SDK tests/plugin_test

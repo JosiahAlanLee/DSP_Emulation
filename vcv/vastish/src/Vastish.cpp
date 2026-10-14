@@ -69,6 +69,13 @@ struct Vastish : Module {
         publishSample(new SampleSlot(std::move(m)));
         followedRevision=rev; followedAny=true; sampleError.clear();
     }
+    // Only an OtisLab OTIS Sampler directly to the left, exposing a valid share.
+    static const dspemu::SampleShareV1* findOtisShare(Module* left) {
+        if(!left || !left->model || !left->model->plugin) return nullptr;
+        if(left->model->plugin->slug!="OtisLab" || left->model->slug!="OtisSampler") return nullptr;
+        void* p=left->rightExpander.producerMessage;
+        return dspemu::validShare(p) ? static_cast<const dspemu::SampleShareV1*>(p) : nullptr;
+    }
     void setFollowOtis(bool on) { followOtis=on; followedShare=nullptr; followedAny=false; if(!on) linkState=LINK_OFF; }
     std::string sampleLabel() const {
         if(!uiSample || !uiSample->view.valid()) return "NO SAMPLE";
@@ -254,13 +261,7 @@ struct VastishWidget : ModuleWidget {
     void step() override {
         if(auto* m=dynamic_cast<Vastish*>(module)) {
             m->collectSamples();
-            // Only an OtisLab OTIS Sampler directly to the left, exposing a valid share.
-            const dspemu::SampleShareV1* share=nullptr;
-            if(Module* left=m->leftExpander.module)
-                if(left->model && left->model->plugin && left->model->plugin->slug=="OtisLab" && left->model->slug=="OtisSampler"
-                   && dspemu::validShare(left->rightExpander.producerMessage))
-                    share=static_cast<const dspemu::SampleShareV1*>(left->rightExpander.producerMessage);
-            m->followShare(share);
+            m->followShare(Vastish::findOtisShare(m->leftExpander.module));
         }
         ModuleWidget::step();
     }
