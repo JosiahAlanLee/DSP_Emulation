@@ -39,9 +39,19 @@ inline bool reworkLoop(std::vector<int16_t>& pcm,size_t begin,size_t end,
         float w=float(.5+.5*std::cos(pi*i/seam)), mean=(result[i]+result[n-1-i])*.5f;
         result[i]+=(mean-result[i])*w; result[n-1-i]+=(mean-result[n-1-i])*w;
     }
+    // Overlap-adding uncorrelated grains and normalizing by the summed window
+    // weight averages them, which costs several dB per generation (and the
+    // dry/wet blend of decorrelated material loses more). Match the blended
+    // region's RMS to the source so repeated rework keeps its level.
+    double sourcePower=0,mixPower=0;
+    for(size_t i=0;i<n;++i) {
+        result[i]=source[i]+amount*(result[i]-source[i]);
+        sourcePower+=double(source[i])*source[i]; mixPower+=double(result[i])*result[i];
+    }
+    float gain=mixPower>1e-9 ? clamp(float(std::sqrt(sourcePower/mixPower)),.25f,4.f) : 1.f;
     bool changed=false;
     for(size_t i=0;i<n;++i) {
-        int16_t v=int16_t(clamp<long>(std::lround(source[i]+amount*(result[i]-source[i])),-32768,32767));
+        int16_t v=int16_t(clamp<long>(std::lround(result[i]*gain),-32768,32767));
         changed|=v!=pcm[begin+i]; pcm[begin+i]=v;
     }
     return changed;

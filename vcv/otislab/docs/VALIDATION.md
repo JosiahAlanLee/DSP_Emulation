@@ -28,7 +28,11 @@
   and an illustrated panel, not hardware recordings or a running GUI screenshot.
 
 The rework algorithm is original randomized circular grain overlap/add with
-seam smoothing and a dry/processed blend. No Ensoniq Synthesized Loop algorithm
+seam smoothing, a dry/processed blend, and RMS matching of the blended region
+to the source (±12 dB limit). Before 2.3.1 each generation of the audition lost
+about 4.5 dB (−10.0 to −28.5 dBFS over four generations); with matching it holds
+at −9.9 to −10.0 dBFS, and `window_test` asserts eight generations stay within
+±1 dB at AMOUNT 25/65/100%. Spectral darkening across generations remains. No Ensoniq Synthesized Loop algorithm
 or ESP program is included. Frame changes have no crossfade; reworked PCM uses
 a 5 ms source crossfade before the chip filters. Samples remain mono and shared
 by the voices. There is no rolling live delay buffer. Rack GUI interaction,

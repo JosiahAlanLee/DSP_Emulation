@@ -6,6 +6,9 @@
 > **36 HP**; old parameter and cable IDs are preserved. Legacy mode remains the
 > default and matches 2.2.0 in the regression trace. See [Window and rework](#window-and-rework-230).
 > This is still an ES5505-based sampler, not an ASR-10 or ESP effects emulator.
+>
+> **2.3.1:** REWORK now RMS-matches its result to the source region, so repeated
+> generations keep their level instead of losing ~4.5 dB each time.
 
 
 A VCV Rack 2 module for sampling a modular system and playing samples through
@@ -269,8 +272,11 @@ existing EOC output still emits 1 ms pulses, so very short loops can keep it hig
 REWORK is an original algorithm, **not** a reverse-engineered implementation of
 Ensoniq's Synthesized Loop. It uses deterministic randomized circular grains,
 windowed overlap/add, loop-seam smoothing, and the AMOUNT blend. It adds no new
-noise source and does not normalize the result. Repeated operations can lose
-level and transient detail; each accepted request advances the random seed.
+noise source. The blended region is RMS-matched to the source region (gain
+limited to ±12 dB), so repeated operations keep their level; they still smear
+transients and darken the spectrum, and peaks can rise toward full scale as the
+crest factor changes (int16 hard-clips). Each accepted request advances the
+random seed.
 Samples outside the selected window remain unchanged.
 
 A worker copies and processes the finished sample while playback continues.
@@ -297,7 +303,8 @@ There is no continuous delay/overdub buffer or ASR effects processor in this bui
 
 The delivery's `audition/` directory contains a purpose-made 16-frame source,
 matching continuous/stepped scans, and four successive loop-rework operations.
-These are native offline renders, with no normalization between generations.
+These are native offline renders. Rework generations are level-matched by the
+algorithm itself (2.3.1); no other normalization is applied.
 
 The historical design references are Ensoniq's [ASR-10 Musician's Manual](https://www.samplekings.com/pdfs/ENSONIQ_ASR10%20User%20Manual.pdf),
 Edit/Wave modulation (PDF page 183) and Synthesized Loop (PDF page 192).

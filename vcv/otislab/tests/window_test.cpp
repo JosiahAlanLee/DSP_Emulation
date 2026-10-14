@@ -77,6 +77,17 @@ int main() {
             for(auto v:tiny) assert(v==32767);
         }
         assert(!reworkLoop(a,size_t(-1),a.size(),.5,1,1));
+        auto rms=[](const std::vector<int16_t>& p,size_t b,size_t e) {
+            double s=0; for(size_t i=b;i<e;++i) s+=double(p[i])*p[i]; return std::sqrt(s/double(e-b));
+        };
+        for(float amount:{.25f,.65f,1.f}) { // repeated generations keep their level
+            auto g=source; double reference=rms(source,0,1024);
+            for(int generation=1;generation<=8;++generation) {
+                reworkLoop(g,0,1024,.2f+generation*.08f,amount,100+generation);
+                double dB=20*std::log10(rms(g,0,1024)/reference);
+                assert(dB>-1 && dB<1);
+            }
+        }
     }
     {
         auto e=makeEngine(); LoopMutator worker(*e); e->trigger(0);
