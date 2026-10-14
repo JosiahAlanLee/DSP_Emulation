@@ -42,11 +42,14 @@ jobs:
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |
-          make -j2 RACK_DIR=/tmp/Rack-SDK
-          make dist RACK_DIR=/tmp/Rack-SDK
+          # Failures are echoed as annotations so they are readable without the raw log.
+          report() { tail -n 15 "$1" | while IFS= read -r line; do echo "::error::$line"; done; exit 1; }
+          make -j2 RACK_DIR=/tmp/Rack-SDK > /tmp/build.log 2>&1 || report /tmp/build.log
+          make dist RACK_DIR=/tmp/Rack-SDK > /tmp/dist.log 2>&1 || report /tmp/dist.log
           # The DLL must not depend on MinGW runtime DLLs that Rack does not ship.
-          objdump -p plugin.dll | grep "DLL Name"
-          if objdump -p plugin.dll | grep -Ei "DLL Name: (libstdc|libgcc|libwinpthread)"; then exit 1; fi
+          objdump -p plugin.dll | grep "DLL Name" | tee /tmp/deps.log
+          while IFS= read -r line; do echo "::notice::$line"; done < /tmp/deps.log
+          if grep -Ei "(libstdc|libgcc|libwinpthread)" /tmp/deps.log; then echo "::error::plugin.dll depends on a MinGW runtime DLL"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.plugin }}-win-x64
