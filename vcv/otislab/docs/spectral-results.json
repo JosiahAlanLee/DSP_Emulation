@@ -1,0 +1,86 @@
+[
+  {
+    "hostRate": 44100,
+    "semitones": -12,
+    "expectedHz": 5952.381,
+    "measuredHz": 5952.417,
+    "errorHz": 0.036
+  },
+  {
+    "hostRate": 44100,
+    "semitones": 0,
+    "expectedHz": 11904.762,
+    "measuredHz": 11904.749,
+    "errorHz": 0.013
+  },
+  {
+    "hostRate": 44100,
+    "semitones": 12,
+    "expectedHz": 5952.381,
+    "measuredHz": 5952.501,
+    "errorHz": 0.12
+  },
+  {
+    "hostRate": 44100,
+    "semitones": 24,
+    "expectedHz": 11904.762,
+    "measuredHz": 11905.17,
+    "errorHz": 0.408
+  },
+  {
+    "hostRate": 48000,
+    "semitones": -12,
+    "expectedHz": 5952.381,
+    "measuredHz": 5952.393,
+    "errorHz": 0.012
+  },
+  {
+    "hostRate": 48000,
+    "semitones": 0,
+    "expectedHz": 11904.762,
+    "measuredHz": 11904.785,
+    "errorHz": 0.023
+  },
+  {
+    "hostRate": 48000,
+    "semitones": 12,
+    "expectedHz": 5952.381,
+    "measuredHz": 5952.576,
+    "errorHz": 0.195
+  },
+  {
+    "hostRate": 48000,
+    "semitones": 24,
+    "expectedHz": 11904.762,
+    "measuredHz": 11905.151,
+    "errorHz": 0.389
+  },
+  {
+    "hostRate": 96000,
+    "semitones": -12,
+    "expectedHz": 5952.381,
+    "measuredHz": 5952.393,
+    "errorHz": 0.012
+  },
+  {
+    "hostRate": 96000,
+    "semitones": 0,
+    "expectedHz": 11904.762,
+    "measuredHz": 11904.785,
+    "errorHz": 0.023
+  },
+  {
+    "hostRate": 96000,
+    "semitones": 12,
+    "expectedHz": 5952.381,
+    "measuredHz": 5952.576,
+    "errorHz": 0.195
+  },
+  {
+    "hostRate": 96000,
+    "semitones": 24,
+    "expectedHz": 11904.762,
+    "measuredHz": 11905.151,
+    "errorHz": 0.389
+  }
+]

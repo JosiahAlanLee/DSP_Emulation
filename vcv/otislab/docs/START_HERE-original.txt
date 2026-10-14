@@ -1,0 +1,15 @@
+OTIS SAMPLER — FIRST WORKING PROTOTYPE
+
+1. The .vcvplugin file is the compiled VCV Rack 2 Linux x64 module.
+2. Open Rack's user folder from the Help menu, quit Rack, put the file in
+   plugins-lin-x64, then restart Rack.
+3. Search for OTIS Sampler. Right-click > Load included demo, connect L to
+   your existing audio output, then press PLAY.
+4. Source/OtisLab/README.md has the full controls, ADAT patch instructions,
+   build steps and limitations.
+5. Source/OtisLab/examples/OTIS-start.vcv embeds the demo sample.
+6. Source/OtisLab/examples/pitch-audition.wav plays -24/-12/0/+12/+24 semitones.
+
+No Ensoniq firmware is required. Original ESP effects are not included.
+The binary was tested through Rack's API, not on your ADAT hardware.
+Ubuntu 22.04 or newer / glibc 2.35+ / Linux x86-64; Rack SDK 2.6.4.
