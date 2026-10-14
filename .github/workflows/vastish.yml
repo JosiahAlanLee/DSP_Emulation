@@ -1,0 +1,29 @@
+name: Vastish native Linux
+on:
+  push:
+    paths: ['vcv/vastish/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+  pull_request:
+    paths: ['vcv/vastish/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned Rack SDK and Pd reference
+        run: |
+          curl --fail --location https://vcvrack.com/downloads/Rack-SDK-2.6.4-lin-x64.zip -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+          git clone --depth 1 --branch 0.55-2 https://github.com/pure-data/pure-data.git /tmp/pure-data
+          test "$(git -C /tmp/pure-data rev-parse HEAD)" = 68a30a3e2672d0d57baff7d862d6b611c79d53ec
+      - name: Build and validate
+        run: |
+          make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
+          vcv/vastish/tests/engine_test
+          vcv/vastish/tests/adapter_test
+          vcv/vastish/tests/reference_compare
+          cd vcv/vastish
+          LD_LIBRARY_PATH=/tmp/Rack-SDK tests/plugin_test
+          make dist RACK_DIR=/tmp/Rack-SDK

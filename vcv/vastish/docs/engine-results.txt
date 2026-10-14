@@ -1,0 +1,19 @@
+program=0 sr=44100 eight_voice_cpu_seconds_per_audio_second=0.0483288
+program=1 sr=44100 eight_voice_cpu_seconds_per_audio_second=0.17357
+program=2 sr=44100 eight_voice_cpu_seconds_per_audio_second=0.0697758
+program=3 sr=44100 eight_voice_cpu_seconds_per_audio_second=0.06118
+program=4 sr=44100 eight_voice_cpu_seconds_per_audio_second=0.070721
+program=5 sr=44100 eight_voice_cpu_seconds_per_audio_second=0.06525
+program=0 sr=48000 eight_voice_cpu_seconds_per_audio_second=0.0528686
+program=1 sr=48000 eight_voice_cpu_seconds_per_audio_second=0.165141
+program=2 sr=48000 eight_voice_cpu_seconds_per_audio_second=0.0726431
+program=3 sr=48000 eight_voice_cpu_seconds_per_audio_second=0.0673127
+program=4 sr=48000 eight_voice_cpu_seconds_per_audio_second=0.076911
+program=5 sr=48000 eight_voice_cpu_seconds_per_audio_second=0.0703047
+program=0 sr=96000 eight_voice_cpu_seconds_per_audio_second=0.104565
+program=1 sr=96000 eight_voice_cpu_seconds_per_audio_second=0.360092
+program=2 sr=96000 eight_voice_cpu_seconds_per_audio_second=0.157939
+program=3 sr=96000 eight_voice_cpu_seconds_per_audio_second=0.140606
+program=4 sr=96000 eight_voice_cpu_seconds_per_audio_second=0.165203
+program=5 sr=96000 eight_voice_cpu_seconds_per_audio_second=0.157104
+PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, all function endpoints, zero steady-state allocations

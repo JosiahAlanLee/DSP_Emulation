@@ -1,0 +1,61 @@
+{
+  "reference": "Pure Data 0.55-2; real-time headless render of pd/vastish tools/mkseq.py events",
+  "native": "tests/render, same event list; deterministic native random seeds",
+  "programs": [
+    {
+      "program": 1,
+      "sample_rate": 44100,
+      "pd_frames": 220480,
+      "native_frames": 220500,
+      "pd_peak": 0.4095458984375,
+      "native_peak": 0.42524445056915283,
+      "pd_stereo_rms": 0.08467308647963567,
+      "native_stereo_rms": 0.0846005454659462,
+      "rms_difference_percent": -0.08567186659355075
+    },
+    {
+      "program": 2,
+      "sample_rate": 44100,
+      "pd_frames": 352768,
+      "native_frames": 352800,
+      "pd_peak": 0.5980224609375,
+      "native_peak": 0.5947952270507812,
+      "pd_stereo_rms": 0.10912217500541163,
+      "native_stereo_rms": 0.10907579958438873,
+      "rms_difference_percent": -0.042498622319975254
+    },
+    {
+      "program": 3,
+      "sample_rate": 44100,
+      "pd_frames": 286656,
+      "native_frames": 286650,
+      "pd_peak": 0.3126220703125,
+      "native_peak": 0.3403758704662323,
+      "pd_stereo_rms": 0.061110122730194054,
+      "native_stereo_rms": 0.06110965088009834,
+      "rms_difference_percent": -0.0007721308264985183
+    },
+    {
+      "program": 4,
+      "sample_rate": 44100,
+      "pd_frames": 379264,
+      "native_frames": 379260,
+      "pd_peak": 0.5360107421875,
+      "native_peak": 0.5269957780838013,
+      "pd_stereo_rms": 0.13349415104801055,
+      "native_stereo_rms": 0.13326480984687805,
+      "rms_difference_percent": -0.1717986888054801
+    },
+    {
+      "program": 5,
+      "sample_rate": 44100,
+      "pd_frames": 255808,
+      "native_frames": 255780,
+      "pd_peak": 0.767425537109375,
+      "native_peak": 0.8557507991790771,
+      "pd_stereo_rms": 0.03808302643673281,
+      "native_stereo_rms": 0.040955059230327606,
+      "rms_difference_percent": 7.5415035576704925
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+bob~ sr=44100 max_abs=0
+lop~ sr=44100 max_abs=2.38419e-07
+hip~ sr=44100 max_abs=0
+cos~ sr=44100 max_abs=0
+delread4~ feedback sr=44100 max_abs=3.46899e-05
+vcf~ sr=44100 Q=0.5 max_abs=0
+vcf~ sr=44100 Q=2.5 max_abs=2.38419e-07
+vcf~ sr=44100 Q=40 max_abs=1.19209e-07
+bob~ sr=48000 max_abs=0
+lop~ sr=48000 max_abs=1.19209e-07
+hip~ sr=48000 max_abs=0
+cos~ sr=48000 max_abs=0
+delread4~ feedback sr=48000 max_abs=3.46899e-05
+vcf~ sr=48000 Q=0.5 max_abs=0
+vcf~ sr=48000 Q=2.5 max_abs=2.38419e-07
+vcf~ sr=48000 Q=40 max_abs=1.3411e-07
+bob~ sr=96000 max_abs=0
+lop~ sr=96000 max_abs=1.49012e-07
+hip~ sr=96000 max_abs=0
+cos~ sr=96000 max_abs=0
+delread4~ feedback sr=96000 max_abs=3.46899e-05
+vcf~ sr=96000 Q=0.5 max_abs=3.72529e-08
+vcf~ sr=96000 Q=2.5 max_abs=2.08616e-07
+vcf~ sr=96000 Q=40 max_abs=2.68221e-07
+PASS unmodified Pd 0.55-2 primitive comparison

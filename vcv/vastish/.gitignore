@@ -1,0 +1,13 @@
+/build/
+/dist/
+/plugin.so
+/plugin.dylib
+/plugin.dll
+/tests/engine_test
+/tests/plugin_test
+/tests/adapter_test
+/tests/render
+/tests/reference_compare
+/tests/*.o
+/docs/panel-preview.png
+/renders/

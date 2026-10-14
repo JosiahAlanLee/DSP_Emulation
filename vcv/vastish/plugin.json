@@ -1,0 +1,14 @@
+{
+  "slug": "VastishLab",
+  "name": "VastishLab",
+  "version": "2.0.0",
+  "license": "BSD-3-Clause",
+  "brand": "VastishLab",
+  "author": "DSP_Emulation contributors",
+  "modules": [{
+    "slug": "Vastish",
+    "name": "Vastish",
+    "description": "Native eight-voice port of the Pd Vastish synth: six routing algorithms, fourteen functions, modulation matrix and six programs.",
+    "tags": ["Synth voice", "Polyphonic", "Waveshaper", "Filter"]
+  }]
+}

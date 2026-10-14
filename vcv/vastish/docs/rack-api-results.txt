@@ -1,0 +1,1 @@
+PASS: compiled Rack plugin load, eight-channel pitch/gate, mono velocity/MOD broadcast, disconnect release, patch serialization, nonfinite CV containment
