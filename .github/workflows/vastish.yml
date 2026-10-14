@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Install libRack runtime dependencies
+        # libRack.so needs JACK and PulseAudio client libraries to load, even headless.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libjack-jackd2-0 libpulse0 zstd jq
       - name: Fetch pinned Rack SDK and Pd reference
         run: |
           curl --fail --location https://vcvrack.com/downloads/Rack-SDK-2.6.4-lin-x64.zip -o /tmp/rack-sdk.zip
