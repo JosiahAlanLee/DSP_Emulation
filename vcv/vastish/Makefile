@@ -7,6 +7,6 @@ EXTRA_FLAGS += -fno-unsafe-math-optimizations
 # or libwinpthread-1.dll, so a plugin.dll that imports them fails to load.
 include $(RACK_DIR)/arch.mk
 ifdef ARCH_WIN
-	EXTRA_LDFLAGS += -static-libgcc -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic
+	EXTRA_LDFLAGS += -static-libgcc -Wl,-Bstatic -lstdc++ -lwinpthread -Wl,-Bdynamic
 endif
 include $(RACK_DIR)/plugin.mk
