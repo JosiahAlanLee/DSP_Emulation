@@ -1,14 +1,20 @@
 {
   "slug": "OtisLab",
   "name": "OtisLab",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "license": "BSD-3-Clause",
   "brand": "OtisLab",
   "author": "OtisLab contributors",
-  "modules": [{
-    "slug": "OtisSampler",
-    "name": "OTIS Sampler",
-    "description": "CV sampler with MAME-derived ES5505 playback arithmetic. Prototype; no Ensoniq firmware required.",
-    "tags": ["Sampler", "Polyphonic", "Recording"]
-  }]
+  "modules": [
+    {
+      "slug": "OtisSampler",
+      "name": "OTIS Sampler",
+      "description": "CV sampler with MAME-derived ES5505 playback arithmetic. Prototype; no Ensoniq firmware required.",
+      "tags": [
+        "Sampler",
+        "Polyphonic",
+        "Recording"
+      ]
+    }
+  ]
 }

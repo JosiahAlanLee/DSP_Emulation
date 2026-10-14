@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "engine/OtisEngine.hpp"
+#include "engine/LoopMutator.hpp"
 #include "engine/Wav.hpp"
 #include <osdialog.h>
 #include <mutex>
@@ -7,17 +8,18 @@
 
 struct OtisSampler : Module {
     // CLOCK and INTERP (LAB column) are appended so existing patches keep their parameter ids.
-    enum Params { PITCH, START, END, K1, K2, RECORD_GAIN, OUTPUT_GAIN, CAPTURE_RATE, PLAY, RECORD, LOOP, REVERSE, CLOCK, INTERP, NUM_PARAMS };
+    enum Params { PITCH, START, END, K1, K2, RECORD_GAIN, OUTPUT_GAIN, CAPTURE_RATE, PLAY, RECORD, LOOP, REVERSE, CLOCK, INTERP, POSITION, SIZE, WINDOW_MODE, SMOOTHNESS, MUTATION_AMOUNT, MUTATE, NUM_PARAMS };
     // LEVEL_IN is appended so existing patches keep their cable ids.
-    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, NUM_INPUTS };
+    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, POSITION_IN, SIZE_IN, MUTATE_IN, MUTATION_AMOUNT_IN, NUM_INPUTS };
     enum Outputs { LEFT_OUT, RIGHT_OUT, EOC_OUT, POSITION_OUT, NUM_OUTPUTS };
-    enum Lights { PLAY_LIGHT, RECORD_LIGHT, FULL_LIGHT, NUM_LIGHTS };
+    enum Lights { PLAY_LIGHT, RECORD_LIGHT, FULL_LIGHT, MUTATION_LIGHT, NUM_LIGHTS };
     otis::Engine engine;
+    otis::LoopMutator mutator{engine};
     std::mutex engineMutex;
     std::mutex nameMutex;
     std::array<dsp::SchmittTrigger,16> gates;
     dsp::SchmittTrigger playButton;
-    dsp::SchmittTrigger recordGate;
+    dsp::SchmittTrigger recordGate,mutationGate;
     bool previousRecord=false, previousReverse=false;
     std::atomic<bool> gated{false};
     std::atomic<bool> linearLevel{false}, declick{true}, varispeed{false};
@@ -40,6 +42,12 @@ struct OtisSampler : Module {
         configParam(K2,0,1,1,"Filter K2 coefficient","%",0,100);
         configParam(CLOCK,-6,3,0,"LAB chip clock offset (0 = authentic; double-click to reset)"," oct");
         configParam(INTERP,0,9,9,"LAB interpolation bits (9 = chip; 0 = drop-sample)"," bits");
+        configParam(POSITION,0,1,0,"LAB window position / frame selection","%",0,100);
+        configParam(SIZE,1,16,8,"LAB window size (CV = octaves of samples)"," samples",2);
+        configSwitch(WINDOW_MODE,0,2,0,"LAB window addressing",{"Legacy segment","Fixed-size scan","Transwave-style frames"});
+        configParam(SMOOTHNESS,0,1,.5,"LAB loop rework: coarse to fine","%",0,100);
+        configParam(MUTATION_AMOUNT,0,1,.5,"LAB loop rework amount","%",0,100);
+        configButton(MUTATE,"Rework selected voice-1 window (original experimental algorithm)");
         configParam(RECORD_GAIN,0,4,1,"Recording gain","x");
         configParam(OUTPUT_GAIN,0,2,1,"Output gain","x");
         configSwitch(CAPTURE_RATE,0,6,5,"Capture rate",{"11.16 kHz","12.76 kHz","14.88 kHz","17.86 kHz","22.32 kHz","29.76 kHz","44.64 kHz"});
@@ -57,6 +65,10 @@ struct OtisSampler : Module {
         configInput(K2_IN,"K2 CV, polyphonic per voice (0–10 V adds 0–100%)");
         configInput(CLOCK_IN,"LAB chip clock CV, 1 V/oct added to CLOCK");
         configInput(INTERP_IN,"LAB interpolation CV, 1.1 V per bit added to INTERP");
+        configInput(POSITION_IN,"LAB window position / frame selection, polyphonic (0–10 V)");
+        configInput(SIZE_IN,"LAB window size, polyphonic (1 V doubles sample count)");
+        configInput(MUTATE_IN,"Rework selected voice-1 window on rising gate (2 V)");
+        configInput(MUTATION_AMOUNT_IN,"Rework amount CV (0–10 V), latched on trigger");
         configInput(LEVEL_IN,"VCA: per-voice chip volume, polyphonic (0–10 V; 10 V = unity; unpatched = unity)");
         configOutput(LEFT_OUT,"Audio L (mono)"); configOutput(RIGHT_OUT,"Audio R (same mono signal)");
         configOutput(EOC_OUT,"End / loop crossing (1 ms, 10 V)");
@@ -101,7 +113,10 @@ struct OtisSampler : Module {
         for(int i=0;i<16;i++) {
             c.startv[i]=otis::clamp(params[START].getValue()+inputs[START_IN].getPolyVoltage(i)/10,0.f,1.f);
             c.endv[i]=otis::clamp(params[END].getValue()+inputs[END_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.position[i]=otis::clamp(params[POSITION].getValue()+inputs[POSITION_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.sizeOctaves[i]=otis::clamp(params[SIZE].getValue()+inputs[SIZE_IN].getPolyVoltage(i),1.f,16.f);
         }
+        c.windowMode=int(params[WINDOW_MODE].getValue());
         c.start=c.startv[0]; c.end=c.endv[0];
         // LAB: a tiny dead band keeps a re-centred knob on the authentic clock path.
         float clock=params[CLOCK].getValue()+inputs[CLOCK_IN].getVoltage();
@@ -132,6 +147,13 @@ struct OtisSampler : Module {
             if(wasHigh && !gates[i].isHigh()) engine.release(i);
         }
         if(playButton.process(params[PLAY].getValue())) engine.trigger(0);
+        float mutateVoltage=std::max(params[MUTATE].getValue()*10.f,inputs[MUTATE_IN].getVoltage());
+        if(mutationGate.process(mutateVoltage,.1f,2.f)) {
+            auto window=engine.windowFor(0);
+            float amount=otis::clamp(params[MUTATION_AMOUNT].getValue()+inputs[MUTATION_AMOUNT_IN].getVoltage()/10,0.f,1.f);
+            mutator.request(window.begin,window.end,params[SMOOTHNESS].getValue(),amount);
+        }
+        mutator.service();
         bool wasRecording=engine.recording;
         float out=engine.process(inputs[AUDIO_IN].getVoltage()/5.f)*5.f;
         if(wasRecording && !engine.recording && engine.frames>=2) liveSample=true;
@@ -139,6 +161,7 @@ struct OtisSampler : Module {
         outputs[LEFT_OUT].setVoltage(out); outputs[RIGHT_OUT].setVoltage(out);
         outputs[EOC_OUT].setVoltage(engine.endPulse>0 ? 10.f : 0.f);
         outputs[POSITION_OUT].setVoltage(engine.position()*10.f);
+        lights[MUTATION_LIGHT].setBrightness(mutator.busy());
         lights[PLAY_LIGHT].setBrightness(engine.playing()); lights[RECORD_LIGHT].setBrightness(engine.recording); lights[FULL_LIGHT].setBrightness(engine.recordFull);
         refreshDisplay();
     }
@@ -149,12 +172,12 @@ struct OtisSampler : Module {
     }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e);
-        std::lock_guard<std::mutex> guard(engineMutex); engine.stopAll();
+        std::lock_guard<std::mutex> guard(engineMutex); mutator.cancel(); engine.stopAll(); engine.clearPcmFade();
         if(engine.recording && engine.recordFrames>=2) liveSample=true;
         engine.stopRecord();
         engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; varispeed=false; recordSource=0; previousRecord=false; previousReverse=false;
         for(auto& gate:gates) gate.reset();
-        recordGate.reset(); playButton.reset(); refreshDisplay();
+        recordGate.reset(); mutationGate.reset(); playButton.reset(); refreshDisplay();
     }
     json_t* dataToJson() override {
         // Called on every Rack autosave. Reuse the encoded sample unless it changed, and never hold
@@ -178,6 +201,7 @@ struct OtisSampler : Module {
         return root;
     }
     void dataFromJson(json_t* root) override {
+        mutator.cancel();
         try {
             engineMode=int(otis::clamp<json_int_t>(json_integer_value(json_object_get(root,"engineMode")),0,2));
             auto fm=json_object_get(root,"filterMode"); filterMode=fm ? int(otis::clamp<json_int_t>(json_integer_value(fm),0,3)) : 2;
@@ -219,6 +243,19 @@ struct SampleDisplay : widget::Widget {
             status=string::f("%s %.2fs  %.2fk  / CHIP %.2fk",module->displayedRecording.load() ? "REC" : "PCM",frames/rate,rate/1000,otis::chipRates[module->engineMode.load()]/1000);
         }
         nvgText(args.vg,0,19,status.c_str(),nullptr);
+        if(module) {
+            nvgFontSize(args.vg,9);
+            const char* message=module->mutator.busy() ? "REWORK: BUSY" : "REWORK: READY";
+            if(!module->mutator.busy()) switch(module->mutator.lastOutcome()) {
+                case otis::LoopMutator::Applied: message="REWORK: APPLIED"; break;
+                case otis::LoopMutator::SourceChanged: message="REWORK: SOURCE CHANGED"; break;
+                case otis::LoopMutator::NoChange: message="REWORK: UNCHANGED"; break;
+                case otis::LoopMutator::Failed: message="REWORK: FAILED"; break;
+                case otis::LoopMutator::Unavailable: message="REWORK: NEED FINISHED SAMPLE"; break;
+                case otis::LoopMutator::Canceled: message="REWORK: CANCELED"; break;
+            }
+            nvgText(args.vg,319,0,message,nullptr);
+        }
     }
 };
 struct OtisSamplerWidget : ModuleWidget {
@@ -226,7 +263,7 @@ struct OtisSamplerWidget : ModuleWidget {
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance,"res/OtisSampler.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(box.size.x-15,0)));
         addChild(createWidget<ScrewSilver>(Vec(0,365))); addChild(createWidget<ScrewSilver>(Vec(box.size.x-15,365)));
-        auto display=new SampleDisplay; display->module=module; display->box.pos=Vec(16,54); display->box.size=Vec(300,40); addChild(display);
+        auto display=new SampleDisplay; display->module=module; display->box.pos=Vec(16,54); display->box.size=Vec(508,40); addChild(display);
         const int first[4]={OtisSampler::PITCH,OtisSampler::START,OtisSampler::END,OtisSampler::K1};
         const int second[4]={OtisSampler::CAPTURE_RATE,OtisSampler::RECORD_GAIN,OtisSampler::OUTPUT_GAIN,OtisSampler::K2};
         for(int i=0;i<4;i++) {
@@ -241,6 +278,17 @@ struct OtisSamplerWidget : ModuleWidget {
         if(module) module->getParamQuantity(OtisSampler::INTERP)->snapEnabled=true;
         addInput(createInputCentered<PJ301MPort>(Vec(360,292),module,OtisSampler::CLOCK_IN));
         addInput(createInputCentered<PJ301MPort>(Vec(360,341),module,OtisSampler::INTERP_IN));
+        addParam(createParamCentered<RoundBlackKnob>(Vec(435,125),module,OtisSampler::POSITION));
+        addParam(createParamCentered<RoundBlackKnob>(Vec(435,187),module,OtisSampler::SIZE));
+        addParam(createParamCentered<CKSSThree>(Vec(435,242),module,OtisSampler::WINDOW_MODE));
+        addInput(createInputCentered<PJ301MPort>(Vec(435,292),module,OtisSampler::POSITION_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(435,341),module,OtisSampler::SIZE_IN));
+        addParam(createParamCentered<RoundBlackKnob>(Vec(510,125),module,OtisSampler::SMOOTHNESS));
+        addParam(createParamCentered<RoundBlackKnob>(Vec(510,187),module,OtisSampler::MUTATION_AMOUNT));
+        addParam(createParamCentered<LEDButton>(Vec(510,242),module,OtisSampler::MUTATE));
+        addChild(createLightCentered<SmallLight<YellowLight>>(Vec(529,242),module,OtisSampler::MUTATION_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(510,292),module,OtisSampler::MUTATE_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(510,341),module,OtisSampler::MUTATION_AMOUNT_IN));
         addParam(createParamCentered<LEDButton>(Vec(45,242),module,OtisSampler::PLAY));
         addChild(createLightCentered<MediumLight<GreenLight>>(Vec(45,242),module,OtisSampler::PLAY_LIGHT));
         addParam(createParamCentered<CKSS>(Vec(125,242),module,OtisSampler::RECORD));
@@ -293,6 +341,10 @@ struct OtisSamplerWidget : ModuleWidget {
             const char* names[4]={"2 low-pass + 2 high-pass","3 low-pass + 1 high-pass","4 low-pass (K1 / K1 / K2 / K2)","4 low-pass (K1 / K1 / K1 / K2)"};
             for(int i=0;i<4;i++) child->addChild(createCheckMenuItem(names[i],"",[m,i](){return m->filterMode.load()==i;},[m,i](){m->filterMode=i;}));
         }));
+        menu->addChild(createMenuItem("Cancel pending loop rework","",[m](){m->mutator.cancel();}));
+        menu->addChild(createMenuLabel("WINDOW: legacy / fixed-size scan / frame steps."));
+        menu->addChild(createMenuLabel("REWORK replaces voice 1's selected window; repeated triggers while busy are ignored."));
+        menu->addChild(createMenuLabel("REWORK is an original experiment, not ASR Synthesized Loop emulation."));
         menu->addChild(createMenuLabel("Samples are embedded in saved patches."));
         menu->addChild(createMenuLabel("Prototype • original ESP effects not included."));
     }
