@@ -4,6 +4,7 @@ on:
     paths: ['vcv/vastish/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
   pull_request:
     paths: ['vcv/vastish/**', 'pd/vastish/tools/gen_vastish.py', '.github/workflows/vastish.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -30,3 +31,9 @@ jobs:
           cd vcv/vastish
           LD_LIBRARY_PATH=/tmp/Rack-SDK tests/plugin_test
           make dist RACK_DIR=/tmp/Rack-SDK
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: VastishLab-lin-x64
+          path: vcv/vastish/dist/*.vcvplugin
+          if-no-files-found: error

@@ -6,9 +6,10 @@
 #include <atomic>
 
 struct OtisSampler : Module {
-    enum Params { PITCH, START, END, K1, K2, RECORD_GAIN, OUTPUT_GAIN, CAPTURE_RATE, PLAY, RECORD, LOOP, REVERSE, NUM_PARAMS };
+    // CLOCK and INTERP (LAB column) are appended so existing patches keep their parameter ids.
+    enum Params { PITCH, START, END, K1, K2, RECORD_GAIN, OUTPUT_GAIN, CAPTURE_RATE, PLAY, RECORD, LOOP, REVERSE, CLOCK, INTERP, NUM_PARAMS };
     // LEVEL_IN is appended so existing patches keep their cable ids.
-    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, NUM_INPUTS };
+    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, NUM_INPUTS };
     enum Outputs { LEFT_OUT, RIGHT_OUT, EOC_OUT, POSITION_OUT, NUM_OUTPUTS };
     enum Lights { PLAY_LIGHT, RECORD_LIGHT, FULL_LIGHT, NUM_LIGHTS };
     otis::Engine engine;
@@ -19,7 +20,8 @@ struct OtisSampler : Module {
     dsp::SchmittTrigger recordGate;
     bool previousRecord=false, previousReverse=false;
     std::atomic<bool> gated{false};
-    std::atomic<bool> linearLevel{false}, declick{true};
+    std::atomic<bool> linearLevel{false}, declick{true}, varispeed{false};
+    std::atomic<int> recordSource{0};
     // UI-thread cache of the encoded sample, keyed by the engine's sample sequence counter.
     bool pcmCacheValid=false; uint32_t pcmCacheSequence=0; double pcmCacheRate=0; std::string pcmCacheText;
     std::atomic<int> engineMode{0},filterMode{2};
@@ -36,6 +38,8 @@ struct OtisSampler : Module {
         configParam(END,0,1,1,"End / loop end","%",0,100);
         configParam(K1,0,1,1,"Filter K1 coefficient","%",0,100);
         configParam(K2,0,1,1,"Filter K2 coefficient","%",0,100);
+        configParam(CLOCK,-6,3,0,"LAB chip clock offset (0 = authentic; double-click to reset)"," oct");
+        configParam(INTERP,0,9,9,"LAB interpolation bits (9 = chip; 0 = drop-sample)"," bits");
         configParam(RECORD_GAIN,0,4,1,"Recording gain","x");
         configParam(OUTPUT_GAIN,0,2,1,"Output gain","x");
         configSwitch(CAPTURE_RATE,0,6,5,"Capture rate",{"11.16 kHz","12.76 kHz","14.88 kHz","17.86 kHz","22.32 kHz","29.76 kHz","44.64 kHz"});
@@ -47,10 +51,12 @@ struct OtisSampler : Module {
         configInput(PITCH_IN,"Pitch (1 V/oct; 0 V = original pitch)");
         configInput(GATE_IN,"Play gate / trigger (polyphonic)");
         configInput(RECORD_IN,"Record gate (high = record)");
-        configInput(START_IN,"Start CV (0–10 V adds 0–100%)");
-        configInput(END_IN,"End CV (0–10 V adds 0–100%)");
+        configInput(START_IN,"Start CV, polyphonic per voice (0–10 V adds 0–100%)");
+        configInput(END_IN,"End CV, polyphonic per voice (0–10 V adds 0–100%)");
         configInput(K1_IN,"K1 CV, polyphonic per voice (0–10 V adds 0–100%)");
         configInput(K2_IN,"K2 CV, polyphonic per voice (0–10 V adds 0–100%)");
+        configInput(CLOCK_IN,"LAB chip clock CV, 1 V/oct added to CLOCK");
+        configInput(INTERP_IN,"LAB interpolation CV, 1.1 V per bit added to INTERP");
         configInput(LEVEL_IN,"VCA: per-voice chip volume, polyphonic (0–10 V; 10 V = unity; unpatched = unity)");
         configOutput(LEFT_OUT,"Audio L (mono)"); configOutput(RIGHT_OUT,"Audio R (same mono signal)");
         configOutput(EOC_OUT,"End / loop crossing (1 ms, 10 V)");
@@ -92,8 +98,16 @@ struct OtisSampler : Module {
         if(!guard.owns_lock()) { for(auto& output:outputs) output.setVoltage(0); return; }
         auto& c=engine.controls;
         c.engineMode=engineMode.load(std::memory_order_relaxed); c.filterMode=filterMode.load(std::memory_order_relaxed); c.gated=gated.load(std::memory_order_relaxed);
-        c.start=otis::clamp(params[START].getValue()+inputs[START_IN].getVoltage()/10,0.f,1.f);
-        c.end=otis::clamp(params[END].getValue()+inputs[END_IN].getVoltage()/10,0.f,1.f);
+        for(int i=0;i<16;i++) {
+            c.startv[i]=otis::clamp(params[START].getValue()+inputs[START_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.endv[i]=otis::clamp(params[END].getValue()+inputs[END_IN].getPolyVoltage(i)/10,0.f,1.f);
+        }
+        c.start=c.startv[0]; c.end=c.endv[0];
+        // LAB: a tiny dead band keeps a re-centred knob on the authentic clock path.
+        float clock=params[CLOCK].getValue()+inputs[CLOCK_IN].getVoltage();
+        c.clockOctaves=std::abs(clock)<.005f ? 0.f : clock;
+        c.interpBits=int(std::lround(otis::clamp(params[INTERP].getValue()+inputs[INTERP_IN].getVoltage()/1.1f,0.f,9.f)));
+        c.varispeed=varispeed.load(std::memory_order_relaxed); c.recordSource=recordSource.load(std::memory_order_relaxed);
         bool levelPatched=inputs[LEVEL_IN].isConnected();
         for(int i=0;i<16;i++) {
             c.k1v[i]=otis::clamp(params[K1].getValue()+inputs[K1_IN].getPolyVoltage(i)/10,0.f,1.f);
@@ -138,7 +152,7 @@ struct OtisSampler : Module {
         std::lock_guard<std::mutex> guard(engineMutex); engine.stopAll();
         if(engine.recording && engine.recordFrames>=2) liveSample=true;
         engine.stopRecord();
-        engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; previousRecord=false; previousReverse=false;
+        engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; varispeed=false; recordSource=0; previousRecord=false; previousReverse=false;
         for(auto& gate:gates) gate.reset();
         recordGate.reset(); playButton.reset(); refreshDisplay();
     }
@@ -160,6 +174,7 @@ struct OtisSampler : Module {
         json_object_set_new(root,"pcm16le",json_string(pcmCacheText.c_str()));
         json_object_set_new(root,"engineMode",json_integer(engineMode.load())); json_object_set_new(root,"filterMode",json_integer(filterMode.load())); json_object_set_new(root,"gated",json_boolean(gated.load()));
         json_object_set_new(root,"linearLevel",json_boolean(linearLevel.load())); json_object_set_new(root,"declick",json_boolean(declick.load()));
+        json_object_set_new(root,"varispeed",json_boolean(varispeed.load())); json_object_set_new(root,"recordSource",json_integer(recordSource.load()));
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -168,6 +183,8 @@ struct OtisSampler : Module {
             auto fm=json_object_get(root,"filterMode"); filterMode=fm ? int(otis::clamp<json_int_t>(json_integer_value(fm),0,3)) : 2;
             gated=json_is_true(json_object_get(root,"gated"));
             linearLevel=json_is_true(json_object_get(root,"linearLevel"));
+            varispeed=json_is_true(json_object_get(root,"varispeed"));
+            auto rs=json_object_get(root,"recordSource"); recordSource=rs ? int(otis::clamp<json_int_t>(json_integer_value(rs),0,2)) : 0;
             auto dc=json_object_get(root,"declick"); declick=dc ? json_is_true(dc) : true;
             auto text=json_string_value(json_object_get(root,"pcm16le"));
             if(text && *text) {
@@ -218,6 +235,12 @@ struct OtisSamplerWidget : ModuleWidget {
             auto knob=createParamCentered<RoundBlackKnob>(Vec(x,187),module,second[i]); addParam(knob);
             if(module && i==0) module->getParamQuantity(second[i])->snapEnabled=true;
         }
+        // LAB column (x = 360): CLOCK and INTERP knobs, their CV inputs below.
+        addParam(createParamCentered<RoundBlackKnob>(Vec(360,125),module,OtisSampler::CLOCK));
+        auto interp=createParamCentered<RoundBlackKnob>(Vec(360,187),module,OtisSampler::INTERP); addParam(interp);
+        if(module) module->getParamQuantity(OtisSampler::INTERP)->snapEnabled=true;
+        addInput(createInputCentered<PJ301MPort>(Vec(360,292),module,OtisSampler::CLOCK_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(360,341),module,OtisSampler::INTERP_IN));
         addParam(createParamCentered<LEDButton>(Vec(45,242),module,OtisSampler::PLAY));
         addChild(createLightCentered<MediumLight<GreenLight>>(Vec(45,242),module,OtisSampler::PLAY_LIGHT));
         addParam(createParamCentered<CKSS>(Vec(125,242),module,OtisSampler::RECORD));
@@ -248,6 +271,16 @@ struct OtisSamplerWidget : ModuleWidget {
         menu->addChild(new MenuSeparator);
         menu->addChild(createBoolMenuItem("Gate release stops playback (default: one-shot)","",[m](){return m->gated.load();},[m](bool b){m->gated=b;}));
         menu->addChild(createBoolMenuItem("Declick release/retrigger (1.5 ms fades)","",[m](){return m->declick.load();},[m](bool b){m->declick=b;}));
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("LAB (not EPS behaviour)"));
+        menu->addChild(createSubmenuItem("CLOCK knob moves","",[m](Menu* child) {
+            child->addChild(createCheckMenuItem("Resolution only (pitch held)","",[m](){return !m->varispeed.load();},[m](){m->varispeed=false;}));
+            child->addChild(createCheckMenuItem("Varispeed (pitch follows clock)","",[m](){return m->varispeed.load();},[m](){m->varispeed=true;}));
+        }));
+        menu->addChild(createSubmenuItem("Record source","",[m](Menu* child) {
+            const char* names[3]={"AUDIO input","Own output (resample)","AUDIO + own output"};
+            for(int i=0;i<3;i++) child->addChild(createCheckMenuItem(names[i],"",[m,i](){return m->recordSource.load()==i;},[m,i](){m->recordSource=i;}));
+        }));
         menu->addChild(createSubmenuItem("VCA CV response","",[m](Menu* child) {
             child->addChild(createCheckMenuItem("Chip log (10 V = unity, ~6 dB per 0.52 V)","",[m](){return !m->linearLevel.load();},[m](){m->linearLevel=false;}));
             child->addChild(createCheckMenuItem("Linear amplitude (via chip volume steps)","",[m](){return m->linearLevel.load();},[m](){m->linearLevel=true;}));

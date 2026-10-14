@@ -1,10 +1,12 @@
 # OTIS Sampler — first working prototype
 
-> **2.1.1 in this repo (2026-10-14):** fixes the 2.1.0 sample snapshot data race
-> while retaining its per-voice VCA, polyphonic filter CV and optional declick fades.
-> Finished samples are copied under a separate lock; the audio thread keeps playing
-> and defers capture publication instead of waiting. Build this version from source;
-> the original 2.0.0 prebuilt binary predates these changes.
+> **2.2.0 in this repo (2026-10-14):** adds a LAB column of deliberately non-authentic
+> controls (continuous chip clock, interpolation bit depth, resample-feedback recording,
+> polyphonic START/END) on top of 2.1.x's per-voice VCA, polyphonic filter CV, declick fades
+> and lock-safe sample snapshots. With LAB controls at their defaults the engine output is
+> bit-identical to 2.1.1. See [LAB controls](#lab-controls-220). Prebuilt Linux plugins come
+> from the repository's GitHub Actions runs (artifact **OtisLab-lin-x64**); the original 2.0.0
+> binary is not included.
 
 A VCV Rack 2 module for sampling a modular system and playing samples through
 MAME-derived ES5505 integer interpolation and filter arithmetic. Built for an
@@ -213,3 +215,24 @@ Verification for these changes is in [docs/VALIDATION.md](docs/VALIDATION.md#210
   optional hard cut, including silence after converter latency.
 - Added deterministic pinned-buffer and concurrent-generation regression tests,
   plus a `make -C tests thread-sanitize` target.
+
+## LAB controls (2.2.0)
+
+These are extensions, not EPS behaviour. The panel is now 26 HP; the right-hand column holds them.
+At their defaults (CLOCK 0, INTERP 9, record source AUDIO) output is bit-identical to 2.1.1.
+
+| Control | Behavior |
+|---|---|
+| **CLOCK** | Chip clock offset in octaves from the selected chip-clock mode (−6 to +3), plus **CLK CV** at 1 V/oct. Polyphony stays with the mode. Range is clamped to 1 kHz – min(4 × host rate, 400 kHz). A 0.005-octave dead band around 0 returns to the authentic path; double-click the knob to reset |
+| CLOCK knob moves (menu) | **Resolution only** (default): pitch is held, so lowering the clock folds content above the new Nyquist back down and raising it cleans transposition up. **Varispeed**: pitch follows the clock, like a tape or sampler clock change. In resolution mode, pitch increments still clamp at the chip's ~32x register limit, so very low clocks with high sample rates can go flat |
+| **INTERP** | Fraction bits used between samples, 0–9, plus **INT CV** (about 1.1 V per bit). 9 is the chip; 0 is drop-sample playback, which adds stepped, zippery transposition artifacts |
+| **START / END CV** | Now polyphonic: each voice gets its own segment and loop points. Modulating loop points at audio rate per voice gives transwave/wavetable-style scanning |
+| Record source (menu) | **AUDIO input** (default), **Own output** (resample: record what OTIS is playing, through the capture filter and 16-bit quantization), or **AUDIO + own output**. Recording the module's own output and replaying it repeatedly accumulates generation loss |
+
+Notes:
+- The LAB clock path uses its own output converter (nine precomputed anti-alias cutoffs,
+  512 phases); switching between it and the authentic converter hands over the filter
+  history so there is no click. Kernels are built off the audio thread.
+- K1/K2 and VCA CV were already sampled every host sample since 2.1.0, so audio-rate
+  filter-coefficient and volume-table modulation needs no extra mode: patch audio into
+  K1/K2 or VCA.

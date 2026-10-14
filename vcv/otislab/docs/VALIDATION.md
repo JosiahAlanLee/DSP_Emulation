@@ -156,3 +156,25 @@ Checked 2026-10-14 by a second reviewer (Claude), separately from the 2.0.0 chec
   deterministic playback, CV recording, declicked gate release and optional hard
   gate release. The default fade is allowed to finish before checking silence.
 - No live Rack GUI, PipeWire or ADAT hardware test is claimed.
+
+## 2.2.0 LAB controls
+
+- Regression: a scenario covering all three chip-clock modes, all four filter topologies,
+  three host rates, eight transposed voices with per-voice K1/K2/VCA, a gated release,
+  a retrigger and a live recording renders byte-identically with 2.1.1 when LAB controls
+  are at their defaults.
+- The randomized ES5505 comparison against the mardlib core (12 million samples, random
+  volume registers) still shows zero mismatches.
+- `tests/lab_test.cpp`: pitch held within 10 Hz of a 438 Hz tone across clock offsets of −2 to +1
+  octaves; varispeed −1 octave halves the pitch and +0.5 octave raises it by √2; a 2.98 kHz
+  tone at a 5.26 kHz clock folds to the predicted alias frequency; drop-sample (0 bits)
+  transposition leaves −24.5 dB of non-fundamental energy versus −52 dB for chip
+  interpolation; switching LAB and authentic paths stays within 3x the steady-state
+  sample-to-sample change; NaN and extreme clock CV stay finite; resampling records the
+  output within 10% RMS; per-voice START/END sets independent segments.
+- All engine, snapshot and lab tests pass normally; engine and lab tests under ASan/UBSan;
+  snapshot test under ThreadSanitizer.
+- `src/OtisSampler.cpp` compiles warning-free against Rack v2.6.4 headers with GCC 13 and
+  GCC 11 (the CI runner's compiler). The GitHub Actions workflow
+  (`.github/workflows/otislab.yml`) builds and packages the plugin, runs these tests and the
+  mardlib reference comparison, and loads `plugin.so` through libRack.

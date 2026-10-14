@@ -32,3 +32,5 @@ Its concurrent producer/reader checks complete generation consistency across
 200 takes. Run `make -C tests thread-sanitize` to exercise it under ThreadSanitizer.
 All snapshot readers run off the audio thread; processing remains a single-writer
 operation. Module control/import callers retain their existing processing lock.
+
+`lab_test` covers the 2.2.0 LAB controls (clock, interpolation bits, resample source, per-voice START/END) and runs as part of `make -C tests test`.
