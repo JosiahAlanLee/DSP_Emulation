@@ -19,11 +19,13 @@ jobs:
           test "$(git -C /tmp/pure-data rev-parse HEAD)" = 68a30a3e2672d0d57baff7d862d6b611c79d53ec
       - name: Build and validate
         run: |
-          make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
-          make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
-          vcv/vastish/tests/engine_test
-          vcv/vastish/tests/adapter_test
-          vcv/vastish/tests/reference_compare
+          r() { echo "== $*" >> /tmp/ci.log; "$@" >> /tmp/ci.log 2>&1 || echo "FAILED($?): $*" >> /tmp/ci.log; }
+          r make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
+          r make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
+          r vcv/vastish/tests/engine_test
+          r vcv/vastish/tests/adapter_test
+          r vcv/vastish/tests/reference_compare
           cd vcv/vastish
-          LD_LIBRARY_PATH=/tmp/Rack-SDK tests/plugin_test
-          make dist RACK_DIR=/tmp/Rack-SDK
+          LD_LIBRARY_PATH=/tmp/Rack-SDK r tests/plugin_test
+          r make dist RACK_DIR=/tmp/Rack-SDK
+          grep -B2 -A8 "FAILED\|rror\|==" /tmp/ci.log | grep -v "cpu_seconds" | tail -c 3500 | python3 -c 'import sys; d=sys.stdin.read() or "no failures"; print("::warning title=ci-log::"+d.replace("%","%25").replace("\r","").replace("\n","%0A"))'
