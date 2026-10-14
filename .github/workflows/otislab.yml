@@ -29,6 +29,7 @@ jobs:
           # Newer runner kernels use more mmap randomness than GCC 11's sanitizers expect.
           sudo sysctl -w vm.mmap_rnd_bits=28
           make -C tests sanitize
+          make -C tests window-sanitize
           make -C tests thread-sanitize
           # Bit-exact comparison of the playback core against the reference ES5505 implementation.
           gcc -O2 -c /tmp/mardlib/native/es5505_core.c -o tests/build/reference_core.o
@@ -38,6 +39,14 @@ jobs:
           g++ -std=c++17 -O2 -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include tests/plugin_test.cpp \
             -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -ldl -Wl,--allow-shlib-undefined -o tests/build/plugin_test
           tests/build/plugin_test
+          g++ -std=c++17 -O2 -pthread -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include tests/window_plugin_test.cpp \
+            -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -ldl -Wl,--allow-shlib-undefined -o tests/build/window_plugin_test
+          tests/build/window_plugin_test
+          # Default host output must still match the 2.2.0 baseline byte for byte.
+          curl --fail --location https://raw.githubusercontent.com/JosiahAlanLee/DSP_Emulation/c2c014014046a18f6d318c10e26cc45f4706d06b/vcv/otislab/src/engine/OtisEngine.hpp -o /tmp/otis-baseline.hpp
+          g++ -std=c++17 -O2 -pthread -DOTIS_ENGINE_HEADER='"/tmp/otis-baseline.hpp"' tests/legacy_trace.cpp -o tests/build/old_trace
+          g++ -std=c++17 -O2 -pthread tests/legacy_trace.cpp -o tests/build/new_trace
+          test "$(tests/build/old_trace)" = "$(tests/build/new_trace)"
           make dist RACK_DIR=/tmp/Rack-SDK
       - name: Upload plugin
         uses: actions/upload-artifact@v4

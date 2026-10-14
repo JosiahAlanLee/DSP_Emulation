@@ -69,6 +69,7 @@ struct Voice {
     int fadeRemaining=0, fadeLength=0;
     bool restartAfterFade=false;
     int filterMode=2, loop=0;
+    bool window=false; // LAB windows use half-open [start,end) sample frames.
     // Lab: fraction bits used for interpolation. All bits = chip behaviour (the chip's increments
     // are multiples of 4, so 9 effective bits); 0 = drop-sample, no interpolation.
     uint32_t interpMask=fracOne-1;
@@ -99,12 +100,44 @@ struct Voice {
         if (address < baseAddress || address-baseAddress >= frames) return 0;
         return s.pcm[address-baseAddress];
     }
-    int32_t tick(const Sample& s, size_t frames, bool& ended) {
+    int32_t tick(const Sample& s, size_t frames, bool& ended,
+                 const std::vector<int16_t>* oldPcm=nullptr, float blend=1.f) {
         if (!running) return 0;
         uint32_t address=accumulator>>fracBits, f=accumulator&(fracOne-1)&interpMask;
-        int32_t a=read(s,frames,address), b=read(s,frames,address+1);
-        int32_t x=shiftFloor(int64_t(a)*(fracOne-f)+int64_t(b)*f,fracBits);
+        uint32_t nextAddress=address+1;
+        if(window && nextAddress >= (end>>fracBits))
+            nextAddress=loop==1 ? start>>fracBits : (end>>fracBits)-1;
+        auto interpolate=[&](const std::vector<int16_t>* old) {
+            auto at=[&](uint32_t a) -> int32_t {
+                if(a<baseAddress || a-baseAddress>=frames) return 0;
+                return old ? (*old)[a-baseAddress] : s.pcm[a-baseAddress];
+            };
+            return shiftFloor(int64_t(at(address))*(fracOne-f)+int64_t(at(nextAddress))*f,fracBits);
+        };
+        int32_t x=interpolate(nullptr);
+        if(oldPcm) { int32_t old=interpolate(oldPcm); x=int32_t(std::lround(old+(x-old)*double(blend))); }
         x=filter(x);
+        if(window) {
+            int64_t next=int64_t(accumulator)+(reverse ? -int64_t(frequency) : frequency);
+            int64_t span=int64_t(end)-start;
+            if(loop==2) {
+                int64_t last=int64_t(end)-fracOne, distance=last-start;
+                if(next<start || next>last) {
+                    ended=true;
+                    if(distance<=0) { accumulator=start; return x; }
+                    bool odd=next>last ? ((next-last-1)/distance)%2==0 : ((start-next-1)/distance)%2==0;
+                    if(odd) reverse=!reverse;
+                    int64_t phase=(next-start)%(2*distance); if(phase<0) phase+=2*distance;
+                    next=start+(phase<=distance ? phase : 2*distance-phase);
+                }
+            } else if(next<start || next>=end) {
+                ended=true;
+                if(!loop) { running=false; return x; }
+                int64_t phase=(next-start)%span; if(phase<0) phase+=span;
+                next=start+phase;
+            }
+            accumulator=uint32_t(next); return x;
+        }
         // Signed intermediate plus guards. Short loops fold arbitrary overshoot safely.
         int64_t next=int64_t(accumulator)+(reverse ? -int64_t(frequency) : frequency);
         if (next < start || next > end) {
@@ -220,7 +253,9 @@ struct Controls {
     bool varispeed=false;   // false: pitch held as the clock moves; true: pitch follows the clock
     int interpBits=9;       // 9 = chip interpolation, 0 = drop-sample
     int recordSource=0;     // 0 input, 1 own output (resample), 2 input + own output
-    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); }
+    int windowMode=0;       // 0 legacy segment, 1 fixed-size scan, 2 whole-frame steps
+    std::array<float,16> position{}, sizeOctaves{}; // position 0..1, log2(sample count)
+    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); sizeOctaves.fill(8); }
 };
 struct Engine {
     Sample sample,recordBuffer;
@@ -240,6 +275,37 @@ struct Engine {
     bool capturePending=false, restartCapture=false;
     double endPulse=0;
     Controls controls;
+    const std::vector<int16_t>* fadingPcm=nullptr;
+    int pcmFadeRemaining=0, pcmFadeTotal=0;
+    void clearPcmFade() { fadingPcm=nullptr; pcmFadeRemaining=pcmFadeTotal=0; }
+    enum class Publication { Deferred, Published, Obsolete };
+    // Called by the processing thread. Prepared/retired storage stays worker-owned
+    // and must not be reused until fadingPcm becomes null.
+    Publication publishPrepared(std::vector<int16_t>& prepared,uint32_t revision) {
+        if(recording || capturePending || sequence()!=revision) return Publication::Obsolete;
+        if(fadingPcm) return Publication::Deferred;
+        std::unique_lock<std::mutex> guard(sampleMutex,std::try_to_lock);
+        if(!guard.owns_lock()) return Publication::Deferred;
+        if(sequence()!=revision || prepared.size()!=memoryWords || frames<2) return Publication::Obsolete;
+        beginSampleChange(); sample.pcm.swap(prepared); endSampleChange();
+        fadingPcm=&prepared; pcmFadeRemaining=pcmFadeTotal=std::max(1,int(std::lround(hostRate*.005)));
+        return Publication::Published;
+    }
+    struct Window { size_t begin=0,end=0; bool active=false; }; // end exclusive
+    Window windowFor(int channel) const {
+        if(frames<2) return {};
+        int i=clamp(channel,0,15);
+        size_t a=std::min(size_t(clamp(controls.startv[i],0.f,1.f)*(frames-1)),frames-2);
+        size_t b=std::max(a+1,std::min(size_t(clamp(controls.endv[i],0.f,1.f)*(frames-1)),frames-1));
+        int mode=clamp(controls.windowMode,0,2);
+        if(!mode) return {a,b+1,false};
+        double oct=std::isfinite(controls.sizeOctaves[i]) ? clamp(double(controls.sizeOctaves[i]),1.0,16.0) : 8;
+        size_t n=std::min(size_t(std::llround(std::exp2(oct))),b-a+1);
+        double pos=std::isfinite(controls.position[i]) ? clamp(double(controls.position[i]),0.0,1.0) : 0;
+        size_t offset=mode==1 ? size_t(std::llround(pos*(b-a+1-n))) :
+            size_t(std::llround(pos*((b-a+1)/n-1)))*n;
+        return {a+offset,a+offset+n,true};
+    }
     // Only finished-sample metadata/buffers use this lock. Snapshot readers may wait;
     // the audio writer uses try_lock and defers publication, never playback.
     // Other Engine state still belongs to its single processing/control thread.
@@ -262,12 +328,12 @@ struct Engine {
         hostRate=clamp(rate,8000.0,384000.0);
         for(int i=0;i<3;i++) conversion[i].configure(chipRates[i],hostRate);
         if(labConversion.kernels.empty()) labConversion.configure(); else labConversion.reset();
-        chipPhase=0;
+        chipPhase=0; clearPcmFade();
         stopRecord();
     }
     void stopAll() { for(auto& v:voices) v.running=false; }
     void install(std::vector<int16_t>& pcm,double rate) {
-        stopAll(); recording=false; recordFull=false; capturePending=false; restartCapture=false;
+        stopAll(); clearPcmFade(); recording=false; recordFull=false; capturePending=false; restartCapture=false;
         size_t newFrames=std::min(pcm.size(),memoryWords);
         // Caller prepares the capacity off the audio thread.
         pcm.resize(memoryWords,0);
@@ -310,7 +376,7 @@ struct Engine {
         if(!capturePending) return false;
         std::unique_lock<std::mutex> guard(sampleMutex,std::try_to_lock);
         if(!guard.owns_lock()) return false;
-        stopAll();
+        stopAll(); clearPcmFade();
         beginSampleChange();
         sample.pcm.swap(recordBuffer.pcm); sample.rate=recordBuffer.rate; frames=recordFrames;
         endSampleChange();
@@ -327,7 +393,7 @@ struct Engine {
     int fadeSamples() const { return std::max(1,int(std::lround(currentRate*0.0015))); }
     void start(Voice& v) {
         v=Voice(); v.running=true; v.reverse=controls.reverse;
-        bounds(v,int(&v-voices.data())); v.accumulator=v.reverse ? v.end : v.start;
+        bounds(v,int(&v-voices.data())); v.accumulator=v.reverse ? (v.window ? v.end-fracOne : v.end) : v.start;
     }
     void trigger(int channel) {
         int mode=clamp(controls.engineMode,0,2);
@@ -350,11 +416,17 @@ struct Engine {
         else v.running=false;
     }
     void bounds(Voice& v,int i) {
-        i=clamp(i,0,15);
-        size_t a=std::min(size_t(clamp(controls.startv[i],0.f,1.f)*(frames-1)),frames-2);
-        size_t b=std::max(a+1,std::min(size_t(clamp(controls.endv[i],0.f,1.f)*(frames-1)),frames-1));
-        v.start=uint32_t(baseAddress+a)<<fracBits; v.end=uint32_t(baseAddress+b)<<fracBits;
-        if(v.accumulator<v.start || v.accumulator>v.end) v.accumulator=v.reverse ? v.end : v.start;
+        Window w=windowFor(i);
+        uint32_t start=uint32_t(baseAddress+w.begin)<<fracBits;
+        uint32_t end=uint32_t(baseAddress+w.end-(w.active ? 0 : 1))<<fracBits;
+        if(w.active && v.window && v.end>v.start && (start!=v.start || end!=v.end)) {
+            int64_t span=int64_t(end)-start;
+            int64_t phase=(int64_t(v.accumulator)-v.start)%span; if(phase<0) phase+=span;
+            v.accumulator=uint32_t(start+phase);
+        }
+        v.start=start; v.end=end; v.window=w.active;
+        if(v.accumulator<start || (w.active ? v.accumulator>=end : v.accumulator>end))
+            v.accumulator=v.reverse ? (w.active ? end-fracOne : end) : start;
     }
     float process(float input) {
         if(capturePending) publishRecording();
@@ -405,7 +477,8 @@ struct Engine {
                 auto& v=voices[i];
                 if(!v.running) continue;
                 bool voiceEnded=false;
-                int32_t x=applyVolume(v.tick(sample,frames,voiceEnded),v.volume);
+                int32_t x=applyVolume(v.tick(sample,frames,voiceEnded,fadingPcm,
+                    pcmFadeTotal ? float(pcmFadeTotal-pcmFadeRemaining)/pcmFadeTotal : 1.f),v.volume);
                 if(voiceEnded) ended=true;
                 if(v.fadeRemaining>0) {
                     x=static_cast<int32_t>(int64_t(x)*v.fadeRemaining/v.fadeLength);
@@ -422,6 +495,7 @@ struct Engine {
         endPulse=std::max(0.0,endPulse-1/hostRate);
         float out=(lab ? labConversion.read(chipPhase,LabConverter::bucketFor(rate,hostRate)) : conversion[mode].read(chipPhase))*controls.outputGain;
         lastOutput=std::isfinite(out) ? out : 0.f;
+        if(pcmFadeRemaining>0 && !--pcmFadeRemaining) clearPcmFade();
         return out;
     }
     float position() const {

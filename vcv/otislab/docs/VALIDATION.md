@@ -1,5 +1,43 @@
 # Validation and limits — 2026-10-14
 
+## 2.3.0 window and rework checks
+
+- Built Linux x86-64 with Rack SDK 2.6.4 / GCC 13.3. Both compiled-plugin
+  tests passed against libRack: original playback/recording behavior, polyphonic
+  frame CV, triggered background rework, selected-region publication, and a
+  complete Rack parameter/PCM save-and-restore round trip.
+- All portable engine, snapshot, LAB, window and mutation-concurrency tests
+  passed. Window checks cover exact frame boundaries and periods, forward,
+  reverse and ping-pong loops, frame-local interpolation, phase preservation,
+  deterministic bounded rework, stale-source and capture rejection, cancellation,
+  deferred publication, live crossfade, and zero audio-thread allocations on the
+  tested request/publication path.
+- AddressSanitizer / UndefinedBehaviorSanitizer window tests passed with leak
+  detection disabled for this runtime. ThreadSanitizer passed the worker/sample
+  publication stress test, including 97,243 coherent snapshots during processing
+  and 100 sample replacements. Snapshot counts depend on scheduling.
+- The 2.2.0 and 2.3.0 legacy host-output traces match byte for byte across three
+  host rates, three chip clock modes, four filter topologies, multiple voices,
+  LAB clock/interpolation settings, retrigger/release and capture. Trace hash:
+  `e515e76a18e10150`.
+- Repeated the independent ES5505 comparison: 288,000 integer output samples,
+  zero mismatches. This applies to the legacy engine path; the new half-open
+  window addressing deliberately differs from chip end-register behavior.
+- Rendered four procedural audition WAVs using the native engine and inspected
+  the 36 HP panel through Rack SDK's SVG renderer. These are software output
+  and an illustrated panel, not hardware recordings or a running GUI screenshot.
+
+The rework algorithm is original randomized circular grain overlap/add with
+seam smoothing, a dry/processed blend, and RMS matching of the blended region
+to the source (±12 dB limit). Before 2.3.1 each generation of the audition lost
+about 4.5 dB (−10.0 to −28.5 dBFS over four generations); with matching it holds
+at −9.9 to −10.0 dBFS, and `window_test` asserts eight generations stay within
+±1 dB at AMOUNT 25/65/100%. Spectral darkening across generations remains. No Ensoniq Synthesized Loop algorithm
+or ESP program is included. Frame changes have no crossfade; reworked PCM uses
+a 5 ms source crossfade before the chip filters. Samples remain mono and shared
+by the voices. There is no rolling live delay buffer. Rack GUI interaction,
+listening comparison and physical ADAT/CV operation remain untested here.
+
 ## Completed checks
 
 - Linux x86-64 VCV plugin built with Rack SDK 2.6.4 and GCC 13.3, warning-free.

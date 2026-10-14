@@ -34,3 +34,30 @@ All snapshot readers run off the audio thread; processing remains a single-write
 operation. Module control/import callers retain their existing processing lock.
 
 `lab_test` covers the 2.2.0 LAB controls (clock, interpolation bits, resample source, per-voice START/END) and runs as part of `make -C tests test`.
+
+
+`window_test` checks fixed window lengths, whole-frame selection, phase
+preservation, interpolation at frame edges, reverse/ping-pong behavior, worker
+publication, stale-load/capture rejection, cancellation, tiny/invalid windows,
+and zero processing-thread allocations. `mutation_concurrency_test` checks
+coherent snapshots during processing, rework and sample replacement. Both run
+under `make -C tests test`; `window-sanitize` runs ASan/UBSan and
+`thread-sanitize` also runs the new concurrent worker test.
+
+`window_plugin_test.cpp` dynamically loads the real plugin, verifies poly frame
+CV against known DC levels, triggers background processing, checks region-limited
+PCM changes, and saves/restores the complete Rack module. Compile like
+`plugin_test.cpp` above, adding `-pthread -Wl,--allow-shlib-undefined`.
+
+`legacy_trace.cpp` builds against either the current engine or a supplied
+`OTIS_ENGINE_HEADER`. CI compares both outputs against the pinned 2.2.0 header
+at c2c014014046a18f6d318c10e26cc45f4706d06b. It covers three host rates, all
+clock/filter modes, eight voices, interpolation reduction, retriggers, release
+and capture. This is a regression trace, not a complete equivalence proof.
+
+To render the procedural window auditions:
+
+```sh
+g++ -std=c++17 -O2 -pthread tests/window_demo.cpp -o tests/build/window_demo
+tests/build/window_demo /absolute/output/directory
+```

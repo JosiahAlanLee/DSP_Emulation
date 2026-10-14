@@ -1,12 +1,19 @@
 # OTIS Sampler — first working prototype
 
-> **2.2.0 in this repo (2026-10-14):** adds a LAB column of deliberately non-authentic
-> controls (continuous chip clock, interpolation bit depth, resample-feedback recording,
-> polyphonic START/END) on top of 2.1.x's per-voice VCA, polyphonic filter CV, declick fades
-> and lock-safe sample snapshots. With LAB controls at their defaults the engine output is
-> bit-identical to 2.1.1. See [LAB controls](#lab-controls-220). Prebuilt Linux plugins come
-> from the repository's GitHub Actions runs (artifact **OtisLab-lin-x64**); the original 2.0.0
-> binary is not included.
+> **2.3.0 (2026-10-14):** adds fixed-size loop scanning, Transwave-style frame
+> stepping, and a triggerable background loop-reworking experiment. New features
+> are original LAB extensions inspired by ASR-10 workflows. The panel is now
+> **36 HP**; old parameter and cable IDs are preserved. Legacy mode remains the
+> default and matches 2.2.0 in the regression trace. See [Window and rework](#window-and-rework-230).
+> This is still an ES5505-based sampler, not an ASR-10 or ESP effects emulator.
+>
+> **2.3.1:** REWORK now RMS-matches its result to the source region, so repeated
+> generations keep their level instead of losing ~4.5 dB each time.
+>
+> **2.3.2:** fixes a crash when the module browser or panel draws OTIS. The
+> display requested `DejaVuSansMono.ttf`, which Rack 2 does not ship; it now uses
+> Rack's ShareTechMono and falls back safely if a font fails to load.
+
 
 A VCV Rack 2 module for sampling a modular system and playing samples through
 MAME-derived ES5505 integer interpolation and filter arithmetic. Built for an
@@ -21,7 +28,7 @@ analog circuits are not included. The scope and numerical validation are in
 ## Install a Linux build
 
 The original 2.0.0 delivery ZIP contained a prebuilt `OtisLab-2.0.0-lin-x64.vcvplugin`.
-For 2.1.1, build from source (below) and use the `.vcvplugin` from `dist/`. That binary targets Rack 2 on Linux x86-64, glibc 2.35 or newer (Ubuntu 22.04+).
+For current versions, use the plugin from a successful GitHub Actions run (artifact **OtisLab-lin-x64**), the supplied delivery ZIP, or build from source and use the `.vcvplugin` in `dist/`. The supplied Linux x86-64 build requires Rack 2 and glibc 2.35 or newer (Ubuntu 22.04+).
 It was built against Rack SDK 2.6.4. Older systems should build from source.
 
 1. In Rack, use **Help → Open user folder**, then quit Rack.
@@ -218,7 +225,7 @@ Verification for these changes is in [docs/VALIDATION.md](docs/VALIDATION.md#210
 
 ## LAB controls (2.2.0)
 
-These are extensions, not EPS behaviour. The panel is now 26 HP; the right-hand column holds them.
+These are extensions, not EPS behaviour. Version 2.2 introduced the CLOCK/INTERP column at 26 HP; version 2.3 expands the panel to 36 HP.
 At their defaults (CLOCK 0, INTERP 9, record source AUDIO) output is bit-identical to 2.1.1.
 
 | Control | Behavior |
@@ -236,3 +243,73 @@ Notes:
 - K1/K2 and VCA CV were already sampled every host sample since 2.1.0, so audio-rate
   filter-coefficient and volume-table modulation needs no extra mode: patch audio into
   K1/K2 or VCA.
+
+## Window and rework (2.3.0)
+
+Three extra LAB controls use the existing START/END region as their source.
+The original controls remain in the same positions; the added columns expand
+the module from 26 to 36 HP, so existing patches may need spacing adjustments.
+
+| Control | Behavior |
+|---|---|
+| MODE = Legacy segment (0) | Original 2.2 playback bounds. POSITION and SIZE have no effect. This is the default for new and older patches. |
+| MODE = Fixed-size scan (1) | SIZE selects a window inside START/END. POSITION moves that window without resizing it. |
+| MODE = Frames (2) | The region is divided into complete SIZE-sample frames. POSITION selects one frame at a time; incomplete trailing data is not selected. |
+| POSITION / POS CV | 0–100% knob plus polyphonic 0–10 V CV across the valid window positions or frames. Selection rounds to the nearest sample/frame. |
+| SIZE / SIZE CV | 2–65,536 samples, controlled logarithmically; default 256. Each volt doubles the sample count. SIZE CV is polyphonic; mono CV broadcasts. Right-click SIZE for exact sample-count entry. Window size is limited by the selected region. |
+| COARSE / FINE | Controls randomized grain size for REWORK: coarse uses longer grains, fine uses shorter grains. Latched on trigger. |
+| AMOUNT / AMT CV | Original/processed sample blend, 0–100%; CV adds 0–100% at 0–10 V. Latched on trigger. Zero amount leaves PCM unchanged. |
+| REWORK / TRIG | Button or rising gate (2 V) reworks the selected **voice-1** window. The result changes that shared sample region for every voice reading it. |
+
+Select LOOP = Forward or Ping-pong for repeating windows. With LOOP Off, a gate
+plays the selected window once. Reverse remains available. Moving a window
+preserves the current offset within it; position changes do not restart phase.
+Changing SIZE wraps that offset into the new size. Window movement and frame
+selection are intentionally unsmoothed, so CV jumps can make clicks or zipper
+artifacts. There is no automatic crossfade between scanned frames.
+
+LAB windows use half-open bounds and wrap interpolation within the selected
+frame in forward-loop mode, avoiding a read from the next frame. This differs
+from the ES5505's legacy end-register semantics; that path is unchanged. The
+existing EOC output still emits 1 ms pulses, so very short loops can keep it high.
+
+REWORK is an original algorithm, **not** a reverse-engineered implementation of
+Ensoniq's Synthesized Loop. It uses deterministic randomized circular grains,
+windowed overlap/add, loop-seam smoothing, and the AMOUNT blend. It adds no new
+noise source. The blended region is RMS-matched to the source region (gain
+limited to ±12 dB), so repeated operations keep their level; they still smear
+transients and darken the spectrum, and peaks can rise toward full scale as the
+crest factor changes (int16 hard-clips). Each accepted request advances the
+random seed.
+Samples outside the selected window remain unchanged.
+
+A worker copies and processes the finished sample while playback continues.
+The audio thread publishes a completed result with a 5 ms PCM crossfade before
+the chip filters; it does not reset voices or output-converter history. If an
+export/save currently pins the finished sample, publication waits without
+blocking playback. A new recording/load invalidates stale results. Triggers
+while BUSY are ignored, not queued. The menu can cancel a pending job; Reset
+also cancels pending work. An already applied result is not undone by Cancel.
+
+The processed PCM and all window parameters are saved with the Rack patch.
+Pending jobs and the random-seed progression are not serialized. REWORK replaces
+the selected region, so export a take if you want to retain that generation.
+There is no continuous delay/overdub buffer or ASR effects processor in this build.
+
+### First patch
+
+1. Load the included demo or your own WAV, turn LOOP to Forward, and trigger PLAY.
+2. Set MODE to Scan and SIZE to 256 samples; sweep POSITION or feed POS CV.
+3. Change MODE to Frames to hear selection move by complete waveform frames.
+4. Press REWORK at AMOUNT 50%; wait for BUSY to finish, then scan the changed region.
+5. Try CLOCK and INTERP alongside the window controls. For polyphonic regions,
+   send separate POS/SIZE CV channels with your polyphonic pitch/gate source.
+
+The delivery's `audition/` directory contains a purpose-made 16-frame source,
+matching continuous/stepped scans, and four successive loop-rework operations.
+These are native offline renders. Rework generations are level-matched by the
+algorithm itself (2.3.1); no other normalization is applied.
+
+The historical design references are Ensoniq's [ASR-10 Musician's Manual](https://www.samplekings.com/pdfs/ENSONIQ_ASR10%20User%20Manual.pdf),
+Edit/Wave modulation (PDF page 183) and Synthesized Loop (PDF page 192).
+No Ensoniq program code was used for the new LAB algorithms.
