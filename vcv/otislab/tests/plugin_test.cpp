@@ -1,8 +1,10 @@
 // Loads the actual compiled VCV plugin and exercises its Rack ABI without a GUI.
 #include <rack.hpp>
 #include "../src/engine/Wav.hpp"
+#include "../../shared/SampleShare.hpp"
 #include <dlfcn.h>
 #include <cassert>
+#include <cstring>
 #include <iostream>
 #include <memory>
 int main() {
@@ -37,6 +39,30 @@ int main() {
         energy+=x*x; if(i==0) { a->params[8].setValue(0); b->params[8].setValue(0); }
     }
     assert(energy>1);
+    // The compiled plugin exposes its finished sample to a right-hand neighbour.
+    {
+        void* p=a->rightExpander.producerMessage; assert(p==a->rightExpander.consumerMessage && dspemu::validShare(p));
+        auto* share=static_cast<const dspemu::SampleShareV1*>(p);
+        uint32_t rev=share->revision(share->context); assert(!(rev&1));
+        double rate=0; uint32_t got=0;
+        size_t n=share->copy(share->context,nullptr,0,&rate,&got); assert(n==wav.pcm.size() && rate==wav.rate && got==rev);
+        std::vector<int16_t> pcm(n); assert(share->copy(share->context,pcm.data(),n,&rate,&got)==n && pcm==wav.pcm);
+        std::vector<int16_t> part(10); assert(share->copy(share->context,part.data(),10,&rate,&got)==n); // capacity respected
+        assert(std::equal(part.begin(),part.end(),wav.pcm.begin()));
+        char name[8]; share->name(share->context,name,sizeof name); assert(std::strlen(name)<sizeof name); // always terminated
+        // Replacing the sample moves the revision on.
+        std::vector<int16_t> other(777,123);
+        json_t* d=json_object(); json_object_set_new(d,"pcm16le",json_string(otis::encodePcm(other.data(),other.size()).c_str()));
+        json_object_set_new(d,"rate",json_real(22050)); json_object_set_new(d,"name",json_string("other.wav"));
+        a->dataFromJson(d); json_decref(d);
+        uint32_t rev2=share->revision(share->context); assert(rev2!=rev && !(rev2&1));
+        assert(share->copy(share->context,nullptr,0,&rate,&got)==777 && rate==22050);
+        char full[64]; share->name(share->context,full,sizeof full); assert(std::string(full)=="other.wav");
+        // Restore the original so the rest of the test is unchanged.
+        json_t* back=json_object(); json_object_set_new(back,"pcm16le",json_string(otis::encodePcm(wav.pcm.data(),wav.pcm.size()).c_str()));
+        json_object_set_new(back,"rate",json_real(wav.rate)); json_object_set_new(back,"filterMode",json_integer(2));
+        a->dataFromJson(back); json_decref(back);
+    }
     // CV recording starts on gate high, finishes on low, and survives patch save.
     a->inputs[3].channels=1; a->inputs[0].channels=1; a->inputs[3].setVoltage(10); a->inputs[0].setVoltage(1);
     for(int i=0;i<4800;i++) a->process(args);

@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "engine/Engine.hpp"
 #include "../../shared/SampleFile.hpp"
+#include "../../shared/SampleShare.hpp"
 #include <osdialog.h>
 #include <atomic>
 // A loaded sample. Immutable once published; owned by the handoff below.
@@ -40,6 +41,35 @@ struct Vastish : Module {
         try { publishSample(new SampleSlot(dspemu::loadWavMono(path,MAX_SAMPLE_FRAMES))); sampleError.clear(); }
         catch(const std::exception& e) { sampleError=e.what(); WARN("Vastish: %s",e.what()); }
     }
+    // OTIS link (UI thread only): with followOtis on and Vastish directly to the
+    // right of an OTIS Sampler, the SAMPLE wave tracks OTIS's finished sample,
+    // including new recordings and REWORK generations.
+    bool followOtis=false;
+    enum LinkState { LINK_OFF, LINK_NOT_FOUND, LINK_CONNECTED } linkState=LINK_OFF;
+    const dspemu::SampleShareV1* followedShare=nullptr; uint32_t followedRevision=0; bool followedAny=false;
+    void followShare(const dspemu::SampleShareV1* share) {
+        if(!followOtis) { linkState=LINK_OFF; return; }
+        if(!share) { linkState=LINK_NOT_FOUND; followedShare=nullptr; return; }
+        linkState=LINK_CONNECTED;
+        if(share!=followedShare) { followedShare=share; followedAny=false; }
+        uint32_t rev=share->revision(share->context);
+        if((rev&1) || (followedAny && rev==followedRevision)) return; // mid-change, or nothing new
+        double rate=0; uint32_t got=0;
+        size_t total=share->copy(share->context,nullptr,0,&rate,&got);
+        dspemu::MonoSample m;
+        if(total>=2) {
+            m.pcm.resize(std::min(total,MAX_SAMPLE_FRAMES));
+            size_t again=share->copy(share->context,m.pcm.data(),m.pcm.size(),&rate,&got);
+            if(again!=total || got!=rev) return; // changed while copying; try next frame
+            if(!std::isfinite(rate) || rate<1000 || rate>384000) return;
+            m.rate=rate; m.truncated=total>m.pcm.size();
+            char name[256]={}; share->name(share->context,name,sizeof name);
+            m.name=std::string("OTIS: ")+name;
+        } else m.pcm.clear(); // OTIS has no sample: follow it to silence
+        publishSample(new SampleSlot(std::move(m)));
+        followedRevision=rev; followedAny=true; sampleError.clear();
+    }
+    void setFollowOtis(bool on) { followOtis=on; followedShare=nullptr; followedAny=false; if(!on) linkState=LINK_OFF; }
     std::string sampleLabel() const {
         if(!uiSample || !uiSample->view.valid()) return "NO SAMPLE";
         return uiSample->data.name+(uiSample->data.truncated ? " [TRUNCATED]" : "");
@@ -116,6 +146,7 @@ struct Vastish : Module {
     json_t* dataToJson() override {
         json_t* j=json_object(); json_object_set_new(j,"program",json_integer(displayedProgram.load()));
         json_object_set_new(j,"sampleLoop",json_boolean(sampleLoop.load()));
+        json_object_set_new(j,"followOtis",json_boolean(followOtis));
         collectSamples();
         if(uiSample && uiSample->view.valid()) {
             // Rack autosaves often; encode each sample once.
@@ -131,6 +162,7 @@ struct Vastish : Module {
     void dataFromJson(json_t* j) override {
         json_t* v=json_object_get(j,"program"); if(json_is_integer(v)) displayedProgram=int(vastish::clamp(float(json_integer_value(v)),0,5));
         sampleLoop=json_is_true(json_object_get(j,"sampleLoop"));
+        setFollowOtis(json_is_true(json_object_get(j,"followOtis")));
         json_t* s=json_object_get(j,"sample");
         if(!s) return;
         try {
@@ -220,7 +252,16 @@ struct VastishWidget : ModuleWidget {
         addChild(createLightCentered<SmallLight<RedLight>>(Vec(180,27),m,Vastish::FAULT_LIGHT));
     }
     void step() override {
-        if(auto* m=dynamic_cast<Vastish*>(module)) m->collectSamples();
+        if(auto* m=dynamic_cast<Vastish*>(module)) {
+            m->collectSamples();
+            // Only an OtisLab OTIS Sampler directly to the left, exposing a valid share.
+            const dspemu::SampleShareV1* share=nullptr;
+            if(Module* left=m->leftExpander.module)
+                if(left->model && left->model->plugin && left->model->plugin->slug=="OtisLab" && left->model->slug=="OtisSampler"
+                   && dspemu::validShare(left->rightExpander.producerMessage))
+                    share=static_cast<const dspemu::SampleShareV1*>(left->rightExpander.producerMessage);
+            m->followShare(share);
+        }
         ModuleWidget::step();
     }
     void appendContextMenu(Menu* menu) override {
@@ -236,11 +277,15 @@ struct VastishWidget : ModuleWidget {
         menu->addChild(createMenuItem("Load sample WAV…","",[m]() {
             auto filters=osdialog_filters_parse("WAV:wav,WAV"); char* path=osdialog_file(OSDIALOG_OPEN,nullptr,nullptr,filters); osdialog_filters_free(filters);
             if(!path) return;
-            m->loadSampleFile(path); std::free(path);
+            m->setFollowOtis(false); m->loadSampleFile(path); std::free(path);
             if(m->sampleError.empty()) m->params[PITCH_WAVE].setValue(SAMPLE_WAVE);
         }));
         menu->addChild(createBoolMenuItem("Loop sample","",[m]{return m->sampleLoop.load();},[m](bool on){m->sampleLoop=on;}));
-        menu->addChild(createMenuItem("Clear sample","",[m]{ m->publishSample(new SampleSlot()); }));
+        menu->addChild(createMenuItem("Clear sample","",[m]{ m->setFollowOtis(false); m->publishSample(new SampleSlot()); }));
+        menu->addChild(createBoolMenuItem("Follow OTIS on the left","",[m]{return m->followOtis;},
+            [m](bool on){ m->setFollowOtis(on); if(on) m->params[PITCH_WAVE].setValue(SAMPLE_WAVE); }));
+        if(m->followOtis) menu->addChild(createMenuLabel(m->linkState==Vastish::LINK_CONNECTED ? "OTIS link: connected" :
+            "OTIS link: place Vastish directly right of OTIS"));
         menu->addChild(createMenuLabel("SAMPLE wave: 0 V / C4 plays at recorded pitch"));
         menu->addChild(createMenuLabel("Eight voices • 0 V = C4 • gate > 1 V"));
         menu->addChild(createMenuLabel("Audio: ±1 DSP = ±5 V. Envelopes: 0–10 V."));

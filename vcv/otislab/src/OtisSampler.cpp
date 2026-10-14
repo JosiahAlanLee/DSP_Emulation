@@ -2,6 +2,9 @@
 #include "engine/OtisEngine.hpp"
 #include "engine/LoopMutator.hpp"
 #include "engine/Wav.hpp"
+#include "../../shared/SampleShare.hpp"
+#include <cstdio>
+#include <cstring>
 #include <osdialog.h>
 #include <mutex>
 #include <atomic>
@@ -33,8 +36,36 @@ struct OtisSampler : Module {
     std::atomic<bool> liveSample{false};
     std::string sampleName="NO SAMPLE - RIGHT CLICK TO LOAD";
     std::string lastError;
+    // Lets a module placed to the right (Vastish) read the finished sample. See
+    // shared/SampleShare.hpp. Served from that module's UI thread; snapshot() only
+    // takes the finished-sample lock, which the audio thread never waits on.
+    dspemu::SampleShareV1 share{};
+    void exposeShare() {
+        share.magic=dspemu::SAMPLE_SHARE_MAGIC; share.version=dspemu::SAMPLE_SHARE_VERSION; share.context=this;
+        share.revision=[](void* c)->uint32_t { return static_cast<OtisSampler*>(c)->engine.sequence(); };
+        share.copy=[](void* c,int16_t* dst,size_t capacity,double* rate,uint32_t* revision)->size_t {
+            try {
+                std::vector<int16_t> pcm; double r=0; uint32_t s=0;
+                static_cast<OtisSampler*>(c)->engine.snapshot(pcm,r,s);
+                if(dst) std::memcpy(dst,pcm.data(),std::min(capacity,pcm.size())*sizeof(int16_t));
+                if(rate) *rate=r;
+                if(revision) *revision=s;
+                return pcm.size();
+            } catch(...) { return 0; }
+        };
+        share.name=[](void* c,char* buffer,size_t size) {
+            if(!buffer || !size) return;
+            auto* m=static_cast<OtisSampler*>(c);
+            std::lock_guard<std::mutex> guard(m->nameMutex);
+            const std::string& n=m->liveSample.load() ? std::string("LIVE RECORDING") : m->sampleName;
+            std::snprintf(buffer,size,"%s",n.c_str());
+        };
+        // Fixed pointers; no flip is ever requested, so Rack leaves them alone.
+        rightExpander.producerMessage=rightExpander.consumerMessage=&share;
+    }
     OtisSampler() {
         config(NUM_PARAMS,NUM_INPUTS,NUM_OUTPUTS,NUM_LIGHTS);
+        exposeShare();
         configParam(PITCH,-48,48,0,"Pitch offset"," semitones");
         configParam(START,0,1,0,"Start / loop start","%",0,100);
         configParam(END,0,1,1,"End / loop end","%",0,100);

@@ -64,5 +64,38 @@ int main() {
         for(int i=0;i<2400;++i) s.process(args);
         assert(s.sampleLabel()=="NO SAMPLE");
     }
-    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip\n";
+    // OTIS link, driven through a stand-in provider using the same C ABI.
+    {
+        struct Fake { std::vector<int16_t> pcm; double rate=29762; uint32_t rev=2; int copies=0; bool changeDuringCopy=false; std::string name="bright-demo.wav"; } fake;
+        fake.pcm.assign(3000,0); for(size_t i=0;i<fake.pcm.size();++i) fake.pcm[i]=int16_t(i*7);
+        dspemu::SampleShareV1 share{dspemu::SAMPLE_SHARE_MAGIC,dspemu::SAMPLE_SHARE_VERSION,&fake,
+            [](void* c)->uint32_t { return static_cast<Fake*>(c)->rev; },
+            [](void* c,int16_t* dst,size_t cap,double* rate,uint32_t* rev)->size_t {
+                auto* f=static_cast<Fake*>(c); f->copies++;
+                if(dst) { std::copy(f->pcm.begin(),f->pcm.begin()+std::min(cap,f->pcm.size()),dst); if(f->changeDuringCopy) { f->rev+=2; f->changeDuringCopy=false; } }
+                *rate=f->rate; *rev=f->rev; return f->pcm.size(); },
+            [](void* c,char* b,size_t n) { std::snprintf(b,n,"%s",static_cast<Fake*>(c)->name.c_str()); }};
+        assert(dspemu::validShare(&share));
+        dspemu::SampleShareV1 wrong=share; wrong.version=99; assert(!dspemu::validShare(&wrong));
+        Vastish v;
+        v.followShare(&share); assert(v.linkState==Vastish::LINK_OFF && !v.uiSample); // off by default
+        v.setFollowOtis(true);
+        v.followShare(nullptr); assert(v.linkState==Vastish::LINK_NOT_FOUND && !v.uiSample);
+        v.followShare(&share);
+        assert(v.linkState==Vastish::LINK_CONNECTED && v.uiSample && v.uiSample->data.pcm==fake.pcm);
+        assert(v.uiSample->data.rate==fake.rate && v.sampleLabel()=="OTIS: bright-demo.wav");
+        int copies=fake.copies; v.followShare(&share); assert(fake.copies==copies); // unchanged: no copy
+        fake.rev=3; fake.pcm[0]=1234; v.followShare(&share); assert(fake.copies==copies && v.uiSample->data.pcm[0]==0); // mid-change: wait
+        fake.rev=4; v.followShare(&share); assert(v.uiSample->data.pcm[0]==1234); // REWORK/record lands
+        fake.pcm[0]=99; fake.rev=6; fake.changeDuringCopy=true; v.followShare(&share);
+        assert(v.uiSample->data.pcm[0]==1234); // torn copy discarded...
+        v.followShare(&share); assert(v.uiSample->data.pcm[0]==99); // ...and retried
+        fake.pcm.assign(1,0); fake.rev=10; v.followShare(&share); assert(v.sampleLabel()=="NO SAMPLE"); // OTIS emptied
+        // Saved and restored: link setting persists; follows again on the next frame.
+        json_t* saved=v.dataToJson(); Vastish r; r.dataFromJson(saved); json_decref(saved);
+        assert(r.followOtis); fake.pcm.assign(500,7); fake.rev=12; r.followShare(&share); assert(r.uiSample->data.pcm.size()==500);
+        v.setFollowOtis(false); fake.rev=14; v.followShare(&share); assert(v.linkState==Vastish::LINK_OFF && v.sampleLabel()=="NO SAMPLE");
+        v.collectSamples(); r.collectSamples();
+    }
+    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, OTIS link\n";
 }
