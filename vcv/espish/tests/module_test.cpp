@@ -1,5 +1,8 @@
 // Drives the real ESPish module through Rack's Module API (no GUI): I/O scaling,
 // normalling, clock sync, freeze gate, ESP reconfiguration, capture -> share, JSON.
+// Host internals first (before rack.hpp marks them private) to provide a Rack context.
+#include <engine/Engine.hpp>
+#include <context.hpp>
 #include "../src/Espish.cpp"
 #include <cassert>
 #include <iostream>
