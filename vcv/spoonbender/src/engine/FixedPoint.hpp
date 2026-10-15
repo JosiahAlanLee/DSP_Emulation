@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace espish {
+namespace spoonbender {
 
 constexpr int32_t MAX24 = 0x7FFFFF, MIN24 = -0x800000;
 constexpr double Q23 = 8388608.0;  // 2^23: full scale of a 24-bit signed word
@@ -60,4 +60,4 @@ struct EspMath {
     static float coef(float c) { return node(c); }
 };
 
-} // namespace espish
+} // namespace spoonbender

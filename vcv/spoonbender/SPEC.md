@@ -1,6 +1,6 @@
-# ESPish: effects module spec
+# Spoon Bender (formerly ESPish): effects module spec
 
-Status: **v1 implemented** (1.0.1; §11 lists the post-release fixes). This document is the design record. The
+Status: **v1 implemented** (1.1.0, renamed from ESPish; §11 lists the post-release fixes). This document is the design record. The
 user-facing manual is [README.md](README.md).
 
 The draft was written on 2026-10-14 from proposals by GPT, Google Argon and
@@ -19,7 +19,7 @@ sample.
 
 It is **not chip emulation**. It runs no Ensoniq microcode and doesn't model
 the ES5510 instruction set. It borrows the chip's number formats and rounding.
-See §3. The name stays ESPish on that condition, and the panel and plugin
+See §3. The name (ESPish until 1.1.0, now Spoon Bender) carries that condition: the panel and plugin
 description say so.
 
 Target sounds (from the GPT proposal), and whether v1 covers them:
@@ -112,11 +112,11 @@ a service manual if possible.
   behaviour before C++20. Do shifts on unsigned values.
 - Argon's draft had a global "WRAP" overflow mode and attributed it to the
   K2000. That mixes instruments. In MAME, ADD/SUB saturate and only the
-  separate ADDU/SUBU opcodes wrap. ESPish's algorithms need no wrapping
+  separate ADDU/SUBU opcodes wrap. Spoon Bender's algorithms need no wrapping
   arithmetic, so the WRAP mode was dropped. The parity test still checks ADDU
   wraps.
 - Delay-memory writes: Argon rounds toward zero, but MAME's default rounds
-  toward −∞. ESPish follows MAME.
+  toward −∞. Spoon Bender follows MAME.
 - `sat24` and the 48-bit accumulator idea are consistent with MAME and kept.
 
 ## 4. Signal flow (as built)
@@ -252,7 +252,7 @@ memory*, not Ensoniq's programs.
   bit for bit; the test checks 2M inputs.
 - **DC limit cycle:** rounding toward −∞ leaves recirculating tails on a
   −1 LSB (about −90 dBFS) DC limit cycle. The hardware would pass that on.
-  ESPish removes it with a 5 Hz DC blocker on the wet output, which also made
+  Spoon Bender removes it with a 5 Hz DC blocker on the wet output, which also made
   the RT60 measurement meaningful.
 - **Delay-memory budget:** 64K words (default) or UNLIMITED. The budget covers
   the **echo lines only**: 32K words each, so the maximum echo is 1.10 s at
@@ -299,7 +299,7 @@ and outputs silence for the few frames a reconfiguration takes.
 ## 7. Capture to OTIS (retroactive)
 
 OTIS can already record what you patch into it, but only from the moment you
-press REC. ESPish keeps the **recent past**:
+press REC. Spoon Bender keeps the **recent past**:
 
 - **Ring buffer:** two rolling rings hold the post-MIX output: a mono sum
   (L+R)/2, 16-bit, at the **host rate** in both engines, up to 20 s.
@@ -324,10 +324,10 @@ press REC. ESPish keeps the **recent past**:
   - The revision goes odd while the slot changes and even when ready, so it
     advances by 2 per capture.
   - `revision()` also collects a pending capture, so a reader sees it even
-    before ESPish's own widget has stepped.
-- **OTIS 2.5.0 reader:** the menu has **Import capture from ESPish on the
-  left** (one-shot) and **Follow ESPish captures** (saved with the patch).
-  - Rack layout: `[ESPish][OTIS][Vastish]`. OTIS reads its left neighbour and
+    before Spoon Bender's own widget has stepped.
+- **OTIS reader (2.5.0; 2.5.1 for the new name):** the menu has **Import capture from Spoon Bender on the
+  left** (one-shot) and **Follow Spoon Bender captures** (saved with the patch).
+  - Rack layout: `[Spoon Bender][OTIS][Vastish]`. OTIS reads its left neighbour and
     still shares to its right.
   - Lookup uses the UI-owned `leftExpander.moduleId` and `Engine::getModule()`,
     as fixed in Vastish 2.2.2, not the engine-owned pointer. The neighbour is
@@ -396,7 +396,7 @@ Linux CI also runs:
   - reconfiguration at every ESP rate
   - JSON
 - `vcv/otislab/tests/fx_link_test.cpp`: the real OTIS code imports and follows
-  captures from a module created from the compiled ESPish binary.
+  captures from a module created from the compiled Spoon Bender binary.
 
 Not yet tested: a live Rack GUI/audio session, and the Windows and macOS
 binaries inside Rack.
@@ -409,7 +409,7 @@ binaries inside Rack.
 | Shifter range | Keep ±2 kHz (WIDE). Add a precise centre (deadband) and a FINE ±20 Hz range. |
 | ESP rates and memory budget | Keep them, explicitly labelled provisional (inferred / period-plausible, not verified). An EPS-16 Plus service manual or schematic would settle both. |
 | Capture format | Stereo output; mono captures to OTIS for now. |
-| Name | Keep ESPish, provided the description says explicitly that it is not chip emulation. |
+| Name | Keep ESPish, provided the description says explicitly that it is not chip emulation. Renamed to Spoon Bender in 1.1.0 (still not chip emulation; the ESP engine keeps its name). |
 
 ## 11. Post-release review (1.0.1)
 

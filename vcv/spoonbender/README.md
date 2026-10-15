@@ -1,6 +1,6 @@
-# ESPishLab for VCV Rack 2
+# SpoonBenderLab for VCV Rack 2
 
-**ESPish** is a stereo echo and reverb for the OTIS → Vastish chain. It has an
+**Spoon Bender** is a stereo echo and reverb for the OTIS → Vastish chain. It has an
 echo with a frequency shifter inside the feedback loop and an 8-line
 feedback-delay-network space. An optional **ESP** engine runs both with
 ES5510-style arithmetic: 24-bit nodes, 16-bit delay memory and a reduced
@@ -20,10 +20,10 @@ builds are compiled in CI but haven't been run inside Rack.
 From a clone of the repo:
 
 ```
-make -C vcv/espish -j8 RACK_DIR=~/dev/Rack-SDK && make -C vcv/espish install RACK_DIR=~/dev/Rack-SDK
+make -C vcv/spoonbender -j8 RACK_DIR=~/dev/Rack-SDK && make -C vcv/spoonbender install RACK_DIR=~/dev/Rack-SDK
 ```
 
-Add **ESPishLab → ESPish** (32 HP). Patch a source into **IN L** (IN R is
+Add **SpoonBenderLab → Spoon Bender** (32 HP). Patch a source into **IN L** (IN R is
 normalled to IN L) and **OUT L/R** to your mixer or the Audio module. Signals
 are ±10 V full scale. At extreme feedback the output can briefly exceed that.
 
@@ -95,16 +95,16 @@ Switching engine or rate clears the effect's tails.
 
 ## Capture to OTIS
 
-ESPish always keeps the recent past of its output: mono, (L+R)/2, 16-bit, at
+Spoon Bender always keeps the recent past of its output: mono, (L+R)/2, 16-bit, at
 Rack's sample rate, up to 20 s.
 
-1. Place ESPish directly **left** of OTIS: `[ESPish][OTIS][Vastish]`.
+1. Place Spoon Bender directly **left** of OTIS: `[Spoon Bender][OTIS][Vastish]`.
 2. Set LENGTH (1–20 s). Play, and when something good just happened, press
    **CAPTURE** (or send a trigger to CAPT). The light stays on until the capture
    has been handed over, which takes one UI frame.
-3. In OTIS's right-click menu, choose **Import capture from ESPish on the left**,
-   or tick **Follow ESPish captures** so every capture loads automatically.
-   The sample is named "ESPish capture N" and keeps the sample rate it was
+3. In OTIS's right-click menu, choose **Import capture from Spoon Bender on the left**,
+   or tick **Follow Spoon Bender captures** so every capture loads automatically.
+   The sample is named "Spoon Bender capture N" and keeps the sample rate it was
    recorded at.
 
 After each capture the history starts again. A second capture taken soon after
@@ -115,7 +115,7 @@ The capture is post-MIX. Turn MIX down to capture the dry input instead.
 
 ## Status and tests
 
-Version 1.0.1. Tested headless through Rack's module API. A live GUI and audio
+Version 1.1.0. Tested headless through Rack's module API. A live GUI and audio
 session has not been tested. ENSEMBLE, parallel routing and a space → echo
 return are deferred (see SPEC.md).
 
@@ -126,7 +126,7 @@ CI on Linux runs:
 - AddressSanitizer builds
 - a three-thread capture test under ThreadSanitizer
 - a cross-plugin test in which the real OTIS code imports from the compiled
-  ESPish binary
+  Spoon Bender binary
 
 Windows and macOS run the engine tests. Measured values:
 
@@ -148,6 +148,11 @@ ES5510 core (BSD-3-Clause, Christian Brunschen). Panel text is outlined from
 DejaVu Sans (docs/DEJAVU-LICENSE.txt). See THIRD_PARTY_NOTICES.md.
 
 ## Changes
+
+**1.1.0**: renamed from ESPish to Spoon Bender. The plugin slug is now
+`SpoonBenderLab` and the module slug `SpoonBender`. Patches saved with ESPish
+won't find the module; nothing was published under the old name. OTIS 2.5.1
+looks for the new name. No DSP changes.
 
 **1.0.1**: fixes from GPT's review.
 
