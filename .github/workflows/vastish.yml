@@ -23,19 +23,21 @@ jobs:
           test "$(git -C /tmp/pure-data rev-parse HEAD)" = 68a30a3e2672d0d57baff7d862d6b611c79d53ec
       - name: Build and validate
         run: |
-          make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
-          make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
-          vcv/vastish/tests/engine_test
-          (cd vcv/vastish/tests && ./sample_test)
-          vcv/vastish/tests/adapter_test
+          # Run each step with its output kept; on failure, echo the tail as annotations
+          # (readable from the API without the raw log). Notices from tests are surfaced too.
+          step() { local log=/tmp/step.log; if ! ( "$@" ) > "$log" 2>&1; then echo "::error::FAILED: $*"; tail -n 20 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -i "observed" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 3 "$log"; }
+          step make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
+          step make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
+          step vcv/vastish/tests/engine_test
+          step bash -c "cd vcv/vastish/tests && ./sample_test"
+          step vcv/vastish/tests/adapter_test
           # Cross-plugin OTIS link against OtisLab's compiled binary.
-          make -C vcv/otislab -j2 RACK_DIR=/tmp/Rack-SDK
-          make -C vcv/vastish/tests link_test RACK_DIR=/tmp/Rack-SDK
-          (cd vcv/vastish/tests && ./link_test)
-          vcv/vastish/tests/reference_compare
-          cd vcv/vastish
-          LD_LIBRARY_PATH=/tmp/Rack-SDK tests/plugin_test
-          make dist RACK_DIR=/tmp/Rack-SDK
+          step make -C vcv/otislab -j2 RACK_DIR=/tmp/Rack-SDK
+          step make -C vcv/vastish/tests link_test RACK_DIR=/tmp/Rack-SDK
+          step bash -c "cd vcv/vastish/tests && ./link_test"
+          step vcv/vastish/tests/reference_compare
+          step bash -c "cd vcv/vastish && LD_LIBRARY_PATH=/tmp/Rack-SDK tests/plugin_test"
+          step make -C vcv/vastish dist RACK_DIR=/tmp/Rack-SDK
       - name: Upload plugin
         uses: actions/upload-artifact@v4
         with:
