@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish]
+        plugin: [otislab, vastish, espish]
     defaults:
       run:
         shell: msys2 {0}
@@ -39,6 +39,10 @@ jobs:
         if: matrix.plugin == 'otislab'
         working-directory: vcv/otislab
         run: make -C tests test
+      - name: ESPish engine tests
+        if: matrix.plugin == 'espish'
+        working-directory: vcv/espish
+        run: make -C tests engine_test && tests/engine_test
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |
@@ -61,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish]
+        plugin: [otislab, vastish, espish]
         arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +80,10 @@ jobs:
         if: matrix.plugin == 'otislab' && matrix.arch == 'arm64'
         working-directory: vcv/otislab
         run: make -C tests test CXX=clang++
+      - name: ESPish engine tests
+        if: matrix.plugin == 'espish' && matrix.arch == 'arm64'
+        working-directory: vcv/espish
+        run: make -C tests engine_test CXX=clang++ && tests/engine_test
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |

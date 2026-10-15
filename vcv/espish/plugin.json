@@ -1,0 +1,14 @@
+{
+  "slug": "ESPishLab",
+  "name": "ESPishLab",
+  "version": "1.0.0",
+  "license": "BSD-3-Clause",
+  "brand": "ESPishLab",
+  "author": "DSP_Emulation contributors",
+  "modules": [{
+    "slug": "ESPish",
+    "name": "ESPish",
+    "description": "Echo with an in-loop frequency shifter into an FDN space; optional ES5510-style 24/16-bit math at EPS-16 Plus rates (not chip emulation); captures the recent past for OTIS.",
+    "tags": ["Delay", "Reverb", "Frequency shifter", "Stereo"]
+  }]
+}
