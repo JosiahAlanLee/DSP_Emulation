@@ -22,10 +22,13 @@ jobs:
       - name: Build and validate
         run: |
           # Each step's output is kept; on failure the tail is echoed as annotations.
-          step() { local log=/tmp/step.log; if ! ( "$@" ) > "$log" 2>&1; then echo "::error::FAILED: $*"; tail -n 25 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
+          step() { local log=/tmp/step.log rc=0; ( "$@" ) > "$log" 2>&1 || rc=$?; if [ $rc -ne 0 ]; then echo "::error::FAILED (exit $rc): $*"; tail -n 25 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
           step make -C vcv/espish -j2 RACK_DIR=/tmp/Rack-SDK
           step make -C vcv/espish/tests engine_test module_test RACK_DIR=/tmp/Rack-SDK
           step vcv/espish/tests/engine_test
+          # Module test under sanitizers first, so a crash comes with a stack trace.
+          step g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include vcv/espish/tests/module_test.cpp -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -Wl,--allow-shlib-undefined -o /tmp/module_test_asan
+          step env ASAN_OPTIONS=detect_leaks=0 /tmp/module_test_asan
           step vcv/espish/tests/module_test
           # Sanitizers on the portable engine (bounded run: skip nothing, just slower).
           step g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-unsafe-math-optimizations vcv/espish/tests/engine_test.cpp -o /tmp/espish_asan
