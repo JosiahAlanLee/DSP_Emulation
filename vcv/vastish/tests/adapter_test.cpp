@@ -86,6 +86,9 @@ int main() {
         m.dataFromJson(none); json_decref(none);
         assert(m.sampleLabel()=="NO SAMPLE");
         m.process(args); m.collectSamples();
+        assert(m.liveSample && !m.liveSample->view.valid()); // the audio thread has the empty sample
+        // INIT routes only the oscillator, so no sample means silence (Ladder Bass's F-blocks can self-oscillate).
+        for(int i=0;i<PARAM_COUNT;++i) m.params[i].setValue(programs()[0][i]);
         m.params[PITCH_WAVE].setValue(SAMPLE_WAVE); for(auto& o:m.outputs) o.channels=1;
         m.inputs[Vastish::PITCH_IN].channels=m.inputs[Vastish::GATE_IN].channels=1; m.inputs[Vastish::GATE_IN].setVoltage(10);
         for(int i=0;i<2000;++i) { m.process(args); assert(m.outputs[0].getVoltage()==0); }
