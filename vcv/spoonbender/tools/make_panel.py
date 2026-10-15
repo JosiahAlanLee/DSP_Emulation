@@ -7,6 +7,9 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 
 root = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'shared' / 'glyphs'))
+from glyph import glyph  # the twelve marks (Clavicula Matricis, Tabula XIII)
 font = TTFont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 glyphs = font.getGlyphSet(); cmap = font.getBestCmap(); units = font['head'].unitsPerEm
 
@@ -67,6 +70,9 @@ p += [text('WIDE', 233, 147, 6, LABEL, 'end'), text('FINE', 233, 160, 6, LABEL, 
       text('CAPTURE', 330, 320, 7)]
 for name, x in {**jacks_in, **jacks_out}.items():
     p.append(text(jack_labels[name], x, JACK_Y - 18, 7, OUT if name.startswith('OUT') else LABEL))
+# VII Revision (returns displaced), centred between the header texts.
+_l = 18 + width('Spoon Bender', 20) + 10 + width('ECHO / SPACE', 10); _r = W - 18 - width('ES5510-STYLE MATH, NOT CHIP EMULATION', 6.5)
+p.append(glyph(7, (_l + _r) / 2, 24, 30, LABEL, ACCENT))
 panel = ''.join(p) + '</svg>'
 (root / 'res').mkdir(exist_ok=True)
 (root / 'res/SpoonBender.svg').write_text(panel)

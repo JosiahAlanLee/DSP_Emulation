@@ -6,6 +6,9 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 
 root=Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'shared' / 'glyphs'))
+from glyph import glyph  # the twelve marks (Clavicula Matricis, Tabula XIII)
 font=TTFont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 glyphs=font.getGlyphSet(); cmap=font.getBestCmap(); units=font['head'].unitsPerEm
 def text(label,x,y,size=10,color='#d5dfde',center=True):
@@ -56,6 +59,7 @@ parts.append(text('COARSE / FINE',508,151,6.5)); parts.append(text('AMOUNT',510,
 parts.append(text('REWORK',510,229,9,'#f1b875')); parts.append(text('BUSY',529,258,5))
 parts.append(text('TRIG',510,277,8)); parts.append(text('AMT CV',510,327,8))
 parts.append(text('ASR-INSPIRED / ORIGINAL LAB ALGORITHMS',435,370,6,'#899e9b'))
+parts.append(glyph(9,478,25,32,'#d5dfde','#f1b875'))  # IX Substitutive change: old route struck out
 panel=''.join(parts)+'</svg>'
 (root/'res/OtisSampler.svg').write_text(panel)
 preview=parts.copy()

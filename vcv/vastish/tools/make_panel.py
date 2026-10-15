@@ -4,6 +4,9 @@ from pathlib import Path
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 root=Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'shared' / 'glyphs'))
+from glyph import glyph  # the twelve marks (Clavicula Matricis, Tabula XIII)
 font=TTFont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 glyphs=font.getGlyphSet(); cmap=font.getBestCmap(); units=font['head'].unitsPerEm
 def text(s,x,y,size=9,color='#d9e2e5',center=True):
@@ -35,6 +38,7 @@ a += [text(f'AUX {k+1}',780,92+40*k-15,8) for k in range(4)]
 for row,label in enumerate(['A','B','EQ']): a += [text(label,604,265+24*row,6)]
 for i,label in enumerate(['V/OCT','GATE','VEL','MOD']): a += [text(label,30+48*i,331,8)]
 for i,label in enumerate(['L','R','AMP','ENV2','ENV3','LFO1','LFO2','FUN1','FUN2','FUN3','FUN4']): a += [text(label,245+40*i,331,7,'#87e1c8')]
+a.append(glyph(10,618,15,32,'#d9e2e5','#87e1c8'))  # X Generative substrate: conditions beneath
 panel=''.join(a)+'</svg>'
 (root/'res/Vastish.svg').write_text(panel)
 # Match widget positions using neutral representations of knobs, sockets and selectors.
