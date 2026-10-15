@@ -1,0 +1,114 @@
+name: Release bundles
+# Builds OtisLab, VastishLab and SpoonBenderLab for all four platforms and packs one
+# zip per platform. A pushed tag (preview-N or vX.Y.Z) publishes them as a GitHub
+# pre-release; a manual run only uploads the zips as workflow artifacts.
+on:
+  push:
+    tags: ['preview-*', 'v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  RACK_SDK_VERSION: 2.6.4
+  TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd jq zip
+      - name: Fetch Rack SDK
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-lin-x64.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Build and bundle
+        run: |
+          for f in vcv/*/plugin.json; do v=$(jq -r .version "$f"); case "$v" in 2.*) ;; *) echo "::error::$f version $v must start with 2."; exit 1;; esac; done
+          for p in otislab vastish spoonbender; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
+          tools/bundle.sh "$TAG" lin-x64
+      - uses: actions/upload-artifact@v4
+        with: { name: bundle-lin-x64, path: bundle/*.zip, if-no-files-found: error }
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make zip unzip jq rsync
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-zstd
+      - name: Fetch Rack SDK
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-win-x64.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Build and bundle
+        run: |
+          for p in otislab vastish spoonbender; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
+          # The DLLs must not need MinGW runtime DLLs that Rack does not ship.
+          for p in otislab vastish spoonbender; do if objdump -p vcv/$p/plugin.dll | grep -Ei "DLL Name: (libstdc|libgcc|libwinpthread)"; then echo "::error::$p plugin.dll depends on a MinGW runtime DLL"; exit 1; fi; done
+          tools/bundle.sh "$TAG" win-x64
+      - uses: actions/upload-artifact@v4
+        with: { name: bundle-win-x64, path: bundle/*.zip, if-no-files-found: error }
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install zstd jq
+      - name: Fetch Rack SDK
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-mac-${{ matrix.arch }}.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Build and bundle
+        run: |
+          if [ "${{ matrix.arch }}" = x64 ]; then CROSS="CROSS_COMPILE=x86_64-apple-darwin"; want=x86_64; else CROSS=""; want=arm64; fi
+          for p in otislab vastish spoonbender; do
+            make -C vcv/$p -j3 RACK_DIR=/tmp/Rack-SDK $CROSS && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK $CROSS
+            test "$(lipo -archs vcv/$p/plugin.dylib)" = "$want"
+          done
+          tools/bundle.sh "$TAG" mac-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with: { name: bundle-mac-${{ matrix.arch }}, path: bundle/*.zip, if-no-files-found: error }
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: bundle-*, merge-multiple: true, path: out }
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          versions=$(for p in otislab vastish spoonbender; do printf -- '- %s %s\n' "$(jq -r .slug vcv/$p/plugin.json)" "$(jq -r .version vcv/$p/plugin.json)"; done)
+          {
+            echo "Preview build of all three modules for VCV Rack 2. Download the zip for your platform; each holds the three .vcvplugin files and an INSTALL.txt."
+            echo
+            echo "| Platform | Download |"
+            echo "|---|---|"
+            echo "| Windows x64 | DSP_Emulation-$TAG-Windows-x64.zip |"
+            echo "| Linux x64 | DSP_Emulation-$TAG-Linux-x64.zip |"
+            echo "| macOS Apple Silicon (M1 and later) | DSP_Emulation-$TAG-macOS-AppleSilicon.zip |"
+            echo "| macOS Intel | DSP_Emulation-$TAG-macOS-Intel.zip |"
+            echo
+            echo "Plugin versions:"
+            echo "$versions"
+            echo
+            echo "Linux has been used live in Rack. Windows and macOS builds compile and pass the portable engine tests in CI but have not been run inside Rack yet; reports welcome in Issues."
+            echo
+            echo "Install steps: [Getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/$TAG/docs/GETTING_STARTED.md). Manuals are linked from the [README](https://github.com/JosiahAlanLee/DSP_Emulation/blob/$TAG/README.md)."
+          } > notes.md
+          gh release create "$TAG" out/*.zip --prerelease --title "DSP_Emulation $TAG" --notes-file notes.md
