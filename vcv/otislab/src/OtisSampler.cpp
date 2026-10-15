@@ -3,6 +3,7 @@
 #include "engine/LoopMutator.hpp"
 #include "engine/Wav.hpp"
 #include "../../shared/SampleShare.hpp"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <osdialog.h>
@@ -123,6 +124,44 @@ struct OtisSampler : Module {
             WARN("OtisLab: %s",e.what());
         }
     }
+    // Reading ESPish captures from the module directly to the LEFT (UI thread only).
+    // Same versioned interface OTIS itself provides to Vastish on its right.
+    bool followFx=false; uint32_t fxRevision=0; bool fxSeen=false; const dspemu::SampleShareV1* fxShare=nullptr;
+    static const dspemu::SampleShareV1* findFxShare(Module* left) {
+        if(!left || !left->model || !left->model->plugin) return nullptr;
+        if(left->model->plugin->slug!="ESPishLab" || left->model->slug!="ESPish") return nullptr;
+        void* p=left->rightExpander.producerMessage;
+        return dspemu::validShare(p) ? static_cast<const dspemu::SampleShareV1*>(p) : nullptr;
+    }
+    // Copy the provider's sample and install it. Returns false if there is nothing
+    // usable or it changed while copying (the caller retries on the next frame).
+    bool importFrom(const dspemu::SampleShareV1* s) {
+        if(!s) return false;
+        uint32_t rev=s->revision(s->context);
+        if(rev&1) return false;
+        double rate=0; uint32_t got=0;
+        size_t total=s->copy(s->context,nullptr,0,&rate,&got);
+        if(total<2 || !std::isfinite(rate) || rate<1000 || rate>384000) return false;
+        std::vector<int16_t> pcm(std::min(total,otis::memoryWords));
+        if(s->copy(s->context,pcm.data(),pcm.size(),&rate,&got)!=total || got!=rev) return false;
+        char name[256]={}; s->name(s->context,name,sizeof name);
+        {
+            std::lock_guard<std::mutex> guard(engineMutex);
+            engine.install(pcm,rate); liveSample=false;
+        }
+        { std::lock_guard<std::mutex> names(nameMutex); sampleName=std::string(name)+(total>otis::memoryWords ? " [TRUNCATED]" : ""); lastError.clear(); }
+        refreshDisplay();
+        fxRevision=rev; fxSeen=true;
+        return true;
+    }
+    // Called every UI frame with the current left neighbour's share (or null).
+    void followFxShare(const dspemu::SampleShareV1* s) {
+        if(s!=fxShare) { fxShare=s; fxSeen=false; }
+        if(!followFx || !s) return;
+        uint32_t rev=s->revision(s->context);
+        if(rev==0 || (rev&1) || (fxSeen && rev==fxRevision)) return;  // 0: nothing captured yet
+        importFrom(s);
+    }
     void save(const std::string& path) {
         std::vector<int16_t> pcm; double rate=0;
         copyFinishedSample(pcm,rate);
@@ -229,6 +268,7 @@ struct OtisSampler : Module {
         json_object_set_new(root,"engineMode",json_integer(engineMode.load())); json_object_set_new(root,"filterMode",json_integer(filterMode.load())); json_object_set_new(root,"gated",json_boolean(gated.load()));
         json_object_set_new(root,"linearLevel",json_boolean(linearLevel.load())); json_object_set_new(root,"declick",json_boolean(declick.load()));
         json_object_set_new(root,"varispeed",json_boolean(varispeed.load())); json_object_set_new(root,"recordSource",json_integer(recordSource.load()));
+        json_object_set_new(root,"followFx",json_boolean(followFx));
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -240,6 +280,7 @@ struct OtisSampler : Module {
             linearLevel=json_is_true(json_object_get(root,"linearLevel"));
             varispeed=json_is_true(json_object_get(root,"varispeed"));
             auto rs=json_object_get(root,"recordSource"); recordSource=rs ? int(otis::clamp<json_int_t>(json_integer_value(rs),0,2)) : 0;
+            followFx=json_is_true(json_object_get(root,"followFx")); fxSeen=false;
             auto dc=json_object_get(root,"declick"); declick=dc ? json_is_true(dc) : true;
             auto text=json_string_value(json_object_get(root,"pcm16le"));
             if(text && *text) {
@@ -337,9 +378,24 @@ struct OtisSamplerWidget : ModuleWidget {
         addInput(createInputCentered<PJ301MPort>(Vec(119,341),module,OtisSampler::LEVEL_IN));
         for(int i=0;i<4;i++) addOutput(createOutputCentered<PJ301MPort>(Vec(165+46*i,341),module,i));
     }
+    // Rack writes leftExpander.moduleId on this (UI) thread and the pointer on the
+    // engine thread, so resolve the ID here; modules are only deleted from this thread.
+    static Module* leftNeighbour(Module* m) {
+        int64_t id=m ? m->leftExpander.moduleId : -1;
+        return id>=0 ? APP->engine->getModule(id) : nullptr;
+    }
+    void step() override {
+        if(auto* m=getModule<OtisSampler>()) m->followFxShare(OtisSampler::findFxShare(leftNeighbour(m)));
+        ModuleWidget::step();
+    }
     void appendContextMenu(Menu* menu) override {
         auto* m=getModule<OtisSampler>(); if(!m) return;
         menu->addChild(new MenuSeparator);
+        bool fxPresent=OtisSampler::findFxShare(leftNeighbour(m))!=nullptr;
+        // Resolve the neighbour again at click time; it may have moved or been deleted.
+        menu->addChild(createMenuItem("Import capture from ESPish on the left","",[m]{ m->importFrom(OtisSampler::findFxShare(leftNeighbour(m))); },!fxPresent));
+        menu->addChild(createBoolMenuItem("Follow ESPish captures","",[m]{return m->followFx;},[m](bool on){ m->followFx=on; m->fxSeen=false; }));
+        if(!fxPresent) menu->addChild(createMenuLabel("Place ESPish directly left of OTIS to import its captures"));
         menu->addChild(createMenuItem("Load WAV…","",[m]() {
             auto filters=osdialog_filters_parse("WAV:wav"); char* path=osdialog_file(OSDIALOG_OPEN,nullptr,nullptr,filters); osdialog_filters_free(filters);
             if(path) { m->load(path); std::free(path); }

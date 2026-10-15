@@ -1,0 +1,43 @@
+name: ESPish native Linux
+on:
+  push:
+    paths: ['vcv/espish/**', 'vcv/shared/**', 'vcv/otislab/src/**', 'vcv/otislab/tests/fx_link_test.cpp', '.github/workflows/espish.yml']
+  pull_request:
+    paths: ['vcv/espish/**', 'vcv/shared/**', 'vcv/otislab/src/**', 'vcv/otislab/tests/fx_link_test.cpp', '.github/workflows/espish.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install libRack runtime dependencies
+        # libRack.so needs JACK and PulseAudio client libraries to load, even headless.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libjack-jackd2-0 libpulse0 zstd jq
+      - name: Fetch pinned Rack SDK
+        run: |
+          curl --fail --location https://vcvrack.com/downloads/Rack-SDK-2.6.4-lin-x64.zip -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Build and validate
+        run: |
+          # Each step's output is kept; on failure the tail is echoed as annotations.
+          step() { local log=/tmp/step.log; if ! ( "$@" ) > "$log" 2>&1; then echo "::error::FAILED: $*"; tail -n 25 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
+          step make -C vcv/espish -j2 RACK_DIR=/tmp/Rack-SDK
+          step make -C vcv/espish/tests engine_test module_test RACK_DIR=/tmp/Rack-SDK
+          step vcv/espish/tests/engine_test
+          step vcv/espish/tests/module_test
+          # Sanitizers on the portable engine (bounded run: skip nothing, just slower).
+          step g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-unsafe-math-optimizations vcv/espish/tests/engine_test.cpp -o /tmp/espish_asan
+          step /tmp/espish_asan
+          # Cross-plugin: real OTIS module code importing from the compiled ESPish binary.
+          step make -C vcv/otislab -j2 RACK_DIR=/tmp/Rack-SDK
+          step g++ -std=c++17 -O2 -pthread -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include vcv/otislab/tests/fx_link_test.cpp -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -ldl -Wl,--allow-shlib-undefined -o /tmp/fx_link_test
+          step bash -c "cd vcv/otislab/tests && /tmp/fx_link_test ../../espish/plugin.so"
+          step make -C vcv/espish dist RACK_DIR=/tmp/Rack-SDK
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESPishLab-lin-x64
+          path: vcv/espish/dist/*.vcvplugin
+          if-no-files-found: error
