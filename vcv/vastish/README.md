@@ -2,7 +2,7 @@
 
 Native C++ port of the eight-voice Pd Vastish synth in `../../pd/vastish`.
 Includes all six routing algorithms, fourteen DSP functions, six original
-programs, three envelopes, two LFOs, two FUN processors, and all 74 program
+programs, three envelopes, two LFOs, four FUN processors, and all 80 program
 parameters. Pd is not needed to run the plugin.
 
 ## Install and play
