@@ -66,21 +66,29 @@ int main() {
         assert(s.sampleLabel()=="NO SAMPLE");
     }
     // Saved PCM always matches the current sample, even when a retired slot's
-    // address is reused by the next allocation (review finding 1).
+    // address is reused by the next allocation (review finding 1). Sequence: save A,
+    // publish B (A retires and is freed), publish C (often lands at A's address), save.
     {
-        Vastish m; bool sawReuse=false;
         auto make=[](int value,const char* name) { dspemu::MonoSample s; s.pcm.assign(128,int16_t(value)); s.rate=48000; s.name=name; return new SampleSlot(std::move(s)); };
-        m.publishSample(make(111,"A")); m.process(args); json_decref(m.dataToJson());
-        const void* previous=m.uiSample;
-        for(int k=0;k<200;++k) {
-            auto* next=make(200+k,"N"); sawReuse|=(next==previous);
-            m.publishSample(next); m.process(args); m.collectSamples();
-            json_t* saved=m.dataToJson();
+        int reused=0;
+        for(int trial=0;trial<50;++trial) {
+            Vastish t; t.publishSample(make(111,"A")); t.process(args); json_decref(t.dataToJson());
+            const void* a=t.uiSample;
+            t.publishSample(make(222,"B")); t.process(args); t.collectSamples();
+            auto* c=make(333,"C"); reused+=(c==a);
+            t.publishSample(c); t.process(args); t.collectSamples();
+            json_t* saved=t.dataToJson();
             auto pcm=dspemu::decodePcm16(json_string_value(json_object_get(json_object_get(saved,"sample"),"pcm16le")),Vastish::MAX_SAMPLE_FRAMES);
-            assert(pcm==m.uiSample->data.pcm); json_decref(saved);
-            previous=m.uiSample;
+            assert(pcm==t.uiSample->data.pcm && pcm[0]==333); json_decref(saved);
+            t.collectSamples();
         }
-        std::cout<<"save-cache check ran with address reuse "<<(sawReuse?"observed":"not observed")<<"\n";
+        std::cout<<"save-cache check: address reuse observed in "<<reused<<"/50 trials\n";
+    }
+    {
+        Vastish m;
+        dspemu::MonoSample old; old.pcm.assign(4800,12000); old.rate=48000; old.name="old sample";
+        m.publishSample(new SampleSlot(std::move(old))); m.process(args); m.collectSamples();
+        assert(m.sampleLabel()=="old sample");
         // Restoring a state that has no sample into a populated instance clears it (finding 3).
         Vastish empty; json_t* none=empty.dataToJson(); assert(!json_object_get(none,"sample"));
         m.dataFromJson(none); json_decref(none);

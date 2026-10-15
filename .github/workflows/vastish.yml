@@ -25,7 +25,7 @@ jobs:
         run: |
           # Run each step with its output kept; on failure, echo the tail as annotations
           # (readable from the API without the raw log). Notices from tests are surfaced too.
-          step() { local log=/tmp/step.log; if ! ( "$@" ) > "$log" 2>&1; then echo "::error::FAILED: $*"; tail -n 20 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -i "observed" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 3 "$log"; }
+          step() { local log=/tmp/step.log; if ! ( "$@" ) > "$log" 2>&1; then echo "::error::FAILED: $*"; tail -n 20 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -i "reuse observed" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 3 "$log"; }
           step make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
           step make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
           step vcv/vastish/tests/engine_test
