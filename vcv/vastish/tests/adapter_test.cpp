@@ -45,7 +45,7 @@ int main() {
         auto* waiting=new SampleSlot(two); s.pendingSample.store(waiting); s.process(args);
         assert(s.liveSample->data.name=="one.wav" && s.pendingSample.load()==waiting);
         s.collectSamples(); s.process(args); assert(s.liveSample==waiting);
-        s.uiSample=waiting; s.collectSamples();
+        s.uiSample=waiting; waiting->generation=++s.publishedGeneration; s.collectSamples(); // what publishSample records
         // Saved patch restores the sample and the loop setting, and plays identically.
         s.sampleLoop=true; json_t* saved=s.dataToJson();
         Vastish r; r.dataFromJson(saved); json_decref(saved);

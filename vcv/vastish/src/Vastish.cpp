@@ -35,7 +35,7 @@ struct Vastish : Module {
     std::string sampleError;        // UI thread
     // dataToJson cache, keyed by publication generation. Not by pointer: a retired
     // slot's address can be reused by a later allocation holding different audio.
-    uint64_t publishedGeneration=0, encodedGeneration=0; std::string encodedPcm;
+    uint64_t publishedGeneration=0, encodedGeneration=~uint64_t(0); std::string encodedPcm; // no published slot has ~0
     void collectSamples() { if(auto* r=retiredSample.exchange(nullptr,std::memory_order_acq_rel)) delete r; }
     void publishSample(SampleSlot* s) {
         collectSamples(); s->generation=++publishedGeneration; uiSample=s;
