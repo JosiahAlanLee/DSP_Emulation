@@ -22,7 +22,7 @@ jobs:
       - name: Build and validate
         run: |
           # Each step's output is kept; on failure the tail is echoed as annotations.
-          step() { local log=/tmp/step.log rc=0; ( "$@" ) > "$log" 2>&1 || rc=$?; if [ $rc -ne 0 ]; then echo "::error::FAILED (exit $rc): $*"; tail -n 25 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
+          step() { local log=/tmp/step.log rc=0; ( "$@" ) > "$log" 2>&1 || rc=$?; if [ $rc -ne 0 ]; then echo "::error::FAILED (exit $rc): $*"; tail -n 9 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
           step make -C vcv/espish -j2 RACK_DIR=/tmp/Rack-SDK
           step make -C vcv/espish/tests engine_test module_test RACK_DIR=/tmp/Rack-SDK
           step vcv/espish/tests/engine_test

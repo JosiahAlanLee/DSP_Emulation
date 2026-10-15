@@ -232,6 +232,17 @@ static void silenceSettles() {
     std::cout << "CLEAN: silence settles to exact zero (no denormals)\n";
 }
 
+#if defined(__SANITIZE_ADDRESS__)
+constexpr bool SANITIZED = true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+constexpr bool SANITIZED = true;
+#else
+constexpr bool SANITIZED = false;
+#endif
+#else
+constexpr bool SANITIZED = false;
+#endif
 static void cpu() {
     for (bool esp : {false, true}) {
         Engine e; e.prepare(48000); Params p; p.esp = esp; p.echo.shiftHz = 30; p.echoMix = p.spaceMix = p.mix = 1;
@@ -239,7 +250,7 @@ static void cpu() {
         for (int i = 0; i < 48000 * 5; i++) { float x = std::uniform_real_distribution<float>(-.2f, .2f)(g); acc += e.tick(x, x, p)[0]; }
         double share = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() / 5;
         std::cout << (esp ? "ESP" : "CLEAN") << " CPU: " << 100 * share << "% of one core at 48 kHz (" << acc << ")\n";
-        assert(share < .10);
+        if (!SANITIZED) assert(share < .10);  // instrumented builds are several times slower
     }
 }
 
