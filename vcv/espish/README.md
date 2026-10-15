@@ -33,10 +33,10 @@ are ±10 V full scale. At extreme feedback the output can briefly exceed that.
 
 | Control | Range |
 |---|---|
-| TIME | 1 ms – 2 s, exponential. With **CLOCK** patched it selects 1/4, 1/3, 1/2, 2/3, 3/4, 1, 3/2, 2, 3 or 4 × the clock period, measured between rising edges. Time changes glide over 50 ms, which bends pitch like tape. |
+| TIME | 1 ms – 2 s, exponential. With **CLOCK** patched it selects 1/4, 1/3, 1/2, 2/3, 3/4, 1, 3/2, 2, 3 or 4 × the clock period, measured between rising edges; typed entry then takes a ratio such as `3/2`. Time changes glide over 50 ms, which bends pitch like tape. |
 | FEEDBACK | 0–110%. Above 100% the in-loop soft limiter holds the level, so repeats sustain without running away. **LIMIT** lights while it is working. |
 | TONE | Left darkens each repeat; right thins it. Never boosts. |
-| SHIFT | Frequency shift in Hz, exactly 0 at centre (small deadband). **FINE** gives ±0.1–20 Hz and **WIDE** ±0.1 Hz–2 kHz, both exponential. Right-click for exact entry. |
+| SHIFT | Frequency shift in Hz, exactly 0 at centre (small deadband). **FINE** gives ±0.1–20 Hz and **WIDE** ±0.1 Hz–2 kHz, both exponential. Right-click to type a value in Hz; it clamps to the current range. |
 | LOOP / POST | LOOP shifts every repeat again, so repeats climb or fall by a fixed number of Hz (inharmonic, not octave shimmer). POST shifts the echo output once. |
 | SPREAD | Parallel stereo (0) to ping-pong (100%). |
 | ECHO MIX | Echo dry/wet into the space. |
@@ -70,6 +70,16 @@ toward −∞ as MAME's ES5510 core does by default. Filters, the shifter and th
 converters run in float between those points. The result is low-level grain
 and truncation in long tails, not bit crushing.
 
+Only the processed signal goes through the ESP path. The dry parts of the echo,
+space and global mixes are added at Rack's rate, so the dry signal is never
+band-limited or delayed. The converters add about 1.7 ms of latency to the echo
+and space at 29.76 kHz (1.3 ms at 44.64 kHz, 1.0 ms at 78.13 kHz, with Rack at
+48 kHz).
+
+While FREEZE is held, the ESP engine stops re-quantizing the frozen tail as it
+recirculates. The tail was quantized on the way in. Re-quantizing it in a loop
+with no loss would accumulate rounding noise, and quiet tails would grow.
+
 Right-click menu:
 
 - **ESP rate**: 29.76 kHz (default; 10 MHz / 336, OTIS's 21-oscillator rate),
@@ -94,22 +104,31 @@ Rack's sample rate, up to 20 s.
    has been handed over, which takes one UI frame.
 3. In OTIS's right-click menu, choose **Import capture from ESPish on the left**,
    or tick **Follow ESPish captures** so every capture loads automatically.
-   The sample is named "ESPish capture N" and keeps Rack's sample rate.
+   The sample is named "ESPish capture N" and keeps the sample rate it was
+   recorded at.
 
 After each capture the history starts again. A second capture taken soon after
-holds only what was played since the first.
+holds only what was played since the first. Changing Rack's sample rate clears
+the history, including a capture that hasn't been handed over yet.
 
 The capture is post-MIX. Turn MIX down to capture the dry input instead.
 
 ## Status and tests
 
-Version 1.0.0. Tested headless through Rack's module API. A live GUI and audio
+Version 1.0.1. Tested headless through Rack's module API. A live GUI and audio
 session has not been tested. ENSEMBLE, parallel routing and a space → echo
 return are deferred (see SPEC.md).
 
-CI on Linux runs the engine tests, a module test, an AddressSanitizer build and
-a cross-plugin test in which the real OTIS code imports from the compiled
-ESPish binary. Windows and macOS run the engine tests. Measured values:
+CI on Linux runs:
+
+- the engine tests
+- a module test
+- AddressSanitizer builds
+- a three-thread capture test under ThreadSanitizer
+- a cross-plugin test in which the real OTIS code imports from the compiled
+  ESPish binary
+
+Windows and macOS run the engine tests. Measured values:
 
 | Check | Result |
 |---|---|
@@ -117,7 +136,8 @@ ESPish binary. Windows and macOS run the engine tests. Measured values:
 | Shifter unwanted sideband, 100 Hz – 10 kHz | ≥ 44 dB down |
 | ESP converter (29.76 kHz) | 1 kHz −0.003 dB, 20 kHz input −89.5 dB, folded image −90.9 dB |
 | RT60, set 1 s / 3 s | CLEAN 0.90 / 2.69 s, ESP 0.93 / 2.79 s (±15% required) |
-| FREEZE level drift over 30 s | 0.05 dB (both engines) |
+| FREEZE level drift over 30 s, excitation 0.3 / 0.003 / 0.0003 | ≤ 0.06 dB (both engines) |
+| Dry path, stage mixes at 0, any MIX | Output equals input bit for bit (both engines) |
 | 60 s at every control maxed | Bounded, peak 1.20 (CLEAN) / 0.81 (ESP) full scale. The tail decays once feedback is lowered. |
 | CPU, 48 kHz, one core | Roughly 2.5% CLEAN and 3.4–4.9% ESP, depending on the machine. Above the 3% target for ESP. |
 
@@ -126,3 +146,19 @@ ESPish binary. Windows and macOS run the engine tests. Measured values:
 BSD-3-Clause (see LICENSE). Test code includes functions copied from MAME's
 ES5510 core (BSD-3-Clause, Christian Brunschen). Panel text is outlined from
 DejaVu Sans (docs/DEJAVU-LICENSE.txt). See THIRD_PARTY_NOTICES.md.
+
+## Changes
+
+**1.0.1**: fixes from GPT's review.
+
+- **ESP dry/wet comb filter:** the dry parts of the mixes used to go through
+  the converters, and their latency combed against the undelayed dry path:
+  −41.5 dB at 300 Hz with MIX at 50%. The dry parts are now added at Rack's
+  rate.
+- **SHIFT typed entry:** typed values are now in Hz. Typing 1 used to give
+  2 kHz. With CLOCK patched, TIME takes a typed clock ratio.
+- **Quiet ESP frozen tails:** they no longer grow. Before, they gained 7.4 dB
+  over 30 s at low level.
+- **Capture and sample-rate changes:** collecting a capture is now
+  synchronised with sample-rate changes, and each capture keeps the rate it was
+  recorded at.

@@ -22,7 +22,7 @@ jobs:
       - name: Build and validate
         run: |
           # Each step's output is kept; on failure the tail is echoed as annotations.
-          step() { local log=/tmp/step.log rc=0; ( "$@" ) > "$log" 2>&1 || rc=$?; if [ $rc -ne 0 ]; then echo "::error::FAILED (exit $rc): $*"; tail -n 9 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
+          step() { local log=/tmp/step.log rc=0; ( "$@" ) > "$log" 2>&1 || rc=$?; if [ $rc -ne 0 ]; then echo "::error::FAILED (exit $rc): $*"; tail -n 9 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks|threads" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
           step make -C vcv/espish -j2 RACK_DIR=/tmp/Rack-SDK
           step make -C vcv/espish/tests engine_test module_test RACK_DIR=/tmp/Rack-SDK
           step vcv/espish/tests/engine_test
@@ -33,6 +33,11 @@ jobs:
           # Sanitizers on the portable engine (bounded run: skip nothing, just slower).
           step g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-unsafe-math-optimizations vcv/espish/tests/engine_test.cpp -o /tmp/espish_asan
           step /tmp/espish_asan
+          # Capture collection vs sample-rate changes, three threads under ThreadSanitizer.
+          # (TSAN needs fewer mmap random bits than the runner kernel's default.)
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          step make -C vcv/espish/tests capture_race_test
+          step vcv/espish/tests/capture_race_test
           # Cross-plugin: real OTIS module code importing from the compiled ESPish binary.
           step make -C vcv/otislab -j2 RACK_DIR=/tmp/Rack-SDK
           step g++ -std=c++17 -O2 -pthread -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include vcv/otislab/tests/fx_link_test.cpp -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -ldl -Wl,--allow-shlib-undefined -o /tmp/fx_link_test

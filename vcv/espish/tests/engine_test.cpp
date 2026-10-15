@@ -152,18 +152,24 @@ static void reverb() {
         std::cout << (esp ? "ESP" : "CLEAN") << " RT60 set " << decay << " s, measured " << t << " s\n";
         assert(std::abs(t - decay) < .15 * decay);
     }
+    // FREEZE holds the level at every excitation level. Quiet tails matter for ESP: a
+    // lossless loop that kept re-quantizing accumulated rounding noise (+7 dB at 0.0003).
     for (bool esp : {false, true}) {
-        Engine e; e.prepare(sr); Params p; p.esp = esp; p.echoMix = 0; p.spaceMix = 1; p.mix = 1;
-        p.space = {0.f, .7f, 4.f, .7f, .2f, .5f, false};
-        std::mt19937 g(9);
-        for (int i = 0; i < int(sr); i++) { float x = std::uniform_real_distribution<float>(-.3f, .3f)(g); e.tick(x, x, p); }
-        p.space.freeze = true;
-        std::vector<float> out;
-        for (int i = 0; i < int(31 * sr); i++) out.push_back(e.tick(.9f, -.9f, p)[0]);  // input must be ignored
-        double first = rmsOf(out, size_t(sr), size_t(2 * sr)), worst = 0;
-        for (int s = 2; s < 31; s++) worst = std::max(worst, std::abs(db(rmsOf(out, size_t(s * sr), size_t((s + 1) * sr)), first)));
-        std::cout << (esp ? "ESP" : "CLEAN") << " FREEZE: level drift over 30 s " << worst << " dB\n";
-        assert(worst < (esp ? 3.0 : 1.0));
+        double worstAll = 0;
+        for (float amp : {.3f, .003f, .0003f}) {
+            Engine e; e.prepare(sr); Params p; p.esp = esp; p.echoMix = 0; p.spaceMix = 1; p.mix = 1;
+            p.space = {0.f, .7f, 4.f, .7f, .2f, .5f, false};
+            std::mt19937 g(9);
+            for (int i = 0; i < int(sr); i++) { float x = std::uniform_real_distribution<float>(-amp, amp)(g); e.tick(x, x, p); }
+            p.space.freeze = true;
+            std::vector<float> out;
+            for (int i = 0; i < int(31 * sr); i++) out.push_back(e.tick(.9f, -.9f, p)[0]);  // input must be ignored
+            double first = rmsOf(out, size_t(sr), size_t(2 * sr)), worst = 0;
+            for (int s = 2; s < 31; s++) worst = std::max(worst, std::abs(db(rmsOf(out, size_t(s * sr), size_t((s + 1) * sr)), first)));
+            assert(first > 0 && worst < .5);
+            worstAll = std::max(worstAll, worst);
+        }
+        std::cout << (esp ? "ESP" : "CLEAN") << " FREEZE: level drift over 30 s at excitation 0.3 / 0.003 / 0.0003, worst " << worstAll << " dB\n";
     }
 }
 
@@ -207,17 +213,46 @@ static void echoTimingAndBudget() {
 }
 
 static void captureBuffer() {
-    Capture c; c.prepare(1000);
+    Capture c; c.prepare(1000, 48000);
     assert(!c.trigger(100));  // nothing recorded yet
     for (int i = 0; i < 1500; i++) c.write(float(i % 997) / 32768.f);
     assert(c.trigger(300));
     assert(!c.trigger(300));  // still waiting for the UI
-    std::vector<int16_t> got; assert(c.collect(got) && got.size() == 300);
+    std::vector<int16_t> got; double rate = 0; assert(c.collect(got, rate) && got.size() == 300 && rate == 48000);
     for (int i = 0; i < 300; i++) assert(got[i] == int16_t((1200 + i) % 997));
-    assert(!c.collect(got));
+    assert(!c.collect(got, rate));
     for (int i = 0; i < 50; i++) c.write(-.5f);
-    assert(c.trigger(400) && c.collect(got) && got.size() == 50 && got[0] == -16384);  // only what the new ring holds
-    std::cout << "capture: oldest-first copy of the last N frames, one pending capture at a time\n";
+    assert(c.trigger(400) && c.collect(got, rate) && got.size() == 50 && got[0] == -16384);  // only what the new ring holds
+    // A sample-rate change discards an uncollected capture; later captures carry the new rate.
+    for (int i = 0; i < 50; i++) c.write(.25f);
+    assert(c.trigger(50));
+    c.prepare(2000, 96000);
+    assert(!c.collect(got, rate));
+    for (int i = 0; i < 70; i++) c.write(.25f);
+    assert(c.trigger(2000) && c.collect(got, rate) && got.size() == 70 && rate == 96000 && got[0] == 8192);
+    std::cout << "capture: oldest-first copy of the last N frames with its rate, one pending capture at a time, reset by a rate change\n";
+}
+
+// The dry signal never passes the ESP converters: with both stage mixes at zero the
+// output equals the input bit for bit at any MIX (the 1.7 ms converter latency used
+// to comb-filter against the dry path: -41.5 dB at 300 Hz with MIX at 50%).
+static void dryPath() {
+    for (bool esp : {false, true}) for (float mix : {0.f, .5f, 1.f}) {
+        Engine e; e.prepare(48000); Params p; p.esp = esp; p.echoMix = 0; p.spaceMix = 0; p.mix = mix;
+        std::mt19937 g(5);
+        for (int i = 0; i < 48000; i++) {
+            float x = .3f + std::uniform_real_distribution<float>(-.5f, .5f)(g);  // includes DC
+            auto y = e.tick(x, -x, p);
+            assert(y[0] == x && y[1] == -x);
+        }
+    }
+    // With echo mixed in, the direct half is exact until the first repeat arrives.
+    for (bool esp : {false, true}) {
+        Engine e; e.prepare(48000); Params p; p.esp = esp; p.echoMix = .5f; p.spaceMix = 0; p.mix = 1;
+        p.echo.timeSec = .3f; p.echo.feedback = 0;
+        for (int i = 0; i < 48000 / 4; i++) { float x = float(std::sin(i * .07)); assert(e.tick(x, x, p)[0] == .5f * x); }
+    }
+    std::cout << "dry path: bit-exact with stage mixes at zero (any MIX, both engines); direct term exact before the first repeat\n";
 }
 
 static void silenceSettles() {
@@ -260,6 +295,7 @@ int main() {
     shifterAccuracy();
     echoTimingAndBudget();
     captureBuffer();
+    dryPath();
     espBandLimit();
     reverb();
     silenceSettles();

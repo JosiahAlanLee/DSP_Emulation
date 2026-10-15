@@ -21,6 +21,23 @@ static float shiftHz(float knob, bool wide) {
     float hz = lo * std::pow(hi / lo, (a - .02f) / .98f);
     return knob < 0 ? -hz : hz;
 }
+// Inverse of shiftHz, for typed entry. Values beyond the range clamp to its end;
+// below 0.05 Hz gives the exact centre.
+static float shiftKnob(float hz, bool wide) {
+    float a = std::abs(hz);
+    if (!(a >= .05f)) return 0;  // also catches NaN
+    float lo = .1f, hi = wide ? 2000.f : 20.f;
+    a = std::max(lo, std::min(hi, a));
+    float k = .02f + .98f * std::log(a / lo) / std::log(hi / lo);
+    return hz < 0 ? -k : k;
+}
+// Nearest clock ratio (in log terms) to a typed ratio; returns its knob position.
+static float clockKnob(float ratio) {
+    int best = 0;
+    for (int i = 1; i < CLOCK_RATIOS; i++)
+        if (std::abs(std::log(ratio / clockRatios[i])) < std::abs(std::log(ratio / clockRatios[best]))) best = i;
+    return (best + .5f) / CLOCK_RATIOS;
+}
 
 struct Espish : Module {
     enum Params { TIME, FEEDBACK, TONE, SHIFT, SPREAD, ECHO_MIX, SHIFT_RANGE, SHIFT_POS,
@@ -43,19 +60,27 @@ struct Espish : Module {
     std::atomic<uint32_t> shareRevision{0}; int captureCount = 0;
     dspemu::SampleShareV1 share{};
 
+    // Display and typed entry are in Hz for the current range (FINE/WIDE).
     struct ShiftQuantity : ParamQuantity {
-        std::string getDisplayValueString() override {
-            auto* m = dynamic_cast<Espish*>(module);
-            bool wide = !m || m->params[SHIFT_RANGE].getValue() > .5f;
-            return string::f("%+.2f", shiftHz(getValue(), wide));
-        }
+        bool wide() { auto* m = dynamic_cast<Espish*>(module); return !m || m->params[SHIFT_RANGE].getValue() > .5f; }
+        float getDisplayValue() override { return shiftHz(getValue(), wide()); }
+        void setDisplayValue(float hz) override { setValue(shiftKnob(hz, wide())); }
+        std::string getDisplayValueString() override { return string::f("%+.2f", getDisplayValue()); }
     };
+    // Seconds normally; with CLOCK patched, a ratio of the clock period (type 1/2, 3, 0.75 ...).
     struct TimeQuantity : ParamQuantity {
+        bool clocked() { auto* m = dynamic_cast<Espish*>(module); return m && m->inputs[CLOCK_IN].isConnected(); }
+        int ratioIndex() { return std::max(0, std::min(CLOCK_RATIOS - 1, int(getValue() * CLOCK_RATIOS))); }
+        float getDisplayValue() override { return clocked() ? clockRatios[ratioIndex()] : ParamQuantity::getDisplayValue(); }
+        void setDisplayValue(float v) override {
+            if (!clocked()) return ParamQuantity::setDisplayValue(v);
+            if (std::isfinite(v) && v > 0) setValue(clockKnob(v));
+        }
         std::string getDisplayValueString() override {
-            auto* m = dynamic_cast<Espish*>(module);
-            if (m && m->inputs[CLOCK_IN].isConnected()) return std::string(clockNames[std::min(CLOCK_RATIOS - 1, int(getValue() * CLOCK_RATIOS))]) + " x clock";
+            if (clocked()) return std::string(clockNames[ratioIndex()]) + " x clock";
             return ParamQuantity::getDisplayValueString();
         }
+        std::string getUnit() override { return clocked() ? "" : ParamQuantity::getUnit(); }
     };
 
     Espish() {
@@ -116,10 +141,11 @@ struct Espish : Module {
     // UI thread: move a finished capture into the share.
     void collectCapture() {
         std::vector<int16_t> pcm;
-        if (!engine.capture.collect(pcm)) return;
+        double rate = 0;
+        if (!engine.capture.collect(pcm, rate)) return;
         std::lock_guard<std::mutex> guard(shareMutex);
         shareRevision.fetch_add(1, std::memory_order_acq_rel);  // odd: changing
-        sharePcm.swap(pcm); shareRate = engine.hostRate;
+        sharePcm.swap(pcm); shareRate = rate;  // the rate it was recorded at, not the current one
         shareName = string::f("ESPish capture %d", ++captureCount);
         shareRevision.fetch_add(1, std::memory_order_release);  // even: ready
     }

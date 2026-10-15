@@ -1,6 +1,6 @@
 # ESPish: effects module spec
 
-Status: **v1 implemented** (1.0.0). This document is the design record. The
+Status: **v1 implemented** (1.0.1; §11 lists the post-release fixes). This document is the design record. The
 user-facing manual is [README.md](README.md).
 
 The draft was written on 2026-10-14 from proposals by GPT, Google Argon and
@@ -122,10 +122,16 @@ a service manual if possible.
 ## 4. Signal flow (as built)
 
 ```
-IN L ─┬─► ECHO ─► [echo mix] ─► SPACE ─► [space mix] ─► DC block (5 Hz) ─► [MIX with dry] ─► OUT L/R
-IN R ─┘    ▲  │                                                                │
-(R → L)    └──┘ feedback: 40 Hz HP → TONE → guard LPF → shifter → ×FB → limiter   └─► capture ring (mono) ─► OTIS (§7)
+         processed path: CLEAN at host rate, ESP at internal rate behind the converters
+IN L ─┬─► ECHO ─► echo mix ─► SPACE ─► processed part of the mixes ─► DC block (5 Hz) ─► (+) ─► MIX with dry ─► OUT L/R
+IN R ─┘    ▲  │                                                                         ▲                  │
+(R → L)    └──┘ feedback: 40 Hz HP → TONE → guard LPF → shifter → ×FB → limiter         │                  └─► capture ring (mono) ─► OTIS (§7)
+      └──── direct term: input × (1 − echo mix) × (1 − space mix), at host rate ────────┘
 ```
+
+The direct (dry) parts of all three mixes stay at the host rate. In ESP they
+used to pass the converters, whose latency combed against the global MIX's dry
+path (§11).
 
 - The output is stereo throughout. A mono source (OTIS) into IN L feeds both
   channels.
@@ -210,7 +216,8 @@ Separate controls, never merged into one "character" knob:
 | MODULATION | Up to 1.2 ms of modulation on alternate lines (chorus in the tail; reduces metallic ringing) |
 
 FREEZE sets line gain to 1 and turns damping and modulation off. Reads become
-integer, so no interpolation loss occurs, and space input is muted.
+integer, so no interpolation loss occurs, and space input and diffuser
+injection are muted. In ESP the frozen loop is also not re-quantized (§6.2).
 
 ## 6. Engines
 
@@ -253,6 +260,17 @@ memory*, not Ensoniq's programs.
   are not counted.
   - The 64K figure is a deliberate creative limit, period-plausible but **not
     a verified EPS-16 Plus figure** (§3.2).
+- **Dry path:** only the processed signal runs in ESP. The direct terms of the
+  mixes are added at the host rate (§4), so ESP never band-limits, quantizes
+  or delays the dry signal. The converters add 1.69 ms of latency to the
+  processed signal at 29.76 kHz, 1.32 ms at 44.64 kHz and 1.01 ms at
+  78.13 kHz (measured, host at 48 kHz). That is 31 samples at each side's
+  rate. Echo spacing inside the loop is unaffected.
+- **FREEZE:** the frozen FDN recirculates without node or memory quantization.
+  The content was quantized on the way in.
+  - In a lossless loop, rounding error accumulates instead of decaying. Quiet
+    tails grew by 7.4 dB in 30 s when the loop kept re-quantizing (§11).
+  - The output tap is still quantized.
 - The 160-instruction limit is not modelled as a cycle budget.
 
 Integer reference primitives (`src/engine/FixedPoint.hpp`):
@@ -293,6 +311,11 @@ press REC. ESPish keeps the **recent past**:
   (1–20 s) and switches writing to the other ring. The audio thread doesn't
   allocate, copy or wait.
   - The UI thread copies the frozen ring and releases it.
+  - The copy and a sample-rate change (which rebuilds the rings) are
+    serialised by a mutex the audio thread never takes. A rate change discards
+    an uncollected capture.
+  - Each capture carries the rate it was recorded at, not the engine's current
+    rate.
   - Only one capture can be pending at a time.
   - The next capture's history starts from the switch.
 - **Share:** the copy is exposed through `vcv/shared/SampleShare.hpp` (version
@@ -344,7 +367,8 @@ under ASan/UBSan on Linux:
 | Shifter unwanted sideband, 100 Hz–10 kHz | ≥ 40 dB | ≥ 44.5 dB |
 | Stability, maxed controls (60 s at 48 kHz; 10 s at 44.1 and 96 kHz) | Finite, bounded, decays after release | See §5.4 |
 | RT60 (noise burst), set 1 s / 3 s | ±15% | CLEAN 0.90 / 2.69 s; ESP 0.93 / 2.79 s |
-| FREEZE drift over 30 s | < 1 dB CLEAN, < 3 dB ESP | 0.05 dB both |
+| FREEZE drift over 30 s, excitation 0.3 / 0.003 / 0.0003 | < 0.5 dB, both engines | ≤ 0.06 dB |
+| Dry path, stage mixes at zero | Output equals input bit for bit at any MIX; direct term exact before the first repeat | Pass, both engines |
 | ESP converter at 29.76 kHz | Passband ±0.5 dB; stopband and aliases < −40 dB | 1 kHz −0.003 dB; 20 kHz −89.5 dB; folded image −90.9 dB |
 | Echo timing | CLEAN ±0.2 ms, ESP ±3 ms; budget enforced | Pass; 1.101 s limit |
 | Silence | Exact zero, no denormals | Pass (CLEAN) |
@@ -352,12 +376,23 @@ under ASan/UBSan on Linux:
 
 Linux CI also runs:
 
+- `tests/capture_race_test.cpp` under ThreadSanitizer. It uses three threads:
+  - audio: try-lock, tick, trigger
+  - reconfiguration: lock and re-prepare at alternating rates
+  - UI: collect
+
+  Each capture must carry a valid rate and fit its ring. Without the capture
+  mutex, TSAN reports the race.
+
 - `tests/module_test.cpp`, which drives the real module through Rack's API:
   - dry path and normalling
   - clock-synced echo, landing within 1 ms
   - shift display at the centre and both ranges
   - freeze gate
-  - capture → share, covering revisions, rate and name
+  - typed SHIFT values in both ranges, and typed TIME in seconds and as clock
+    ratios
+  - capture → share, covering revisions, rate and name, and a sample-rate
+    change with a capture pending
   - reconfiguration at every ESP rate
   - JSON
 - `vcv/otislab/tests/fx_link_test.cpp`: the real OTIS code imports and follows
@@ -375,3 +410,15 @@ binaries inside Rack.
 | ESP rates and memory budget | Keep them, explicitly labelled provisional (inferred / period-plausible, not verified). An EPS-16 Plus service manual or schematic would settle both. |
 | Capture format | Stereo output; mono captures to OTIS for now. |
 | Name | Keep ESPish, provided the description says explicitly that it is not chip emulation. |
+
+## 11. Post-release review (1.0.1)
+
+GPT's testing of 1.0.0 found four problems. Each was reproduced, fixed and
+given a test that fails on the old code.
+
+| Finding | Cause | Fix |
+|---|---|---|
+| P1: capture copy not synchronised with sample-rate changes; the rate was read from the live engine | `collectCapture()` read the rings without a lock while `onSampleRateChange()` rebuilt them | A mutex serialises collection and rebuilding; the audio thread doesn't use it. The rate is stored with the frozen capture. Covered by a TSAN test. |
+| P2: ESP comb filtering at partial MIX (−41.5 dB at 300 Hz, both stage mixes at 0 and MIX at 50%) | The stage mixes' dry parts went through the converters (1.69 ms), then met the undelayed global dry path | Direct terms are added at the host rate (§4); the dry path is bit-exact |
+| P2: typing a SHIFT value set the knob position, so typing 1 gave +2 kHz | No inverse of the display mapping | `setDisplayValue` inverts the Hz curve for the current range; TIME accepts clock ratios when clocked |
+| P2: quiet ESP frozen tails grew (+7.44 dB in 30 s at 0.0003 excitation) | Re-quantizing a lossless loop accumulates rounding noise | No re-quantization while frozen; tested at three excitation levels |
