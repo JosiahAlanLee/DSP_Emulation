@@ -1,3 +1,4 @@
+#include <limits>
 #include "../src/engine/Engine.hpp"
 #include <cassert>
 #include <chrono>
@@ -42,6 +43,28 @@ int main() {
         double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
         std::cout<<"program="<<program<<" sr="<<rate<<" eight_voice_cpu_seconds_per_audio_second="<<seconds<<"\n";
     }
+    // FUN 3/4 and AUX: chained functions, per-voice AUX, clamping, cycle safety.
+    {
+        auto p=programs()[0];
+        p[FUN3_A]=SRC_AUX1; p[FUN3_B]=SRC_AUX1+1; p[FUN3_EQ]=2;       // FUN3 = AUX1 * AUX2
+        p[FUN4_A]=SRC_FUN3; p[FUN4_B]=SRC_AUX1+2; p[FUN4_EQ]=0;       // FUN4 = FUN3 + AUX3
+        p[FUN1_A]=SRC_FUN4; p[FUN1_B]=0; p[FUN1_EQ]=0;                 // FUN1 reads FUN4 (old block, new source)
+        p[PITCH_S1]=SRC_FUN1; p[PITCH_D1]=12;                          // pitch +12 per unit of FUN1
+        Engine e; std::array<VoiceInput,8> in{};
+        for(int v=0;v<8;++v) { in[v].gate=true; in[v].aux={.5f,float(v)/8,.25f,9.f}; }
+        e.tick(p,in);
+        for(int v=0;v<8;++v) {
+            auto& s=e.voices[v].sources;
+            assert(std::abs(s[SRC_FUN3]-.5f*v/8)<1e-6f && std::abs(s[SRC_FUN4]-(.5f*v/8+.25f))<1e-6f);
+            assert(s[SRC_FUN1]==s[SRC_FUN4] && s[SRC_AUX1+3]==1.f);       // AUX clamps to +-1
+            assert(std::abs(e.voices[v].control(PITCH_ADJ,p,60)-(p[PITCH_ADJ]+12*s[SRC_FUN4]))<1e-4f);
+        }
+        in[0].aux[0]=std::numeric_limits<float>::quiet_NaN(); e.tick(p,in); assert(e.voices[0].sources[SRC_AUX1]==0);
+        // A FUN3 <-> FUN4 cycle evaluates to zero on the cyclic edge, never NaN or stale.
+        p[FUN3_A]=SRC_FUN4; p[FUN4_A]=SRC_FUN3;
+        for(int i=0;i<100;++i) { auto y=e.tick(p,in); assert(std::isfinite(y[0])&&std::isfinite(y[1])); }
+        for(auto& v:e.voices) assert(std::isfinite(v.sources[SRC_FUN3])&&std::isfinite(v.sources[SRC_FUN4]));
+    }
     // Sleeping unpatched voices must not change the audio of the voices in use,
     // including a voice whose channel disappears while it is still releasing.
     for(int program=0;program<6;++program) {
@@ -69,5 +92,5 @@ int main() {
             float y=f.tick(type,x,i%2?135:-20,i%3?40:-.98f,rate); assert(std::isfinite(y));
         }
     }
-    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, all function endpoints, zero steady-state allocations\n";
+    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, FUN 3/4 and per-voice AUX, all function endpoints, zero steady-state allocations\n";
 }

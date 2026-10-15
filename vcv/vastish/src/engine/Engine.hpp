@@ -8,7 +8,13 @@ inline float fun(int eq,float a,float b) {
         case 7:return a*(b+1)*.5f; default:return a+b; }
 }
 inline int choice(float v,int max) { return int(clamp(std::round(v),0,float(max))); }
-struct VoiceInput { float note=60,velocity=1,modwheel=0; bool gate=false; };
+struct VoiceInput { float note=60,velocity=1,modwheel=0; bool gate=false; std::array<float,4> aux{}; }; // aux: AUX 1-4, ±1
+// Control-source indices. 0-11 match the Pd patch; 12+ are native additions.
+enum SourceId { SRC_FUN1=5, SRC_FUN2=6, SRC_AMPENV=11, SRC_FUN3=12, SRC_FUN4=13, SRC_AUX1=14 };
+constexpr int FUN_COUNT=4;
+inline int funSource(int f) { return f<2 ? SRC_FUN1+f : SRC_FUN3+(f-2); }
+inline int sourceFun(int src) { return src==SRC_FUN1||src==SRC_FUN2 ? src-SRC_FUN1 : (src==SRC_FUN3||src==SRC_FUN4 ? src-SRC_FUN3+2 : -1); }
+inline int funBase(int f) { static constexpr int base[FUN_COUNT]={FUN1_A,FUN2_A,FUN3_A,FUN4_A}; return base[f]; }
 // Read-only view of the loaded sample for the SAMPLE pitch wave (native-only).
 // 0 V / MIDI 60 plays the sample at its recorded pitch, as a K2000 keymap root.
 struct SampleView {
@@ -19,7 +25,7 @@ constexpr int SAMPLE_WAVE=5;
 constexpr float SAMPLE_ROOT_NOTE=60;
 struct Voice {
     Phasor pitch; Noise noise; Lfo lfo[2]; Envelope env[3]; FunctionBlock block[3];
-    uint32_t noteRandom=1; Ramp wheel; bool gate=false; float velocity=0,random=0; std::array<float,12> sources{};
+    uint32_t noteRandom=1; Ramp wheel; bool gate=false; float velocity=0,random=0; std::array<float,SOURCE_COUNT> sources{};
     double samplePos=0; bool samplePlaying=false;
     // 4-point Hermite read over the half-open range [0, frames). One-shot clamps
     // the interpolation neighbours at the ends; a loop wraps them across the seam,
@@ -49,17 +55,17 @@ struct Voice {
     void panic() { gate=false; for(auto& e:env) e=Envelope{}; for(auto& b:block) { b.comb.clear(); b.ladder.state={}; b.lop.last=b.hipLop.last=0; b.lp2=Vcf{}; b.bp=Vcf{}; b.notch=Vcf{}; } }
     float control(int base,const Parameters& p,float note) const {
         return p[base]+p[base+1]*(note-60)+p[base+2]*velocity+
-            sources[choice(p[base+3],11)]*p[base+4]+sources[choice(p[base+5],11)]*p[base+6];
+            sources[choice(p[base+3],SOURCE_COUNT-1)]*p[base+4]+sources[choice(p[base+5],SOURCE_COUNT-1)]*p[base+6];
     }
     float evaluateFun(int f,const Parameters& p,unsigned& busy,unsigned& done) {
         unsigned bit=1u<<f;
-        if(done&bit) return sources[5+f];
+        if(done&bit) return sources[funSource(f)];
         if(busy&bit) return 0; // Unsupported cyclic edges are zero, never stale feedback.
-        busy|=bit; int base=FUN1_A+f*3;
-        auto read=[&](int src) { return src==5||src==6 ? evaluateFun(src-5,p,busy,done) : sources[src]; };
-        float a=read(choice(p[base],11)), b=read(choice(p[base+1],11));
-        sources[5+f]=fun(choice(p[base+2],7),a,b);
-        busy&=~bit; done|=bit; return sources[5+f];
+        busy|=bit; int base=funBase(f);
+        auto read=[&](int src) { int g=sourceFun(src); return g>=0 ? evaluateFun(g,p,busy,done) : sources[src]; };
+        float a=read(choice(p[base],SOURCE_COUNT-1)), b=read(choice(p[base+1],SOURCE_COUNT-1));
+        sources[funSource(f)]=fun(choice(p[base+2],7),a,b);
+        busy&=~bit; done|=bit; return sources[funSource(f)];
     }
     std::array<float,2> tick(const Parameters& p,const VoiceInput& in,float sr,const SampleView* sample=nullptr) {
         if(in.gate!=gate) {
@@ -77,7 +83,8 @@ struct Voice {
         sources[4]=lfo[1].tick(p[LFO2_RATE],choice(p[LFO2_SHAPE],4),sr);
         sources[7]=wheel.tick(); sources[8]=velocity; sources[9]=in.note/127;
         sources[10]=random; sources[11]=env[0].tick();
-        unsigned busy=0,done=0; evaluateFun(0,p,busy,done); evaluateFun(1,p,busy,done);
+        for(int k=0;k<4;++k) sources[SRC_AUX1+k]=std::isfinite(in.aux[k]) ? clamp(in.aux[k],-1,1) : 0.f;
+        unsigned busy=0,done=0; for(int f=0;f<FUN_COUNT;++f) evaluateFun(f,p,busy,done);
         float pitchHz=mtof(clamp(control(PITCH_ADJ,p,in.note),-20,135));
         float ph=pitch.tick(pitchHz,sr);
         float n=noise.tick(), x;

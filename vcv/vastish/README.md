@@ -13,7 +13,7 @@ Rack shared-library API; a live GUI/audio-device session still needs testing.
 
 1. Quit Rack. Copy `VastishLab-2.0.0-lin-x64.vcvplugin` into the `plugins-lin-x64`
    folder inside Rack's user folder. Use **Help → Open user folder** to locate it.
-2. Start Rack and add **VastishLab → Vastish**. It occupies 48 HP.
+2. Start Rack and add **VastishLab → Vastish**. It occupies 56 HP (48 HP before 2.3.0).
 3. Patch pitch and gate from a sequencer or Core MIDI-CV into **V/OCT** and
    **GATE**. For MIDI chords, enable eight-voice polyphony in MIDI-CV.
 4. Patch **L/R** to the existing Audio module. The default program is Ladder
@@ -21,6 +21,23 @@ Rack shared-library API; a live GUI/audio-device session still needs testing.
 5. Click a dark selector to choose a wave, algorithm, DSP type or modulation
    source. Drag knobs; right-click a knob for exact numeric entry. Patch saves
    retain edits. The name shows the last loaded program, even after edits.
+
+## FUN 3/4 and AUX CV (2.3.0)
+
+Native additions in the K2000 spirit: four FUN blocks instead of two, and four
+polyphonic CV inputs that act as control sources.
+
+- **FUN 3 / FUN 4** work like FUN 1/2 (two inputs and an equation) and have their
+  own outputs. Any FUN can read any other; a cyclic chain reads zero on the
+  edge that closes the loop.
+- **AUX 1–4** (right-hand column) appear as AUX1–AUX4 in every SOURCE selector and
+  FUN input. ±10 V maps to ±1, the same range as the LFOs; 0–10 V gives 0–1 like
+  the envelopes. A polyphonic cable gives each voice its own value (channel *n*
+  drives voice *n*); a mono cable reaches every voice.
+- New sources and parameters are appended, so patches from earlier versions load
+  unchanged and sound identical (checked sample-for-sample on all six programs).
+- The panel grew to 56 HP for the AUX column. In an existing patch Rack may
+  overlap Vastish with the module to its right; drag them apart.
 
 ## Samples (2.1.0)
 

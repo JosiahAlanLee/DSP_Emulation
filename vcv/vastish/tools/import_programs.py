@@ -10,13 +10,17 @@ with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringI
 names = list(pd['defaults']())
 # Keep actual generator order; enum names shield the engine from ordering changes.
 fnames = ['NONE'] + [f[0] for f in pd['FUNCS']]
-sources = pd['SOURCES']
+# Native-only extensions, appended so saved patches keep their indices:
+# FUN 3/4 as K2000-style extra function blocks, AUX 1-4 as polyphonic CV inputs.
+sources = pd['SOURCES'] + ['FUN3', 'FUN4', 'AUX1', 'AUX2', 'AUX3', 'AUX4']
+native_params = ['fun3-a', 'fun3-b', 'fun3-eq', 'fun4-a', 'fun4-b', 'fun4-eq']
 # SAMPLE is a native-only addition (not in the Pd patch): plays the loaded WAV,
 # K2000-style, as the oscillator feeding F1-F3.
 waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE', 'SAMPLE']
 shapes = ['COSINE', 'TRI', 'SAW', 'SQUARE', 'S&H']
 eqs = ['A+B','A-B','A*B','(A+B)/2','MAX','MIN','ABS(A-B)','A*(B+1)/2']
 algs = [v[0] for v in pd['ALGS'].values()]
+names += native_params
 def ident(n): return n.replace('-', '_').upper()
 def spec(n):
     opts = []
@@ -26,7 +30,7 @@ def spec(n):
     elif n.endswith('-wave'): lo, hi, opts = 0,len(waves)-1,waves
     elif n.endswith('-pw'): lo, hi = .01,.99
     elif n.endswith('-type'): lo, hi, opts = 0,14,fnames
-    elif n.endswith(('-s1','-s2')) or n.startswith('fun') and n.endswith(('-a','-b')): lo,hi,opts = 0,11,sources
+    elif n.endswith(('-s1','-s2')) or n.startswith('fun') and n.endswith(('-a','-b')): lo,hi,opts = 0,len(sources)-1,sources
     elif n.endswith('-eq'): lo,hi,opts = 0,7,eqs
     elif n.endswith('-shape'): lo,hi,opts = 0,4,shapes
     elif n.endswith('-rate'): lo,hi = .01,100
@@ -43,9 +47,10 @@ lines += [f'    PARAM_COUNT = {len(names)}', '};', 'struct ParamInfo { const cha
 for n in names:
     lo,hi,opts = spec(n)
     lines += ['        {'+json.dumps(n)+f', {lo}, {hi}, {{'+','.join(json.dumps(o) for o in opts)+'}},']
-lines += ['    }}; return table;', '}', 'using Parameters = std::array<float, PARAM_COUNT>;', 'inline const std::array<Parameters,6>& programs() {', '    static const std::array<Parameters,6> table{{']
+lines += ['    }}; return table;', '}', f'constexpr int SOURCE_COUNT = {len(sources)};', 'using Parameters = std::array<float, PARAM_COUNT>;', 'inline const std::array<Parameters,6>& programs() {', '    static const std::array<Parameters,6> table{{']
 for _, overrides in pd['PROGRAMS']:
     vals = pd['defaults'](); vals.update(overrides)
+    for n in native_params: vals.setdefault(n, 0)
     lines += ['        {{'+','.join(str(vals[n]) for n in names)+'}},']
 lines += ['    }}; return table;', '}', 'static constexpr const char* programNames[] = {'+','.join(json.dumps(n) for n,_ in pd['PROGRAMS'])+'};', 'static constexpr float routes[6][9] = {']
 for _,coef in pd['ALGS'].values(): lines += ['    {'+','.join(str(x) for x in coef)+'},']

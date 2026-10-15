@@ -15,8 +15,9 @@ struct SampleSlot {
 };
 using namespace vastish;
 struct Vastish : Module {
-    enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, INPUTS };
-    enum { LEFT_OUT, RIGHT_OUT, AMP_OUT, ENV2_OUT, ENV3_OUT, LFO1_OUT, LFO2_OUT, FUN1_OUT, FUN2_OUT, OUTPUTS };
+    // AUX and FUN3/4 are appended so existing patches keep their cable ids.
+    enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, AUX1_IN, AUX2_IN, AUX3_IN, AUX4_IN, INPUTS };
+    enum { LEFT_OUT, RIGHT_OUT, AMP_OUT, ENV2_OUT, ENV3_OUT, LFO1_OUT, LFO2_OUT, FUN1_OUT, FUN2_OUT, FUN3_OUT, FUN4_OUT, OUTPUTS };
     enum { GATE_LIGHT, FAULT_LIGHT, LIGHTS };
     vastish::Engine engine;
     dsp::SchmittTrigger triggers[8];
@@ -109,7 +110,8 @@ struct Vastish : Module {
         configInput(GATE_IN,"Gate, up to eight voices");
         configInput(VEL_IN,"Velocity, 0–10 V (latched on gate rise)");
         configInput(MOD_IN,"Mod wheel, 0–10 V");
-        const char* outNames[]={"Left audio","Right audio","Amp envelope","Envelope 2","Envelope 3","LFO 1","LFO 2","FUN 1","FUN 2"};
+        for(int k=0;k<4;++k) configInput(AUX1_IN+k,string::f("AUX %d, ±10 V = ±1 source, one value per voice",k+1));
+        const char* outNames[]={"Left audio","Right audio","Amp envelope","Envelope 2","Envelope 3","LFO 1","LFO 2","FUN 1","FUN 2","FUN 3","FUN 4"};
         for(int i=0;i<Vastish::OUTPUTS;++i) configOutput(i,outNames[i]);
     }
     void onSampleRateChange(const SampleRateChangeEvent& e) override { engine.prepare(e.sampleRate); }
@@ -143,6 +145,8 @@ struct Vastish : Module {
                 if(rise) { in[i].velocity=inputs[VEL_IN].isConnected()?vastish::clamp(voltage(VEL_IN)*.1f,0,1):1; in[i].gate=true; }
                 in[i].modwheel=vastish::clamp(voltage(MOD_IN)*.1f,0,1);
             }
+            // AUX: per voice from a poly cable; a mono cable reaches every voice.
+            for(int k=0;k<4;++k) in[i].aux[k]=vastish::clamp(voltage(AUX1_IN+k)*.1f,-1,1);
             if(!triggers[i].isHigh()) in[i].gate=false;
             active|=in[i].gate;
         }
@@ -154,7 +158,7 @@ struct Vastish : Module {
         SampleView view; if(liveSample) { view=liveSample->view; view.loop=sampleLoop.load(std::memory_order_relaxed); }
         auto y=engine.tick(p,in,std::max(1,channels),liveSample ? &view : nullptr);
         outputs[LEFT_OUT].setVoltage(y[0]*5); outputs[RIGHT_OUT].setVoltage(y[1]*5);
-        const int source[]={11,1,2,3,4,5,6};
+        const int source[]={SRC_AMPENV,1,2,3,4,SRC_FUN1,SRC_FUN2,SRC_FUN3,SRC_FUN4};
         int n=std::max(1,channels);
         for(int o=AMP_OUT;o<OUTPUTS;++o) {
             outputs[o].setChannels(n);
@@ -262,8 +266,9 @@ struct ProgramButton : widget::OpaqueWidget {
 struct VastishWidget : ModuleWidget {
     VastishWidget(Vastish* m) {
         setModule(m); setPanel(createPanel(asset::plugin(pluginInstance,"res/Vastish.svg")));
-        addChild(createWidget<ScrewSilver>(Vec(2,0))); addChild(createWidget<ScrewSilver>(Vec(702,0)));
-        addChild(createWidget<ScrewSilver>(Vec(2,365))); addChild(createWidget<ScrewSilver>(Vec(702,365)));
+        // 56 HP (840 px). The right-hand column holds AUX 1-4; FUN 3/4 extend the FUN block.
+        addChild(createWidget<ScrewSilver>(Vec(2,0))); addChild(createWidget<ScrewSilver>(Vec(822,0)));
+        addChild(createWidget<ScrewSilver>(Vec(2,365))); addChild(createWidget<ScrewSilver>(Vec(822,365)));
         auto select=[&](int id,float x,float y,float w) {
             auto* s=createParam<Selector>(Vec(x,y),m,id); s->box.size.x=w; addParam(s);
         };
@@ -281,9 +286,10 @@ struct VastishWidget : ModuleWidget {
         }
         for(int e=0;e<3;++e) for(int k=0;k<4;++k) knob(AMP_A+e*4+k,e*120+24+24*k,281);
         for(int l=0;l<2;++l) { float x=(l+3)*120; knob(LFO1_RATE+l*2,x+27,281); select(LFO1_SHAPE+l*2,x+49,271,65); }
-        for(int f=0;f<2;++f) for(int k=0;k<3;++k)
-            select(FUN1_A+f*3+k,610+f*50,260+k*24,47);
-        for(int i=0;i<Vastish::INPUTS;++i) addInput(createInputCentered<PJ301MPort>(Vec(30+i*48,348),m,i));
+        for(int f=0;f<FUN_COUNT;++f) for(int k=0;k<3;++k)
+            select(funBase(f)+k,610+f*50,252+k*24,47); // clears the output labels at y=331
+        for(int i=0;i<Vastish::AUX1_IN;++i) addInput(createInputCentered<PJ301MPort>(Vec(30+i*48,348),m,i));
+        for(int k=0;k<4;++k) addInput(createInputCentered<PJ301MPort>(Vec(780,92+40*k),m,Vastish::AUX1_IN+k));
         for(int i=0;i<Vastish::OUTPUTS;++i) addOutput(createOutputCentered<PJ301MPort>(Vec(245+i*40,348),m,i));
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(180,14),m,Vastish::GATE_LIGHT));
         addChild(createLightCentered<SmallLight<RedLight>>(Vec(180,27),m,Vastish::FAULT_LIGHT));

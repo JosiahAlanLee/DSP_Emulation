@@ -102,6 +102,20 @@ int main() {
         for(int i=0;i<2000;++i) { m.process(args); assert(m.outputs[0].getVoltage()==0); }
         m.collectSamples();
     }
+    // AUX through the module: a poly cable gives each voice its own value, a mono
+    // cable reaches every voice; FUN 3/4 outputs carry per-voice results.
+    {
+        Vastish a; for(auto& o:a.outputs) o.channels=1;
+        a.inputs[Vastish::PITCH_IN].channels=a.inputs[Vastish::GATE_IN].channels=2;
+        a.params[FUN3_A].setValue(SRC_AUX1); a.params[FUN3_B].setValue(0); a.params[FUN3_EQ].setValue(0);   // FUN3 = AUX1
+        a.params[FUN4_A].setValue(SRC_AUX1+1); a.params[FUN4_B].setValue(0); a.params[FUN4_EQ].setValue(0); // FUN4 = AUX2
+        a.inputs[Vastish::AUX1_IN].channels=2; a.inputs[Vastish::AUX1_IN].setVoltage(5,0); a.inputs[Vastish::AUX1_IN].setVoltage(-2,1);
+        a.inputs[Vastish::AUX2_IN].channels=1; a.inputs[Vastish::AUX2_IN].setVoltage(3);
+        a.process(args);
+        assert(a.outputs[Vastish::FUN3_OUT].getChannels()==2 && a.outputs[Vastish::FUN4_OUT].getChannels()==2);
+        assert(std::abs(a.outputs[Vastish::FUN3_OUT].getVoltage(0)-5)<1e-5f && std::abs(a.outputs[Vastish::FUN3_OUT].getVoltage(1)+2)<1e-5f);
+        assert(std::abs(a.outputs[Vastish::FUN4_OUT].getVoltage(0)-3)<1e-5f && std::abs(a.outputs[Vastish::FUN4_OUT].getVoltage(1)-3)<1e-5f);
+    }
     // OTIS link, driven through a stand-in provider using the same C ABI.
     {
         struct Fake { std::vector<int16_t> pcm; double rate=29762; uint32_t rev=2; int copies=0; bool changeDuringCopy=false; std::string name="bright-demo.wav"; } fake;
@@ -136,5 +150,5 @@ int main() {
         v.setFollowOtis(false); fake.rev=14; v.followShare(&share); assert(v.linkState==Vastish::LINK_OFF && v.sampleLabel()=="NO SAMPLE");
         v.collectSamples(); r.collectSamples();
     }
-    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, OTIS link\n";
+    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link\n";
 }
