@@ -27,7 +27,10 @@ jobs:
           for p in otislab vastish spoonbender; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
           tools/bundle.sh "$TAG" lin-x64
       - uses: actions/upload-artifact@v4
-        with: { name: bundle-lin-x64, path: bundle/*.zip, if-no-files-found: error }
+        with:
+          name: bundle-lin-x64
+          path: bundle/*.zip
+          if-no-files-found: error
 
   windows:
     runs-on: windows-latest
@@ -54,7 +57,10 @@ jobs:
           for p in otislab vastish spoonbender; do if objdump -p vcv/$p/plugin.dll | grep -Ei "DLL Name: (libstdc|libgcc|libwinpthread)"; then echo "::error::$p plugin.dll depends on a MinGW runtime DLL"; exit 1; fi; done
           tools/bundle.sh "$TAG" win-x64
       - uses: actions/upload-artifact@v4
-        with: { name: bundle-win-x64, path: bundle/*.zip, if-no-files-found: error }
+        with:
+          name: bundle-win-x64
+          path: bundle/*.zip
+          if-no-files-found: error
 
   macos:
     runs-on: macos-latest
@@ -77,7 +83,10 @@ jobs:
           done
           tools/bundle.sh "$TAG" mac-${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
-        with: { name: bundle-mac-${{ matrix.arch }}, path: bundle/*.zip, if-no-files-found: error }
+        with:
+          name: bundle-mac-${{ matrix.arch }}
+          path: bundle/*.zip
+          if-no-files-found: error
 
   publish:
     if: github.ref_type == 'tag'
@@ -88,7 +97,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { pattern: bundle-*, merge-multiple: true, path: out }
+        with:
+          pattern: bundle-*
+          merge-multiple: true
+          path: out
       - name: Create pre-release
         env:
           GH_TOKEN: ${{ github.token }}
