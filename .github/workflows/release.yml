@@ -1,16 +1,22 @@
 name: Release bundles
 # Builds OtisLab, VastishLab and SpoonBenderLab for all four platforms and packs one
-# zip per platform. A pushed tag (preview-N or vX.Y.Z) publishes them as a GitHub
-# pre-release; a manual run only uploads the zips as workflow artifacts.
+# zip per platform. A pushed tag (preview-N or vX.Y.Z), or a manual run with a release
+# name, publishes them as a GitHub pre-release (the manual run creates the tag on the
+# commit it built). A manual run without a name is a dry run: zips as artifacts only.
 on:
   push:
     tags: ['preview-*', 'v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release name to publish, e.g. preview-2 (leave empty for a dry run)'
+        required: false
+        default: ''
 permissions:
   contents: read
 env:
   RACK_SDK_VERSION: 2.6.4
-  TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+  TAG: ${{ inputs.release != '' && inputs.release || (github.ref_type == 'tag' && github.ref_name || 'dev') }}
 jobs:
   linux:
     runs-on: ubuntu-22.04
@@ -93,7 +99,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.release != ''
     needs: [linux, windows, macos]
     runs-on: ubuntu-22.04
     permissions:
@@ -127,4 +133,4 @@ jobs:
             echo
             echo "Install steps: [Getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/$TAG/docs/GETTING_STARTED.md). Manuals are linked from the [README](https://github.com/JosiahAlanLee/DSP_Emulation/blob/$TAG/README.md)."
           } > notes.md
-          gh release create "$TAG" out/*.zip --prerelease --title "DSP_Emulation $TAG" --notes-file notes.md
+          gh release create "$TAG" out/*.zip --prerelease --target "$GITHUB_SHA" --title "DSP_Emulation $TAG" --notes-file notes.md

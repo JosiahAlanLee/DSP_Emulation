@@ -46,9 +46,9 @@ To publish:
 
 1. Bump `version` in each changed plugin's plugin.json. Rack 2 only loads versions starting with `2.`, and CI rejects anything else.
 2. Update the release name and file names in the install table of [GETTING_STARTED.md](GETTING_STARTED.md). The release job fails if that table doesn't name every plugin's current version.
-3. Commit, then push a tag: `git tag preview-2 && git push origin preview-2` (or `vX.Y.Z` for a numbered release).
+3. Commit and push, then either push a tag (`git tag preview-2 && git push origin preview-2`, or `vX.Y.Z`) or run **Actions → Release bundles → Run workflow** with the release name filled in. A manual run creates the tag on the commit it built.
 
-The tag's workflow run creates the GitHub pre-release with the four zips. Running the workflow by hand (**Actions → Release bundles → Run workflow**) builds the same zips as workflow artifacts without publishing, as a dry run.
+Either way the run creates the GitHub pre-release with the four zips. A manual run with the name left empty builds the same zips as workflow artifacts without publishing, as a dry run.
 
 ## Tests
 
