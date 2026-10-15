@@ -9,6 +9,8 @@ static void run(Espish& m, int n, Module::ProcessArgs& a) { for (int i = 0; i < 
 
 int main() {
     std::cout << std::unitbuf;
+    // ParamQuantity::getValue() reads through APP->engine, so a minimal host context is needed.
+    Context context; context.engine = new engine::Engine; contextSet(&context);
     Module::ProcessArgs args; args.sampleRate = 48000; args.sampleTime = 1.f / 48000; args.frame = 0;
     {
         Espish m; for (auto& o : m.outputs) o.channels = 1;
