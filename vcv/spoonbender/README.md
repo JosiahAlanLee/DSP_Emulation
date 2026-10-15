@@ -115,8 +115,9 @@ The capture is post-MIX. Turn MIX down to capture the dry input instead.
 
 ## Status and tests
 
-Version 2.1.0. Tested headless through Rack's module API. A live GUI and audio
-session has not been tested. ENSEMBLE, parallel routing and a space → echo
+Version 2.1.0. Tested headless through Rack's module API, and live in Rack on
+Linux: capture to OTIS works, and there were no clicks, pops or runaway tails in
+first use. Windows and macOS builds haven't been loaded yet. ENSEMBLE, parallel routing and a space → echo
 return are deferred (see SPEC.md).
 
 CI on Linux runs:
