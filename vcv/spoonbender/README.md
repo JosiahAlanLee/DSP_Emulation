@@ -115,7 +115,7 @@ The capture is post-MIX. Turn MIX down to capture the dry input instead.
 
 ## Status and tests
 
-Version 1.1.0. Tested headless through Rack's module API. A live GUI and audio
+Version 2.1.0. Tested headless through Rack's module API. A live GUI and audio
 session has not been tested. ENSEMBLE, parallel routing and a space → echo
 return are deferred (see SPEC.md).
 
@@ -148,6 +148,11 @@ ES5510 core (BSD-3-Clause, Christian Brunschen). Panel text is outlined from
 DejaVu Sans (docs/DEJAVU-LICENSE.txt). See THIRD_PARTY_NOTICES.md.
 
 ## Changes
+
+**2.1.0**: version numbers now start with 2. Rack 2 refuses to load any plugin
+whose major version isn't 2. As 1.1.0, Spoon Bender installed but never
+appeared in the module browser. Releases 1.0.0–1.1.0 below were never loadable
+in Rack.
 
 **1.1.0**: renamed from ESPish to Spoon Bender. The plugin slug is now
 `SpoonBenderLab` and the module slug `SpoonBender`. Patches saved with ESPish

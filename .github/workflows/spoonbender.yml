@@ -23,6 +23,8 @@ jobs:
         run: |
           # Each step's output is kept; on failure the tail is echoed as annotations.
           step() { local log=/tmp/step.log rc=0; ( "$@" ) > "$log" 2>&1 || rc=$?; if [ $rc -ne 0 ]; then echo "::error::FAILED (exit $rc): $*"; tail -n 9 "$log" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; fi; grep -E "dB|RT60|CPU|stability|FREEZE|checks|threads" "$log" | while IFS= read -r l; do echo "::notice::$l"; done; tail -n 2 "$log"; }
+          # Rack 2 only loads plugins whose version starts with 2.
+          for f in vcv/*/plugin.json; do v=$(jq -r .version "$f"); case "$v" in 2.*) ;; *) echo "::error::$f version $v must start with 2. for Rack 2"; exit 1;; esac; done
           step make -C vcv/spoonbender -j2 RACK_DIR=/tmp/Rack-SDK
           step make -C vcv/spoonbender/tests engine_test module_test RACK_DIR=/tmp/Rack-SDK
           step vcv/spoonbender/tests/engine_test

@@ -7,7 +7,7 @@ Recreations of hardware synth architectures in software environments.
 | [`pd/vastish`](pd/vastish) | Kurzweil K2000/K2500 VAST-style 8-voice synth in vanilla Pure Data (0.52+) | working; tested headless |
 | [`vcv/vastish`](vcv/vastish) | Native C++ port of Pd Vastish for VCV Rack 2; eight voices, six algorithms, fourteen DSP functions | DSP and Rack API tested; Linux tested live in Rack; Windows/macOS build only |
 | [`vcv/otislab`](vcv/otislab) | EPS-16+-style sample player for VCV Rack 2, built on MAME-derived ES5505 (OTIS) playback arithmetic, with experimental window/frame scanning and loop reworking | prototype; engine bit-exact vs reference core; Linux tested live in Rack |
-| [`vcv/spoonbender`](vcv/spoonbender) | Echo/space effects for the OTIS → Vastish chain: echo with an in-loop frequency shifter, FDN space, optional ES5510-style fixed-point character (not chip emulation), retroactive capture to OTIS | 1.1.0 (formerly ESPish); DSP and Rack API tested headless; not yet run live in Rack |
+| [`vcv/spoonbender`](vcv/spoonbender) | Echo/space effects for the OTIS → Vastish chain: echo with an in-loop frequency shifter, FDN space, optional ES5510-style fixed-point character (not chip emulation), retroactive capture to OTIS | 2.1.0 (formerly ESPish); DSP and Rack API tested headless; not yet run live in Rack |
 
 ## Builds
 

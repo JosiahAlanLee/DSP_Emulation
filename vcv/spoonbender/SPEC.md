@@ -1,6 +1,6 @@
 # Spoon Bender (formerly ESPish): effects module spec
 
-Status: **v1 implemented** (1.1.0, renamed from ESPish; §11 lists the post-release fixes). This document is the design record. The
+Status: **v1 implemented** (2.1.0, renamed from ESPish; §11 lists the post-release fixes). This document is the design record. The
 user-facing manual is [README.md](README.md).
 
 The draft was written on 2026-10-14 from proposals by GPT, Google Argon and
