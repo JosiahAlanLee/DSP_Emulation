@@ -1,13 +1,13 @@
 {
-  "slug": "ESPishLab",
-  "name": "ESPishLab",
-  "version": "1.0.1",
+  "slug": "SpoonBenderLab",
+  "name": "SpoonBenderLab",
+  "version": "1.1.0",
   "license": "BSD-3-Clause",
-  "brand": "ESPishLab",
+  "brand": "SpoonBenderLab",
   "author": "DSP_Emulation contributors",
   "modules": [{
-    "slug": "ESPish",
-    "name": "ESPish",
+    "slug": "SpoonBender",
+    "name": "Spoon Bender",
     "description": "Echo with an in-loop frequency shifter into an FDN space; optional ES5510-style 24/16-bit math at EPS-16 Plus rates (not chip emulation); captures the recent past for OTIS.",
     "tags": ["Delay", "Reverb", "Frequency shifter", "Stereo"]
   }]

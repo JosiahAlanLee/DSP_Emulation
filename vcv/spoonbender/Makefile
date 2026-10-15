@@ -1,5 +1,5 @@
 RACK_DIR ?= ../../../deps/Rack-SDK
-SOURCES += src/plugin.cpp src/Espish.cpp
+SOURCES += src/plugin.cpp src/SpoonBender.cpp
 DISTRIBUTABLES += res README.md LICENSE THIRD_PARTY_NOTICES.md docs
 EXTRA_CXXFLAGS += -std=c++17
 # Exact floor/saturation behaviour and NaN checks rely on IEEE semantics.

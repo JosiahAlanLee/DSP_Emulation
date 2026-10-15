@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
-using namespace espish_layout;
+using namespace spoonbender_layout;
 
 // Clock divisions for TIME when CLOCK is patched, as multiples of the clock period.
 static const float clockRatios[] = {1.f / 4, 1.f / 3, 1.f / 2, 2.f / 3, 3.f / 4, 1.f, 3.f / 2, 2.f, 3.f, 4.f};
@@ -39,7 +39,7 @@ static float clockKnob(float ratio) {
     return (best + .5f) / CLOCK_RATIOS;
 }
 
-struct Espish : Module {
+struct SpoonBender : Module {
     enum Params { TIME, FEEDBACK, TONE, SHIFT, SPREAD, ECHO_MIX, SHIFT_RANGE, SHIFT_POS,
                   PREDELAY, SIZE, DECAY, DIFFUSION, DAMPING, MODULATION, SPACE_MIX, FREEZE,
                   MIX, ENGINE, CAPTURE, CAPTURE_LEN, NUM_PARAMS };
@@ -47,7 +47,7 @@ struct Espish : Module {
     enum Outputs { OUT_L, OUT_R, NUM_OUTPUTS };
     enum Lights { LIMIT_LIGHT, FREEZE_LIGHT, CAPTURE_LIGHT, NUM_LIGHTS };
 
-    espish::Engine engine;
+    spoonbender::Engine engine;
     std::mutex engineMutex;  // held by the UI for reconfiguration; process() only try_locks
     dsp::SchmittTrigger clockTrigger, captureTrigger, captureButton;
     double clockPeriod = 0; long samplesSinceClock = 0; bool clockSeen = false;
@@ -62,14 +62,14 @@ struct Espish : Module {
 
     // Display and typed entry are in Hz for the current range (FINE/WIDE).
     struct ShiftQuantity : ParamQuantity {
-        bool wide() { auto* m = dynamic_cast<Espish*>(module); return !m || m->params[SHIFT_RANGE].getValue() > .5f; }
+        bool wide() { auto* m = dynamic_cast<SpoonBender*>(module); return !m || m->params[SHIFT_RANGE].getValue() > .5f; }
         float getDisplayValue() override { return shiftHz(getValue(), wide()); }
         void setDisplayValue(float hz) override { setValue(shiftKnob(hz, wide())); }
         std::string getDisplayValueString() override { return string::f("%+.2f", getDisplayValue()); }
     };
     // Seconds normally; with CLOCK patched, a ratio of the clock period (type 1/2, 3, 0.75 ...).
     struct TimeQuantity : ParamQuantity {
-        bool clocked() { auto* m = dynamic_cast<Espish*>(module); return m && m->inputs[CLOCK_IN].isConnected(); }
+        bool clocked() { auto* m = dynamic_cast<SpoonBender*>(module); return m && m->inputs[CLOCK_IN].isConnected(); }
         int ratioIndex() { return std::max(0, std::min(CLOCK_RATIOS - 1, int(getValue() * CLOCK_RATIOS))); }
         float getDisplayValue() override { return clocked() ? clockRatios[ratioIndex()] : ParamQuantity::getDisplayValue(); }
         void setDisplayValue(float v) override {
@@ -83,7 +83,7 @@ struct Espish : Module {
         std::string getUnit() override { return clocked() ? "" : ParamQuantity::getUnit(); }
     };
 
-    Espish() {
+    SpoonBender() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         configParam<TimeQuantity>(TIME, 0, 1, .6f, "Echo time", " s", 2000, .001f);
         configParam(FEEDBACK, 0, 1.1f, .4f, "Echo feedback", "%", 0, 100);
@@ -120,9 +120,9 @@ struct Espish : Module {
         share.magic = dspemu::SAMPLE_SHARE_MAGIC; share.version = dspemu::SAMPLE_SHARE_VERSION; share.context = this;
         // revision() is called on the reader's UI thread; it collects a pending capture first,
         // so a reader sees it even before this module's own widget has stepped.
-        share.revision = [](void* c) -> uint32_t { auto* m = static_cast<Espish*>(c); m->collectCapture(); return m->shareRevision.load(std::memory_order_acquire); };
+        share.revision = [](void* c) -> uint32_t { auto* m = static_cast<SpoonBender*>(c); m->collectCapture(); return m->shareRevision.load(std::memory_order_acquire); };
         share.copy = [](void* c, int16_t* dst, size_t capacity, double* rate, uint32_t* revision) -> size_t {
-            auto* m = static_cast<Espish*>(c);
+            auto* m = static_cast<SpoonBender*>(c);
             std::lock_guard<std::mutex> guard(m->shareMutex);
             if (dst) std::memcpy(dst, m->sharePcm.data(), std::min(capacity, m->sharePcm.size()) * sizeof(int16_t));
             if (rate) *rate = m->shareRate;
@@ -131,7 +131,7 @@ struct Espish : Module {
         };
         share.name = [](void* c, char* buffer, size_t size) {
             if (!buffer || !size) return;
-            auto* m = static_cast<Espish*>(c);
+            auto* m = static_cast<SpoonBender*>(c);
             std::lock_guard<std::mutex> guard(m->shareMutex);
             std::snprintf(buffer, size, "%s", m->shareName.c_str());
         };
@@ -146,7 +146,7 @@ struct Espish : Module {
         std::lock_guard<std::mutex> guard(shareMutex);
         shareRevision.fetch_add(1, std::memory_order_acq_rel);  // odd: changing
         sharePcm.swap(pcm); shareRate = rate;  // the rate it was recorded at, not the current one
-        shareName = string::f("ESPish capture %d", ++captureCount);
+        shareName = string::f("Spoon Bender capture %d", ++captureCount);
         shareRevision.fetch_add(1, std::memory_order_release);  // even: ready
     }
 
@@ -181,7 +181,7 @@ struct Espish : Module {
             clockSeen = true; samplesSinceClock = 0;
         }
 
-        espish::Params p;
+        spoonbender::Params p;
         float timeKnob = clamp(params[TIME].getValue() + cv(TIME_CV, .1f), 0.f, 1.f);
         if (inputs[CLOCK_IN].isConnected() && clockPeriod > 0)
             p.echo.timeSec = float(clockPeriod) * clockRatios[std::min(CLOCK_RATIOS - 1, int(timeKnob * CLOCK_RATIOS))];
@@ -234,39 +234,39 @@ struct Espish : Module {
     }
 };
 
-struct EspishWidget : ModuleWidget {
-    EspishWidget(Espish* m) {
+struct SpoonBenderWidget : ModuleWidget {
+    SpoonBenderWidget(SpoonBender* m) {
         setModule(m);
-        setPanel(createPanel(asset::plugin(pluginInstance, "res/Espish.svg")));
+        setPanel(createPanel(asset::plugin(pluginInstance, "res/SpoonBender.svg")));
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-#define KNOB(N) addParam(createParamCentered<RoundBlackKnob>(Vec(KNOB_##N##_X, KNOB_##N##_Y), m, Espish::N))
+#define KNOB(N) addParam(createParamCentered<RoundBlackKnob>(Vec(KNOB_##N##_X, KNOB_##N##_Y), m, SpoonBender::N))
         KNOB(TIME); KNOB(FEEDBACK); KNOB(TONE); KNOB(SHIFT); KNOB(SPREAD); KNOB(ECHO_MIX);
         KNOB(PREDELAY); KNOB(SIZE); KNOB(DECAY); KNOB(DIFFUSION); KNOB(DAMPING); KNOB(MODULATION); KNOB(SPACE_MIX);
 #undef KNOB
-        addParam(createParamCentered<RoundSmallBlackKnob>(Vec(SMALL_MIX_X, SMALL_MIX_Y), m, Espish::MIX));
-        addParam(createParamCentered<RoundSmallBlackKnob>(Vec(SMALL_CAPTURE_LEN_X, SMALL_CAPTURE_LEN_Y), m, Espish::CAPTURE_LEN));
-        addParam(createParamCentered<CKSS>(Vec(SWITCH_SHIFT_RANGE_X, SWITCH_SHIFT_RANGE_Y), m, Espish::SHIFT_RANGE));
-        addParam(createParamCentered<CKSS>(Vec(SWITCH_SHIFT_POS_X, SWITCH_SHIFT_POS_Y), m, Espish::SHIFT_POS));
-        addParam(createParamCentered<CKSS>(Vec(SWITCH_ENGINE_X, SWITCH_ENGINE_Y), m, Espish::ENGINE));
-        addParam(createParamCentered<VCVButton>(Vec(BUTTON_CAPTURE_X, BUTTON_CAPTURE_Y), m, Espish::CAPTURE));
-        addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(LATCH_FREEZE_X, LATCH_FREEZE_Y), m, Espish::FREEZE, Espish::FREEZE_LIGHT));
-        addChild(createLightCentered<SmallLight<RedLight>>(Vec(LIGHT_LIMIT_LIGHT_X, LIGHT_LIMIT_LIGHT_Y), m, Espish::LIMIT_LIGHT));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(LIGHT_CAPTURE_LIGHT_X, LIGHT_CAPTURE_LIGHT_Y), m, Espish::CAPTURE_LIGHT));
-#define IN(N) addInput(createInputCentered<PJ301MPort>(Vec(JACK_##N##_X, JACK_##N##_Y), m, Espish::N))
+        addParam(createParamCentered<RoundSmallBlackKnob>(Vec(SMALL_MIX_X, SMALL_MIX_Y), m, SpoonBender::MIX));
+        addParam(createParamCentered<RoundSmallBlackKnob>(Vec(SMALL_CAPTURE_LEN_X, SMALL_CAPTURE_LEN_Y), m, SpoonBender::CAPTURE_LEN));
+        addParam(createParamCentered<CKSS>(Vec(SWITCH_SHIFT_RANGE_X, SWITCH_SHIFT_RANGE_Y), m, SpoonBender::SHIFT_RANGE));
+        addParam(createParamCentered<CKSS>(Vec(SWITCH_SHIFT_POS_X, SWITCH_SHIFT_POS_Y), m, SpoonBender::SHIFT_POS));
+        addParam(createParamCentered<CKSS>(Vec(SWITCH_ENGINE_X, SWITCH_ENGINE_Y), m, SpoonBender::ENGINE));
+        addParam(createParamCentered<VCVButton>(Vec(BUTTON_CAPTURE_X, BUTTON_CAPTURE_Y), m, SpoonBender::CAPTURE));
+        addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(LATCH_FREEZE_X, LATCH_FREEZE_Y), m, SpoonBender::FREEZE, SpoonBender::FREEZE_LIGHT));
+        addChild(createLightCentered<SmallLight<RedLight>>(Vec(LIGHT_LIMIT_LIGHT_X, LIGHT_LIMIT_LIGHT_Y), m, SpoonBender::LIMIT_LIGHT));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(LIGHT_CAPTURE_LIGHT_X, LIGHT_CAPTURE_LIGHT_Y), m, SpoonBender::CAPTURE_LIGHT));
+#define IN(N) addInput(createInputCentered<PJ301MPort>(Vec(JACK_##N##_X, JACK_##N##_Y), m, SpoonBender::N))
         IN(TIME_CV); IN(FEEDBACK_CV); IN(SHIFT_CV); IN(DECAY_CV); IN(MIX_CV); IN(CLOCK_IN); IN(CAPTURE_IN); IN(FREEZE_IN); IN(IN_L); IN(IN_R);
 #undef IN
-        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(JACK_OUT_L_X, JACK_OUT_L_Y), m, Espish::OUT_L));
-        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(JACK_OUT_R_X, JACK_OUT_R_Y), m, Espish::OUT_R));
+        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(JACK_OUT_L_X, JACK_OUT_L_Y), m, SpoonBender::OUT_L));
+        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(JACK_OUT_R_X, JACK_OUT_R_Y), m, SpoonBender::OUT_R));
     }
     void step() override {
-        if (auto* m = dynamic_cast<Espish*>(module)) m->collectCapture();
+        if (auto* m = dynamic_cast<SpoonBender*>(module)) m->collectCapture();
         ModuleWidget::step();
     }
     void appendContextMenu(Menu* menu) override {
-        auto* m = dynamic_cast<Espish*>(module);
+        auto* m = dynamic_cast<SpoonBender*>(module);
         if (!m) return;
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("ESP engine (ES5510-style math, not chip emulation)"));
@@ -286,4 +286,4 @@ struct EspishWidget : ModuleWidget {
     }
 };
 
-Model* modelEspish = createModel<Espish, EspishWidget>("ESPish");
+Model* modelSpoonBender = createModel<SpoonBender, SpoonBenderWidget>("SpoonBender");

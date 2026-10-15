@@ -1,4 +1,4 @@
-// ESPish engine tests: MAME parity of the fixed-point layer, frequency-shifter
+// Spoon Bender engine tests: MAME parity of the fixed-point layer, frequency-shifter
 // accuracy, bounded feedback, reverb decay and freeze, ESP-rate band-limiting,
 // echo timing and memory budget, ping-pong, capture, denormals, CPU.
 #include "../src/engine/Fx.hpp"
@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <iostream>
 #include <random>
-using namespace espish;
+using namespace spoonbender;
 
 // ---- Copied from MAME src/devices/cpu/es5510/es5510.cpp at 016b077 (BSD-3-Clause,
 // Christian Brunschen), reduced to what the parity checks need. ----
@@ -301,5 +301,5 @@ int main() {
     silenceSettles();
     stability();
     cpu();
-    std::cout << "PASS: ESPish engine\n";
+    std::cout << "PASS: Spoon Bender engine\n";
 }

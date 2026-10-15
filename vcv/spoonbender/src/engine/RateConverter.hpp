@@ -10,7 +10,7 @@
 #include <cmath>
 #include <vector>
 
-namespace espish {
+namespace spoonbender {
 
 struct RateConverter {
     static constexpr int taps = 64, phases = 1024;
@@ -51,4 +51,4 @@ struct RateConverter {
     }
 };
 
-} // namespace espish
+} // namespace spoonbender

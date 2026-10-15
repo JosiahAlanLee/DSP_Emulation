@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// ESPish DSP: echo with an in-loop frequency shifter, an FDN space, and the two
+// Spoon Bender DSP: echo with an in-loop frequency shifter, an FDN space, and the two
 // numeric engines. Portable C++17, no Rack headers. Signals are in "units" where
 // 1.0 is full scale (Rack ±10 V maps to ±1).
 #pragma once
@@ -13,7 +13,7 @@
 #include <mutex>
 #include <vector>
 
-namespace espish {
+namespace spoonbender {
 
 constexpr double PI = 3.14159265358979323846;
 inline float clampf(float x, float lo, float hi) { return std::max(lo, std::min(hi, x)); }
@@ -409,4 +409,4 @@ struct Engine {
     }
 };
 
-} // namespace espish
+} // namespace spoonbender

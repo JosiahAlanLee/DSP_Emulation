@@ -124,12 +124,12 @@ struct OtisSampler : Module {
             WARN("OtisLab: %s",e.what());
         }
     }
-    // Reading ESPish captures from the module directly to the LEFT (UI thread only).
+    // Reading Spoon Bender captures from the module directly to the LEFT (UI thread only).
     // Same versioned interface OTIS itself provides to Vastish on its right.
     bool followFx=false; uint32_t fxRevision=0; bool fxSeen=false; const dspemu::SampleShareV1* fxShare=nullptr;
     static const dspemu::SampleShareV1* findFxShare(Module* left) {
         if(!left || !left->model || !left->model->plugin) return nullptr;
-        if(left->model->plugin->slug!="ESPishLab" || left->model->slug!="ESPish") return nullptr;
+        if(left->model->plugin->slug!="SpoonBenderLab" || left->model->slug!="SpoonBender") return nullptr;
         void* p=left->rightExpander.producerMessage;
         return dspemu::validShare(p) ? static_cast<const dspemu::SampleShareV1*>(p) : nullptr;
     }
@@ -393,9 +393,9 @@ struct OtisSamplerWidget : ModuleWidget {
         menu->addChild(new MenuSeparator);
         bool fxPresent=OtisSampler::findFxShare(leftNeighbour(m))!=nullptr;
         // Resolve the neighbour again at click time; it may have moved or been deleted.
-        menu->addChild(createMenuItem("Import capture from ESPish on the left","",[m]{ m->importFrom(OtisSampler::findFxShare(leftNeighbour(m))); },!fxPresent));
-        menu->addChild(createBoolMenuItem("Follow ESPish captures","",[m]{return m->followFx;},[m](bool on){ m->followFx=on; m->fxSeen=false; }));
-        if(!fxPresent) menu->addChild(createMenuLabel("Place ESPish directly left of OTIS to import its captures"));
+        menu->addChild(createMenuItem("Import capture from Spoon Bender on the left","",[m]{ m->importFrom(OtisSampler::findFxShare(leftNeighbour(m))); },!fxPresent));
+        menu->addChild(createBoolMenuItem("Follow Spoon Bender captures","",[m]{return m->followFx;},[m](bool on){ m->followFx=on; m->fxSeen=false; }));
+        if(!fxPresent) menu->addChild(createMenuLabel("Place Spoon Bender directly left of OTIS to import its captures"));
         menu->addChild(createMenuItem("Load WAV…","",[m]() {
             auto filters=osdialog_filters_parse("WAV:wav"); char* path=osdialog_file(OSDIALOG_OPEN,nullptr,nullptr,filters); osdialog_filters_free(filters);
             if(path) { m->load(path); std::free(path); }
