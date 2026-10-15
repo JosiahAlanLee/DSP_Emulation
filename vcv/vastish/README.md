@@ -36,8 +36,13 @@ imported (including EPS files) through VAST. Right-click the module and choose
 - Any PCM 8/16/24/32-bit or float WAV loads; stereo is mixed to mono and stored
   as 16-bit, up to 2,097,152 frames (about 44 s at 48 kHz).
 - The sample is saved inside the Rack patch, so patches stay self-contained.
-- Playback is clean 4-point Hermite interpolation, not ES5505 emulation; for the
-  EPS character, export from OTIS and load that.
+- Playback is clean 4-point Hermite interpolation, not ES5505 emulation. An OTIS
+  export (or the OTIS link) carries OTIS's *stored* PCM: whatever character its
+  16-bit, low-rate capture gave the recording, but not OTIS's playback stage
+  (chip transposition, interpolation and filters). To bake that in, record OTIS's
+  audible output into a new OTIS take, then use that take.
+- Loading or following a new sample swaps it in without a crossfade, so a note
+  that is sounding at that moment can click.
 
 Loading, saving and freeing happen on the UI thread; the audio thread only swaps
 a pointer and never allocates or waits.
@@ -47,7 +52,8 @@ a pointer and never allocates or waits.
 Put Vastish **directly to the right of an OTIS Sampler** and tick **Follow OTIS
 on the left** in Vastish's menu. Its SAMPLE wave then tracks OTIS's finished
 sample: load a WAV in OTIS, record a new take, or press REWORK, and Vastish
-picks up the result on the next screen refresh, labelled `OTIS: <name>`. This
+picks up the result on the next screen refresh (the copy is made by the
+module's UI, so it needs the Rack window running), labelled `◀ <name>` on the panel. This
 is the K2000-reads-EPS-files idea, without the EPROM.
 
 - The link reads OTIS's finished sample memory (16-bit, at OTIS's own rate) and

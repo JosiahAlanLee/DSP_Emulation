@@ -8,6 +8,7 @@
 // A loaded sample. Immutable once published; owned by the handoff below.
 struct SampleSlot {
     dspemu::MonoSample data; vastish::SampleView view;
+    uint64_t generation=0; // set on publish; identifies the data for the save cache
     explicit SampleSlot(dspemu::MonoSample s={}) : data(std::move(s)) {
         view.pcm=data.pcm.empty() ? nullptr : data.pcm.data(); view.frames=data.pcm.size(); view.rate=data.rate;
     }
@@ -32,10 +33,12 @@ struct Vastish : Module {
     SampleSlot* uiSample=nullptr;   // UI thread: most recently published
     std::atomic<bool> sampleLoop{false};
     std::string sampleError;        // UI thread
-    const SampleSlot* encodedFor=nullptr; std::string encodedPcm; // dataToJson cache
+    // dataToJson cache, keyed by publication generation. Not by pointer: a retired
+    // slot's address can be reused by a later allocation holding different audio.
+    uint64_t publishedGeneration=0, encodedGeneration=0; std::string encodedPcm;
     void collectSamples() { if(auto* r=retiredSample.exchange(nullptr,std::memory_order_acq_rel)) delete r; }
     void publishSample(SampleSlot* s) {
-        collectSamples(); uiSample=s;
+        collectSamples(); s->generation=++publishedGeneration; uiSample=s;
         if(auto* stale=pendingSample.exchange(s,std::memory_order_acq_rel)) delete stale; // never reached audio
     }
     void loadSampleFile(const std::string& path) {
@@ -168,7 +171,7 @@ struct Vastish : Module {
         collectSamples();
         if(uiSample && uiSample->view.valid()) {
             // Rack autosaves often; encode each sample once.
-            if(encodedFor!=uiSample) { encodedPcm=dspemu::encodePcm16(uiSample->data.pcm.data(),uiSample->data.pcm.size()); encodedFor=uiSample; }
+            if(encodedGeneration!=uiSample->generation) { encodedPcm=dspemu::encodePcm16(uiSample->data.pcm.data(),uiSample->data.pcm.size()); encodedGeneration=uiSample->generation; }
             json_t* s=json_object();
             json_object_set_new(s,"name",json_string(uiSample->data.name.c_str()));
             json_object_set_new(s,"rate",json_real(uiSample->data.rate));
@@ -182,7 +185,9 @@ struct Vastish : Module {
         sampleLoop=json_is_true(json_object_get(j,"sampleLoop"));
         setFollowOtis(json_is_true(json_object_get(j,"followOtis")));
         json_t* s=json_object_get(j,"sample");
-        if(!s) return;
+        // A full restore defines the sample too: no saved sample means none, not
+        // "keep whatever this instance had".
+        if(!s) { if(uiSample && uiSample->view.valid()) publishSample(new SampleSlot()); sampleError.clear(); return; }
         try {
             dspemu::MonoSample m;
             const char* text=json_string_value(json_object_get(s,"pcm16le"));
@@ -286,7 +291,12 @@ struct VastishWidget : ModuleWidget {
     void step() override {
         if(auto* m=dynamic_cast<Vastish*>(module)) {
             m->collectSamples();
-            m->followShare(Vastish::findOtisShare(m->leftExpander.module));
+            // Rack writes leftExpander.moduleId on this (UI) thread and the
+            // leftExpander.module pointer on the engine thread, so resolve the ID
+            // here. Modules are only deleted from this thread, so the result stays
+            // valid for the rest of this step.
+            int64_t id=m->leftExpander.moduleId;
+            m->followShare(Vastish::findOtisShare(id>=0 ? APP->engine->getModule(id) : nullptr));
         }
         ModuleWidget::step();
     }

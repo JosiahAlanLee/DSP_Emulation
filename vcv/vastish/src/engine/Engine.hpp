@@ -21,18 +21,24 @@ struct Voice {
     Phasor pitch; Noise noise; Lfo lfo[2]; Envelope env[3]; FunctionBlock block[3];
     uint32_t noteRandom=1; Ramp wheel; bool gate=false; float velocity=0,random=0; std::array<float,12> sources{};
     double samplePos=0; bool samplePlaying=false;
-    // 4-point Hermite read of the sample; one-shot unless the view loops.
+    // 4-point Hermite read over the half-open range [0, frames). One-shot clamps
+    // the interpolation neighbours at the ends; a loop wraps them across the seam,
+    // so the loop period is exactly `frames` samples at the root pitch.
     float sampleTick(const SampleView* s,float hz,float sr) {
         static const double rootHz=mtof(SAMPLE_ROOT_NOTE);
         if(!s || !s->valid() || !samplePlaying) return 0;
-        double n=double(s->frames);
-        if(samplePos>=n-1) {
+        const double n=double(s->frames);
+        if(samplePos>=n) {
             if(!s->loop) { samplePlaying=false; return 0; }
-            samplePos=std::fmod(samplePos,n-1);
+            samplePos=std::fmod(samplePos,n);
         }
-        size_t i=size_t(samplePos); float f=float(samplePos-double(i));
-        auto at=[&](long k) { k=std::max(0L,std::min(long(s->frames)-1,k)); return s->pcm[k]*(1.f/32768); };
-        float y0=at(long(i)-1), y1=at(long(i)), y2=at(long(i)+1), y3=at(long(i)+2);
+        const long frames=long(s->frames);
+        long i=long(samplePos); float f=float(samplePos-double(i));
+        auto at=[&](long k) {
+            k=s->loop ? ((k%frames)+frames)%frames : std::max(0L,std::min(frames-1,k));
+            return s->pcm[k]*(1.f/32768);
+        };
+        float y0=at(i-1), y1=at(i), y2=at(i+1), y3=at(i+2);
         float c1=.5f*(y2-y0), c2=y0-2.5f*y1+2*y2-.5f*y3, c3=.5f*(y3-y0)+1.5f*(y1-y2);
         float out=((c3*f+c2)*f+c1)*f+y1;
         samplePos+=double(hz)/rootHz*s->rate/double(sr);

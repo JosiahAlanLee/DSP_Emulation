@@ -27,9 +27,31 @@ int main() {
     {
         Voice v; v.samplePlaying = true; v.samplePos = 0;
         float root = mtof(SAMPLE_ROOT_NOTE);
-        for (size_t i = 0; i + 1 < pcm.size(); i++) assert(v.sampleTick(&view, root, 48000) == pcm[i] / 32768.f);
+        for (size_t i = 0; i < pcm.size(); i++) assert(v.sampleTick(&view, root, 48000) == pcm[i] / 32768.f); // every frame, including the last
         for (int i = 0; i < 100; i++) assert(v.sampleTick(&view, root, 48000) == 0);
         assert(!v.samplePlaying);
+    }
+    // Two frames: one-shot plays both, a loop alternates them, nothing is dropped.
+    {
+        int16_t two[] = {0, 32767}; SampleView tv{two, 2, 48000, false};
+        float root = mtof(SAMPLE_ROOT_NOTE);
+        Voice v; v.samplePlaying = true;
+        assert(v.sampleTick(&tv, root, 48000) == 0 && v.sampleTick(&tv, root, 48000) == 32767 / 32768.f);
+        assert(v.sampleTick(&tv, root, 48000) == 0 && !v.samplePlaying);
+        tv.loop = true; Voice w; w.samplePlaying = true;
+        for (int i = 0; i < 10; i++) assert(w.sampleTick(&tv, root, 48000) == two[i % 2] / 32768.f);
+    }
+    // The loop period is exactly `frames` at the root pitch (not frames-1, ~6.8 cents sharp for 256).
+    {
+        std::vector<int16_t> cyc(256); for (int i = 0; i < 256; i++) cyc[i] = int16_t(30000 * std::sin(2 * M_PI * i / 256));
+        SampleView lv{cyc.data(), cyc.size(), 48000, true};
+        Voice v; v.samplePlaying = true; std::vector<float> out(256 * 4);
+        for (auto& y : out) y = v.sampleTick(&lv, mtof(SAMPLE_ROOT_NOTE), 48000);
+        for (size_t i = 0; i + 256 < out.size(); i++) assert(out[i] == out[i + 256]);
+        // Fractional reads across the seam interpolate through the wrap, not a clamped edge.
+        Voice h; h.samplePlaying = true; h.samplePos = 255.5;
+        float y = h.sampleTick(&lv, mtof(SAMPLE_ROOT_NOTE), 48000);
+        assert(std::abs(y - 30000.f / 32768 * float(std::sin(2 * M_PI * 255.5 / 256))) < 2e-3f);
     }
     // An octave up plays through in half the time; looping keeps going.
     {
@@ -93,5 +115,5 @@ int main() {
         try { dspemu::decodePcm16("####", 10); } catch (const std::exception&) { threw = true; }
         assert(threw);
     }
-    std::cout << "PASS: sample playback exact at root, transposition, resampling, loop, gate restart, silence without a sample, other waves unaffected, WAV import, patch round-trip\n";
+    std::cout << "PASS: sample playback exact at root (every frame), two-frame and loop-period exactness, seam interpolation, transposition, resampling, loop, gate restart, silence without a sample, other waves unaffected, WAV import, patch round-trip\n";
 }
