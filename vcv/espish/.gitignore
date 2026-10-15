@@ -5,3 +5,4 @@
 /plugin.dll
 /tests/engine_test
 /tests/module_test
+/tests/capture_race_test

@@ -42,13 +42,30 @@ int main() {
         assert(std::abs(peakAt - 9600) <= 50);  // 0.2 s (+ glide settled), within ~1 ms
         auto* tq = m.paramQuantities[Espish::TIME];
         assert(tq->getDisplayValueString() == "1/2 x clock");
+        // Typed entry in clock mode is a ratio (Rack evaluates "3/2"); the nearest ratio is chosen.
+        tq->setDisplayValueString("3/2"); assert(tq->getDisplayValueString() == "3/2 x clock");
+        tq->setDisplayValueString("0.3"); assert(tq->getDisplayValueString() == "1/3 x clock");
+        tq->setDisplayValueString("4"); assert(tq->getDisplayValueString() == "4 x clock");
+        tq->setDisplayValueString(".5"); assert(tq->getDisplayValueString() == "1/2 x clock");
         m.inputs[Espish::CLOCK_IN].channels = 0;
+        // Unclocked, typed entry is in seconds.
+        tq->setDisplayValueString("0.5"); assert(std::abs(tq->getDisplayValue() - .5f) < 1e-4f);
+        tq->setDisplayValueString("2/3"); assert(std::abs(tq->getDisplayValue() - 2.f / 3) < 1e-4f);
 
         // Shift display: centre is exactly zero; fine and wide ranges.
         m.params[Espish::SHIFT].setValue(0); assert(m.paramQuantities[Espish::SHIFT]->getDisplayValueString() == "+0.00");
         m.params[Espish::SHIFT].setValue(1); m.params[Espish::SHIFT_RANGE].setValue(1); assert(m.paramQuantities[Espish::SHIFT]->getDisplayValueString() == "+2000.00");
         m.params[Espish::SHIFT_RANGE].setValue(0); assert(m.paramQuantities[Espish::SHIFT]->getDisplayValueString() == "+20.00");
         m.params[Espish::SHIFT].setValue(-1); assert(m.paramQuantities[Espish::SHIFT]->getDisplayValueString() == "-20.00");
+        // Typed entry is in Hz for the current range; out-of-range values clamp, tiny ones centre.
+        auto* sq = m.paramQuantities[Espish::SHIFT];
+        auto typed = [&](const char* text, const char* shown) { sq->setDisplayValueString(text); return sq->getDisplayValueString() == shown; };
+        m.params[Espish::SHIFT_RANGE].setValue(1);
+        assert(typed("1", "+1.00") && typed("-250", "-250.00") && typed("0.1", "+0.10") && typed("5000", "+2000.00") && typed("-1e6", "-2000.00"));
+        assert(typed("0", "+0.00") && m.params[Espish::SHIFT].getValue() == 0);
+        assert(typed("0.03", "+0.00") && m.params[Espish::SHIFT].getValue() == 0);
+        m.params[Espish::SHIFT_RANGE].setValue(0);
+        assert(typed("12.5", "+12.50") && typed("-0.25", "-0.25") && typed("500", "+20.00") && typed("-3", "-3.00"));
         m.params[Espish::SHIFT].setValue(0);
 
         // Freeze gate lights the freeze light.
@@ -79,6 +96,18 @@ int main() {
         // A capture trigger input works too, and the revision advances by two.
         m.inputs[Espish::CAPTURE_IN].channels = 1; m.inputs[Espish::CAPTURE_IN].setVoltage(10); run(m, 1, args);
         m.collectCapture(); assert(share->revision(share->context) == 4);
+        // A sample-rate change before collection discards the pending capture (the rings are
+        // rebuilt); the next capture is labelled with the rate it was recorded at.
+        m.inputs[Espish::CAPTURE_IN].setVoltage(0); run(m, 1, args);
+        m.inputs[Espish::CAPTURE_IN].setVoltage(10); run(m, 1, args);  // pending, not collected
+        Module::SampleRateChangeEvent sr96; sr96.sampleRate = 96000; sr96.sampleTime = 1.f / 96000; m.onSampleRateChange(sr96);
+        m.collectCapture(); assert(share->revision(share->context) == 4);
+        Module::ProcessArgs a96 = args; a96.sampleRate = 96000; a96.sampleTime = 1.f / 96000;
+        m.inputs[Espish::CAPTURE_IN].setVoltage(0); run(m, 120000, a96);
+        m.inputs[Espish::CAPTURE_IN].setVoltage(10); run(m, 1, a96);
+        m.collectCapture(); assert(share->revision(share->context) == 6);
+        n = share->copy(share->context, nullptr, 0, &rate, &got); assert(n == 96000 && rate == 96000 && got == 6);
+        m.inputs[Espish::CAPTURE_IN].setVoltage(0); m.onSampleRateChange(sr);
 
         // ESP: reconfigure rate and budget off the audio path; output stays finite.
         m.params[Espish::ENGINE].setValue(1); m.params[Espish::MIX].setValue(1);

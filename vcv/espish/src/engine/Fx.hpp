@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace espish {
@@ -211,6 +212,14 @@ struct Space {
             x[c] = v;
         }
         // FDN: read, damp, scale for RT60, mix with a Householder matrix, inject, write.
+        // While frozen the loop is lossless (gain 1, no damping, integer reads), and it is
+        // not re-quantized: in a lossless loop ESP rounding error accumulates instead of
+        // decaying, and quiet frozen tails grew by several dB in 30 s. What is frozen was
+        // already quantized on the way in; nothing new enters (input and diffuser
+        // injection are off), and the output tap is still quantized.
+        const bool frozen = p.freeze;
+        auto loopNode = [frozen](float x) { return frozen ? x : M::node(x); };
+        auto loopStore = [frozen](float x) { return frozen ? x : M::store(x); };
         const float rt60 = std::max(.05f, p.decaySec);
         const float dampIn = clampf(p.damping, 0, 1);
         if (dampIn != dampSetting) { dampSetting = dampIn; dampCoef = onePoleCoef(500 + 19500 * (1 - dampIn) * (1 - dampIn), sr); }
@@ -233,17 +242,17 @@ struct Space {
             z = damp[i].tick(z, dampC);
             // Per-line RT60 gain from the unmodulated length; recomputed only when it moves.
             if (newRt || std::abs(len[i] - gainLen[i]) > .5f) { gainLen[i] = len[i]; gain[i] = float(std::pow(10.0, -3.0 * double(len[i]) / (double(rt60) * sr))); }
-            v[i] = M::node(z * (p.freeze ? 1.f : gain[i]));
+            v[i] = frozen ? z : M::node(z * gain[i]);
             sum += v[i];
         }
         primed = true;
-        const float h = M::node(sum * (2.f / N));
+        const float h = loopNode(sum * (2.f / N));
         float out[2] = {0, 0};
         static constexpr int signL[N] = {1, 1, -1, 1, 1, -1, 1, -1}, signR[N] = {1, -1, 1, 1, -1, 1, -1, -1};
         for (int i = 0; i < N; i++) {
-            float y = M::node(v[i] - h);
-            float inject = (i < N / 2 ? x[0] : x[1]) * .5f;
-            line[i].write(M::store(M::node(y + inject)));
+            float y = loopNode(v[i] - h);
+            float inject = frozen ? 0.f : (i < N / 2 ? x[0] : x[1]) * .5f;
+            line[i].write(loopStore(loopNode(y + inject)));
             out[0] += signL[i] * v[i];
             out[1] += signR[i] * v[i];
         }
@@ -267,13 +276,24 @@ constexpr size_t ESP_BUDGET_WORDS = 65536;  // shared by both echo lines in budg
 // of two rings. CAPTURE freezes the current ring and switches to the other; the
 // UI thread copies the frozen one and releases it. No allocation or waiting on
 // the audio thread.
+// Threads: write() and trigger() run on the audio thread; prepare() runs with the
+// audio thread excluded (the module's engine mutex); collect() runs on the UI
+// thread. `guard` serialises collect() with prepare(), so a sample-rate change
+// cannot replace the rings mid-copy. The audio thread never takes it.
 struct Capture {
     std::vector<int16_t> ring[2];
     size_t size = 0, writePos = 0, filled = 0;
+    double rate = 0;  // rate the rings are recorded at
     int writing = 0;
     std::atomic<int> state{0};  // 0 idle, 1 frozen and waiting for the UI
-    int frozen = 0; size_t frozenEnd = 0, frozenLen = 0;
-    void prepare(size_t frames) { ring[0].assign(frames, 0); ring[1].assign(frames, 0); size = frames; writePos = filled = 0; writing = 0; state = 0; }
+    int frozen = 0; size_t frozenEnd = 0, frozenLen = 0; double frozenRate = 0;
+    std::mutex guard;
+    // Not real-time safe. Discards a capture that has not been collected yet.
+    void prepare(size_t frames, double recordRate) {
+        std::lock_guard<std::mutex> lock(guard);
+        ring[0].assign(frames, 0); ring[1].assign(frames, 0); size = frames; rate = recordRate;
+        writePos = filled = 0; writing = 0; state = 0;
+    }
     void write(float x) {
         if (!size) return;
         ring[writing][writePos] = int16_t(std::lround(clampf(x, -1, 32767.f / 32768) * 32768));
@@ -283,14 +303,16 @@ struct Capture {
     // Audio thread. Returns false when the previous capture has not been collected yet.
     bool trigger(size_t lengthFrames) {
         if (!size || state.load(std::memory_order_acquire) != 0 || filled < 2) return false;
-        frozen = writing; frozenEnd = writePos; frozenLen = std::min(filled, std::max<size_t>(2, lengthFrames));
+        frozen = writing; frozenEnd = writePos; frozenLen = std::min(filled, std::max<size_t>(2, lengthFrames)); frozenRate = rate;
         writing ^= 1; writePos = 0; filled = 0;
         state.store(1, std::memory_order_release);
         return true;
     }
-    // UI thread: copy the frozen capture (oldest first) and release the ring.
-    bool collect(std::vector<int16_t>& out) {
+    // UI thread: copy the frozen capture (oldest first) and its rate, and release the ring.
+    bool collect(std::vector<int16_t>& out, double& outRate) {
+        std::lock_guard<std::mutex> lock(guard);
         if (state.load(std::memory_order_acquire) != 1) return false;
+        outRate = frozenRate;
         out.resize(frozenLen);
         for (size_t i = 0; i < frozenLen; i++) out[i] = ring[frozen][(frozenEnd + size - frozenLen + i) % size];
         state.store(0, std::memory_order_release);
@@ -306,9 +328,10 @@ struct Engine {
     int preparedRate = -1; bool wasEsp = false; size_t echoMaxClean = 0;
     Capture capture;
     float limiter = 0;
-    // 5 Hz DC blockers on the wet signal. ESP memory writes round toward -infinity,
-    // which leaves reverb tails on a -1 LSB (about -90 dBFS) DC limit cycle; the
-    // hardware would pass that on, but there is no reason to send it downstream.
+    // 5 Hz DC blockers on the processed signal only (the dry path is untouched). ESP
+    // memory writes round toward -infinity, which leaves reverb tails on a -1 LSB
+    // (about -90 dBFS) DC limit cycle; the hardware would pass that on, but there is
+    // no reason to send it downstream.
     OnePole dcTrack[2]; float dcCoef = 0;
     void prepare(double rate, int espRate = 0, double captureSeconds = 20) {
         hostRate = rate; dcCoef = onePoleCoef(5, float(rate));
@@ -316,7 +339,7 @@ struct Engine {
         echoClean.prepare(float(rate), echoMaxClean);
         spaceClean.prepare(float(rate));
         prepareEsp(espRate);
-        capture.prepare(size_t(captureSeconds * rate));
+        capture.prepare(size_t(captureSeconds * rate), rate);
     }
     void prepareEsp(int espRate) {
         preparedRate = std::max(0, std::min(2, espRate));
@@ -335,13 +358,18 @@ struct Engine {
         return p.espBudget ? std::min(2.0, double(ESP_BUDGET_WORDS / 2) / r) : 2.0;
     }
 
+    // The processed part of the stage mixes. The direct term, input x (1 - echo mix) x
+    // (1 - space mix), is added by tick() at the host rate: in ESP it would otherwise
+    // pass the converters, and their latency (about 1.7 ms at 48 kHz) against the
+    // undelayed dry path of the global MIX made a comb filter.
     template <class E, class S>
     static std::array<float, 2> chain(E& echo, S& space, float l, float r, const Params& p, float limitSec) {
         EchoParams ep = p.echo; ep.timeSec = std::min(ep.timeSec, limitSec);
+        const float em = clampf(p.echoMix, 0, 1), sm = clampf(p.spaceMix, 0, 1);
         auto e = echo.tick(l, r, ep);
-        float a = lerp(l, e[0], p.echoMix), b = lerp(r, e[1], p.echoMix);
-        auto s = space.tick(a, b, p.space);
-        return {{lerp(a, s[0], p.spaceMix), lerp(b, s[1], p.spaceMix)}};
+        auto s = space.tick(lerp(l, e[0], em), lerp(r, e[1], em), p.space);
+        const float ew = (1 - sm) * em;
+        return {{ew * e[0] + sm * s[0], ew * e[1] + sm * s[1]}};
     }
 
     // One host-rate frame. Changing ESP rate (prepareEsp) is not real-time safe;
@@ -371,7 +399,10 @@ struct Engine {
             limiter = echoEsp.limiterActivity;
         }
         for (int c = 0; c < 2; c++) wet[c] -= dcTrack[c].tick(wet[c], dcCoef);
-        std::array<float, 2> out = {{lerp(inL, wet[0], p.mix), lerp(inR, wet[1], p.mix)}};
+        const float direct = (1 - clampf(p.echoMix, 0, 1)) * (1 - clampf(p.spaceMix, 0, 1));
+        wet[0] += direct * inL; wet[1] += direct * inR;
+        const float mix = clampf(p.mix, 0, 1);
+        std::array<float, 2> out = {{lerp(inL, wet[0], mix), lerp(inR, wet[1], mix)}};
         for (auto& o : out) if (!std::isfinite(o)) { clear(); out = {{0, 0}}; break; }
         capture.write(.5f * (out[0] + out[1]));
         return out;
