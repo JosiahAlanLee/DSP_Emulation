@@ -12,25 +12,28 @@ The modules draw on early digital instrument architectures and add new patching 
 
 ## Install
 
-These plugins are currently distributed through this repository's [GitHub Actions builds](https://github.com/JosiahAlanLee/DSP_Emulation/actions). VCV Library submission is being prepared.
-
-1. Download the artifact for the plugin, operating system and processor you need from a successful workflow run. GitHub may require you to sign in to download artifacts.
-2. Extract the downloaded artifact ZIP to find the file ending in **.vcvplugin**. Keep the .vcvplugin file intact.
+1. Open the [releases page](https://github.com/JosiahAlanLee/DSP_Emulation/releases) and download the zip for your computer. No GitHub account is needed.
+2. Unzip it. Inside are three `.vcvplugin` files and `INSTALL.txt`. Don't unzip the `.vcvplugin` files themselves; Rack does that.
 3. In Rack, choose **Help → Open user folder**, then quit Rack.
-4. Put the .vcvplugin file in the matching plugins folder in that user folder:
+4. Copy the three `.vcvplugin` files into the plugins folder for your platform, inside that user folder.
+5. Start Rack. Right-click the rack and search for **OTIS Sampler**, **Vastish** or **Spoon Bender**.
 
-   | Platform | Folder |
-   |---|---|
-   | Linux x64 | plugins-lin-x64 |
-   | Windows x64 | plugins-win-x64 |
-   | macOS Apple Silicon | plugins-mac-arm64 |
-   | macOS Intel | plugins-mac-x64 |
+Files in the current preview release, **preview-1**:
 
-5. Restart Rack and search its module browser for **OTIS Sampler**, **Vastish** or **Spoon Bender**.
+| Platform | Download | Contains | Copy into |
+|---|---|---|---|
+| Windows x64 | `DSP_Emulation-preview-1-Windows-x64.zip` | `OtisLab-2.5.2-win-x64.vcvplugin`<br>`VastishLab-2.3.1-win-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-win-x64.vcvplugin` | `plugins-win-x64` |
+| Linux x64 | `DSP_Emulation-preview-1-Linux-x64.zip` | `OtisLab-2.5.2-lin-x64.vcvplugin`<br>`VastishLab-2.3.1-lin-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-lin-x64.vcvplugin` | `plugins-lin-x64` |
+| macOS Apple Silicon | `DSP_Emulation-preview-1-macOS-AppleSilicon.zip` | `OtisLab-2.5.2-mac-arm64.vcvplugin`<br>`VastishLab-2.3.1-mac-arm64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-arm64.vcvplugin` | `plugins-mac-arm64` |
+| macOS Intel | `DSP_Emulation-preview-1-macOS-Intel.zip` | `OtisLab-2.5.2-mac-x64.vcvplugin`<br>`VastishLab-2.3.1-mac-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-x64.vcvplugin` | `plugins-mac-x64` |
 
-Install all three plugins to use the sample-sharing links. Each module can also run independently.
+Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple Silicon; "Processor: Intel…" is Intel.
 
-Linux live use has been reported. Windows x64 and macOS arm64/x64 builds are produced by CI; portable OTIS and Spoon Bender engine tests run on Windows and Apple Silicon. Live Windows and macOS use remains unverified. Build and test details are in the [development guide](DEVELOPMENT.md).
+To update, quit Rack, delete the old `.vcvplugin` files from the plugins folder and copy in the new ones, so only one version of each plugin is there.
+
+Each module works on its own; install all three to use the sample-sharing links.
+
+Linux has been used live in Rack. The Windows and macOS builds compile and pass the portable engine tests in CI, but nobody has run them inside Rack yet. If one doesn't appear in the module browser, Rack's `log.txt` in the user folder says why; please report it in [Issues](https://github.com/JosiahAlanLee/DSP_Emulation/issues). To build from source instead, see the [development guide](DEVELOPMENT.md).
 
 ## First sound
 

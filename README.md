@@ -1,30 +1,35 @@
 # DSP_Emulation
 
-Three instruments for VCV Rack 2: a sampler, a synthesizer and a stereo effects processor, with optional sample sharing between them. The repository also contains the original Pure Data Vastish project.
+Three modules for VCV Rack 2, built around early digital instruments and usable on their own or as one chain:
 
-**[Installation and getting started](docs/GETTING_STARTED.md)** · **[Development and builds](docs/DEVELOPMENT.md)**
-
-| Path | What | Status |
+| Module | What it does | Manual |
 |---|---|---|
-| [`pd/vastish`](pd/vastish) | Kurzweil K2000/K2500 VAST-style 8-voice synth in vanilla Pure Data (0.52+) | working; tested headless |
-| [`vcv/vastish`](vcv/vastish) | Native C++ port of Pd Vastish for VCV Rack 2; eight voices, six algorithms, fourteen DSP functions | DSP and Rack API tested; Linux tested live in Rack; Windows/macOS build only |
-| [`vcv/otislab`](vcv/otislab) | EPS-16+-style sample player for VCV Rack 2, built on MAME-derived ES5505 (OTIS) playback arithmetic, with experimental window/frame scanning and loop reworking | prototype; engine bit-exact vs reference core; Linux tested live in Rack |
-| [`vcv/spoonbender`](vcv/spoonbender) | Echo/space effects: echo with an in-loop frequency shifter, FDN space, optional numerical character at a reduced rate, retroactive capture to OTIS | DSP and Rack API tested headless; Linux tested live in Rack (capture to OTIS) |
+| **OTIS Sampler** | Records or loads a mono sample and plays it through an ES5505-derived engine, with variable chip clock, short-loop scanning and destructive loop reworking. | [OTIS manual](vcv/otislab/docs/MANUAL.md) |
+| **Vastish** | Eight-voice synthesizer in the style of Kurzweil VAST: three DSP blocks per voice, six routings, envelopes, LFOs, FUN processors, and sample playback from OTIS. | [Vastish manual](vcv/vastish/docs/MANUAL.md) |
+| **Spoon Bender** | Stereo echo with a frequency shifter in its feedback loop, an eight-line reverb with freeze, an optional ES5510-style fixed-point engine, and CAPTURE, which turns the last few seconds into an OTIS sample. | [Spoon Bender manual](vcv/spoonbender/docs/MANUAL.md) |
 
-## User manuals
+![Spoon Bender, OTIS Sampler and Vastish side by side in VCV Rack](docs/images/three-modules.png)
 
-- [OTIS Sampler](vcv/otislab/docs/MANUAL.md): record, load, transpose, scan and rework a sample.
-- [Vastish](vcv/vastish/docs/MANUAL.md): route three DSP blocks, shape voices and patch modulation.
-- [Spoon Bender](vcv/spoonbender/docs/MANUAL.md): echo, frequency shifting, space, freeze and capture.
+Placed side by side as **Spoon Bender → OTIS → Vastish**, they pass samples along: a Spoon Bender capture becomes an OTIS sample, and OTIS's sample becomes a Vastish oscillator. Audio still travels through cables.
 
-Each module works independently. For sample sharing, place them directly adjacent in the order **Spoon Bender → OTIS → Vastish**, and enable the receiving modules' follow options. Audio still travels through patch cables.
+## Download
 
-## Builds
+**[Latest preview release](https://github.com/JosiahAlanLee/DSP_Emulation/releases)**: one zip per platform, each holding all three plugins and an INSTALL.txt.
 
-CI builds the Rack plugins for Linux x64, Windows x64 and macOS (arm64 and x64) on
-every push; the `.vcvplugin` files are attached to each run under the repository's
-Actions tab. Only the Linux builds have been run inside Rack. The Windows and macOS
-builds compile, pass OtisLab's and Spoon Bender's portable engine tests (Windows and Apple Silicon), and
-link only against Rack and the OS, but nobody has loaded them yet. Reports welcome.
+| Platform | File |
+|---|---|
+| Windows x64 | `DSP_Emulation-<release>-Windows-x64.zip` |
+| Linux x64 | `DSP_Emulation-<release>-Linux-x64.zip` |
+| macOS Apple Silicon (M1 and later) | `DSP_Emulation-<release>-macOS-AppleSilicon.zip` |
+| macOS Intel | `DSP_Emulation-<release>-macOS-Intel.zip` |
+
+Install steps and exact file names: **[Getting started](docs/GETTING_STARTED.md)**.
+
+Status: Linux has been used live in Rack. Windows and macOS builds compile and pass the portable engine tests in CI but nobody has run them inside Rack yet; reports are welcome in [Issues](https://github.com/JosiahAlanLee/DSP_Emulation/issues). The modules aren't in the VCV Library yet.
+
+## Also in this repository
+
+- [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
+- [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
 
 Kurzweil, VAST, Ensoniq and EPS are their owners' trademarks. These are independent emulations, not affiliated with or derived from manufacturer code, firmware or samples. OtisLab's playback arithmetic is adapted from MAME (BSD-3-Clause, Aaron Giles); see its THIRD_PARTY_NOTICES.

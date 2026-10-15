@@ -14,9 +14,9 @@ esac
 name="DSP_Emulation-$tag-$label"
 out="bundle/$name"; rm -rf bundle; mkdir -p "$out"
 for p in otislab vastish spoonbender; do
-  f=$(ls vcv/$p/dist/*-"$arch".vcvplugin)
-  [ "$(echo "$f" | wc -l)" = 1 ] || { echo "expected one $arch package in vcv/$p/dist" >&2; exit 1; }
-  cp "$f" "$out/"
+  set -- vcv/$p/dist/*-"$arch".vcvplugin
+  [ $# -eq 1 ] && [ -f "$1" ] || { echo "::error::expected one $arch package in vcv/$p/dist, found: $*" >&2; exit 1; }
+  cp "$1" "$out/"
 done
 files=$(cd "$out" && ls *.vcvplugin)
 {

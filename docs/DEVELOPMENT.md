@@ -31,6 +31,25 @@ The .vcvplugin package is created in the plugin's dist/ directory. Each Makefile
 
 Workflows build Linux x64, Windows x64, macOS arm64 and macOS x64. Live Linux use has been reported; live Windows/macOS use is unverified. Portable engine tests do not establish GUI, audio-driver or complete host behavior.
 
+## Releases
+
+Public downloads are GitHub pre-releases built by [release.yml](../.github/workflows/release.yml). It builds all three plugins for Linux x64, Windows x64, macOS arm64 and macOS x64 (cross-compiled on the arm64 runner), and [tools/bundle.sh](../tools/bundle.sh) packs each platform into one zip with the three `.vcvplugin` files and an INSTALL.txt:
+
+| Platform | Bundle |
+|---|---|
+| Windows x64 | `DSP_Emulation-<tag>-Windows-x64.zip` |
+| Linux x64 | `DSP_Emulation-<tag>-Linux-x64.zip` |
+| macOS Apple Silicon | `DSP_Emulation-<tag>-macOS-AppleSilicon.zip` |
+| macOS Intel | `DSP_Emulation-<tag>-macOS-Intel.zip` |
+
+To publish:
+
+1. Bump `version` in each changed plugin's plugin.json. Rack 2 only loads versions starting with `2.`, and CI rejects anything else.
+2. Update the release name and file names in the install table of [GETTING_STARTED.md](GETTING_STARTED.md). The release job fails if that table doesn't name every plugin's current version.
+3. Commit, then push a tag: `git tag preview-2 && git push origin preview-2` (or `vX.Y.Z` for a numbered release).
+
+The tag's workflow run creates the GitHub pre-release with the four zips. Running the workflow by hand (**Actions → Release bundles → Run workflow**) builds the same zips as workflow artifacts without publishing, as a dry run.
+
 ## Tests
 
 Commands below run from the repository root unless otherwise noted. SDK-dependent tests need libRack and its system runtime dependencies available.

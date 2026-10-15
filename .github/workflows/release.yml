@@ -24,6 +24,9 @@ jobs:
       - name: Build and bundle
         run: |
           for f in vcv/*/plugin.json; do v=$(jq -r .version "$f"); case "$v" in 2.*) ;; *) echo "::error::$f version $v must start with 2."; exit 1;; esac; done
+          # The install guide must name this release and every plugin's current version.
+          for p in otislab vastish spoonbender; do f="$(jq -r .slug vcv/$p/plugin.json)-$(jq -r .version vcv/$p/plugin.json)-lin-x64.vcvplugin"; grep -q "$f" docs/GETTING_STARTED.md || { echo "::error::docs/GETTING_STARTED.md does not list $f"; exit 1; }; done
+          if [ "$TAG" != dev ]; then grep -q "DSP_Emulation-$TAG-Linux-x64.zip" docs/GETTING_STARTED.md || { echo "::error::docs/GETTING_STARTED.md does not name release $TAG"; exit 1; }; fi
           for p in otislab vastish spoonbender; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
           tools/bundle.sh "$TAG" lin-x64
       - uses: actions/upload-artifact@v4
@@ -65,6 +68,7 @@ jobs:
   macos:
     runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
         arch: [arm64, x64]
     steps:
