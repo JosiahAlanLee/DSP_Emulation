@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish, spoonbender, gorgon]
+        plugin: [otislab, vastish, spoonbender]
     defaults:
       run:
         shell: msys2 {0}
@@ -43,10 +43,6 @@ jobs:
         if: matrix.plugin == 'spoonbender'
         working-directory: vcv/spoonbender
         run: make -C tests engine_test && tests/engine_test
-      - name: Gorgon engine tests
-        if: matrix.plugin == 'gorgon'
-        working-directory: vcv/gorgon
-        run: make -C tests engine_test && tests/engine_test tests/fixture.txt
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |
@@ -69,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish, spoonbender, gorgon]
+        plugin: [otislab, vastish, spoonbender]
         arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
@@ -88,10 +84,6 @@ jobs:
         if: matrix.plugin == 'spoonbender' && matrix.arch == 'arm64'
         working-directory: vcv/spoonbender
         run: make -C tests engine_test CXX=clang++ && tests/engine_test
-      - name: Gorgon engine tests
-        if: matrix.plugin == 'gorgon' && matrix.arch == 'arm64'
-        working-directory: vcv/gorgon
-        run: make -C tests engine_test CXX=clang++ && tests/engine_test tests/fixture.txt
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |
