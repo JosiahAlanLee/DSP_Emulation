@@ -30,7 +30,7 @@ Use an absolute SDK path. Plugin Makefile defaults differ, so an explicit RACK_D
 
 The .vcvplugin package is created in the plugin's dist/ directory. Each Makefile includes docs/ in its distributables, including the local user manual.
 
-Workflows build Linux x64, Windows x64, macOS arm64 and macOS x64. Live Linux use has been reported, and the packaged Linux plugins process audio headless in Rack Free 2.6.6 (see [Workstation run](#workstation-run-2026-10-25)); live Windows/macOS use is unverified. Portable engine tests do not establish GUI, audio-driver or complete host behavior.
+Workflows build Linux x64, Windows x64, macOS arm64 and macOS x64. Live Linux use has been reported, and the packaged Linux plugins process audio headless in Rack Free 2.6.6 and in a signed-in Rack Pro 2.6.6 (see [Workstation run](#workstation-run-2026-10-25)); live Windows/macOS use is unverified. Portable engine tests do not establish GUI, audio-driver or complete host behavior.
 
 ## Releases
 
@@ -119,8 +119,8 @@ The portable test checks the FFT against a direct DFT, reconstruction at every f
 Commit `59459b4` on the render workstation: Ubuntu 22.04.5, GCC 11.4, glibc 2.35, Rack SDK 2.6.6 (CI pins 2.6.4).
 
 - Every Linux CI step for the four plugins passed, 41 of 41. That covers the builds, portable and module tests, sanitizers, the OTIS ES5505 reference and 2.2.0 trace comparisons, the Vastish Pd reference comparison, the OTIS–Spoon Bender and Vastish–OTIS links, and the dist packages. ThreadSanitizer ran under `setarch -R` (no address randomization) instead of lowering `vm.mmap_rnd_bits`.
-- The four `.vcvplugin` packages load in VCV Rack Pro 2.6.6 for Linux, run headless (`-h`) with an empty user folder: a patch with one of each module (OTIS, Séance and its four expanders, Spoon Bender, Vastish) loaded with no errors or warnings in Rack's log. That copy of Rack Pro was not signed in to a VCV account, and a later test showed that an unsigned Rack Pro processes no audio, so this run checked loading only.
-- The same packages process audio in VCV Rack Free 2.6.6, headless, on a private JACK server at 48 kHz/256 frames. In a patch of the same modules, Fundamental's VCO and LFO drive the modules and an Audio-8 module records them. Over 10 seconds, OTIS (playing a sample saved in the patch) and Vastish sounded on all 20 LFO gates. Séance and Spoon Bender processed the VCO. Every sample was finite, and Rack's log had no errors. The plugin sources are unchanged from `59459b4` to `e7ed161`.
+- The four `.vcvplugin` packages load in VCV Rack Pro 2.6.6 for Linux, run headless (`-h`) with an empty user folder: a patch with one of each module (OTIS, Séance and its four expanders, Spoon Bender, Vastish) loaded with no errors or warnings in Rack's log. That copy of Rack Pro was not signed in to a VCV account, and an unsigned Rack Pro processes no audio, so this run checked loading only.
+- The same packages process audio in VCV Rack Free 2.6.6, headless, on a private JACK server at 48 kHz/256 frames. In a patch of the same modules, Fundamental's VCO and LFO drive the modules and an Audio-8 module records them. Over 10 seconds, OTIS (playing a sample saved in the patch) and Vastish sounded on all 20 LFO gates. Séance and Spoon Bender processed the VCO. Every sample was finite, and Rack's log had no errors. The same patch in Rack Pro 2.6.6, signed in to the user's VCV account, gave the same levels with no errors. The plugin sources are unchanged from `59459b4` to `e7ed161`.
 - Not covered: the Rack window and mouse interaction, a physical audio device, real-time callback load under a full session, and hardware (Digi003/ADAT, Expert Sleepers CV). The remaining live checks in each validation document still stand.
 
 ## Implementation scope
