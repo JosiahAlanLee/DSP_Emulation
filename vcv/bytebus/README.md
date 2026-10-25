@@ -32,5 +32,5 @@ source. Regenerate/verify assets with `python3 vcv/bytebus/tools/generate_lookup
 --check`. The [Lookup manual](docs/LOOKUP.md) covers authoring tables from saved
 Vastish patches and includes an original sine recipe and importable example.
 
-Prototype: not in the three-instrument release bundles or the VCV Library.
+Prototype: not in the release bundles or the VCV Library.
 Hardware clock paths are outside these software tests.
