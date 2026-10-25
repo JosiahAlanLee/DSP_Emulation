@@ -5,13 +5,13 @@ A mono sampler for VCV Rack 2 with MAME-derived ES5505 playback arithmetic, per-
 OTIS records audio or loads WAV files. It uses no Ensoniq firmware, operating system or commercial sample library. It is an independent sampling instrument, not a complete EPS-16+ recreation.
 
 - **[User manual](docs/MANUAL.md)** — first sound, controls, patching, saving and troubleshooting.
-- **[Installation and getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md)** — all three modules and their sample-sharing chain.
+- **[Installation and getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md)** — every module, and the sample-sharing chain.
 - **[Development and builds](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/DEVELOPMENT.md)** — SDK setup, tests and source layout.
 - **[Validation](docs/VALIDATION.md)** — reference comparisons and implementation limits. See also [change history](docs/CHANGELOG.md).
 
 ## Download and install
 
-1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all three plugins.
+1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all the plugins.
 2. In Rack choose **Help → Open user folder**, then quit Rack.
 3. Copy `OtisLab-2.5.2-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other two as well to use the sample-sharing links.
 4. Start Rack.

@@ -14,7 +14,7 @@ Placed side by side as **Spoon Bender → OTIS → Vastish**, they pass samples 
 
 ## Download
 
-**[Latest preview release](https://github.com/JosiahAlanLee/DSP_Emulation/releases)**: one zip per platform, each holding all three plugins and an INSTALL.txt.
+**[Latest preview release](https://github.com/JosiahAlanLee/DSP_Emulation/releases)**: one zip per platform, each holding all the plugins and an INSTALL.txt. preview-1 predates Séance; the next release includes it.
 
 | Platform | File |
 |---|---|
@@ -37,7 +37,7 @@ Status: Linux has been used live in Rack. Windows and macOS builds compile and p
 
 For example: OTIS → Séance (Freeze, Scramble) → Spoon Bender → CAPTURE → OTIS turns destructive loop reworking into resampling through the patch.
 
-Status: new, built and tested in CI (engine and module tests), not yet run live in Rack and not yet part of the release bundles. [Manual](vcv/seance/docs/MANUAL.md).
+Status: new, built and tested in CI (engine and module tests), and loaded and run headless in Rack on Linux, but not yet played live. Included in the release bundles from the next release; preview-1 predates it. [Manual](vcv/seance/docs/MANUAL.md).
 
 ## Also in this repository
 

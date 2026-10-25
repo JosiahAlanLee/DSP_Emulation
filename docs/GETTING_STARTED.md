@@ -1,22 +1,23 @@
-# OTIS, Vastish and Spoon Bender
+# OTIS, Vastish, Spoon Bender and Séance
 
-Three instruments for VCV Rack 2, usable separately or as a sample-based sound-design system.
+Four plugins for VCV Rack 2. The first three are instruments, usable separately or as a sample-based sound-design system; Séance is a spectral effect built from a core and four expanders.
 
 | Module | Use it for | Manual |
 |---|---|---|
 | **OTIS Sampler** | Record audio, transpose it through an ES5505-derived playback engine, scan short loops, and reshape stored samples. | [OTIS](../vcv/otislab/docs/MANUAL.md) |
 | **Vastish** | Play an eight-voice synthesizer with selectable DSP routing, sample playback, and modulation outputs. | [Vastish](../vcv/vastish/docs/MANUAL.md) |
 | **Spoon Bender** | Add stereo echo, frequency-shifted feedback, reverb and frozen tails; capture a phrase after hearing it. | [Spoon Bender](../vcv/spoonbender/docs/MANUAL.md) |
+| **Séance** | Hold a sound's spectrum in place, scatter its partials, shape it with a second signal, or sweep a wall across it, with expanders working on one shared spectral frame. | [Séance](../vcv/seance/docs/MANUAL.md) |
 
-The modules draw on early digital instrument architectures and add new patching and sample-manipulation features. They include original programs and a procedural demo sample. Manufacturer firmware, sample ROMs and effects microcode are not required or included.
+OTIS, Vastish and Spoon Bender draw on early digital instrument architectures and add new patching and sample-manipulation features; Séance is original work, not modelled on a historical instrument. They include original programs and a procedural demo sample. Manufacturer firmware, sample ROMs and effects microcode are not required or included.
 
 ## Install
 
 1. Open the [releases page](https://github.com/JosiahAlanLee/DSP_Emulation/releases) and download the zip for your computer. No GitHub account is needed.
-2. Unzip it. Inside are three `.vcvplugin` files and `INSTALL.txt`. Don't unzip the `.vcvplugin` files themselves; Rack does that.
+2. Unzip it. Inside are the `.vcvplugin` files and `INSTALL.txt`. Don't unzip the `.vcvplugin` files themselves; Rack does that.
 3. In Rack, choose **Help → Open user folder**, then quit Rack.
-4. Copy the three `.vcvplugin` files into the plugins folder for your platform, inside that user folder.
-5. Start Rack. Right-click the rack and search for **OTIS Sampler**, **Vastish** or **Spoon Bender**.
+4. Copy the `.vcvplugin` files into the plugins folder for your platform, inside that user folder.
+5. Start Rack. Right-click the rack and search for **OTIS Sampler**, **Vastish**, **Spoon Bender** or **Séance**.
 
 Files in the current preview release, **preview-1**:
 
@@ -27,13 +28,15 @@ Files in the current preview release, **preview-1**:
 | macOS Apple Silicon | `DSP_Emulation-preview-1-macOS-AppleSilicon.zip` | `OtisLab-2.5.2-mac-arm64.vcvplugin`<br>`VastishLab-2.3.1-mac-arm64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-arm64.vcvplugin` | `plugins-mac-arm64` |
 | macOS Intel | `DSP_Emulation-preview-1-macOS-Intel.zip` | `OtisLab-2.5.2-mac-x64.vcvplugin`<br>`VastishLab-2.3.1-mac-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-x64.vcvplugin` | `plugins-mac-x64` |
 
+preview-1 predates Séance. The next release adds `SeanceLab-2.0.0-<platform>.vcvplugin` to each zip.
+
 Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple Silicon; "Processor: Intel…" is Intel.
 
 To update, quit Rack, delete the old `.vcvplugin` files from the plugins folder and copy in the new ones, so only one version of each plugin is there.
 
-Each module works on its own; install all three to use the sample-sharing links.
+Each module works on its own; install OTIS, Vastish and Spoon Bender together to use the sample-sharing links.
 
-Linux has been used live in Rack. The Windows and macOS builds compile and pass the portable engine tests in CI, but nobody has run them inside Rack yet. If one doesn't appear in the module browser, Rack's `log.txt` in the user folder says why; please report it in [Issues](https://github.com/JosiahAlanLee/DSP_Emulation/issues). To build from source instead, see the [development guide](DEVELOPMENT.md).
+OTIS, Vastish and Spoon Bender have been used live in Rack on Linux; Séance has been loaded and run headless there but not yet played live. The Windows and macOS builds compile and pass the portable engine tests in CI, but nobody has run them inside Rack yet. If one doesn't appear in the module browser, Rack's `log.txt` in the user folder says why; please report it in [Issues](https://github.com/JosiahAlanLee/DSP_Emulation/issues). To build from source instead, see the [development guide](DEVELOPMENT.md).
 
 ## First sound
 
@@ -64,6 +67,14 @@ For chords, set your pitch/gate source to polyphonic operation. Vastish uses up 
 4. Change **TIME** and **DECAY**. Set **SHIFT** to zero for unshifted repeats.
 
 Leaving IN R unpatched sends IN L to both processing channels. Spoon Bender's CLOCK input accepts timing pulses; OTIS's CLK CV input instead controls its playback clock in volts per octave.
+
+### Try Séance
+
+1. Patch a sound into Séance **A** and Séance **OUT** to your mixer or Audio module.
+2. Place a **Séance Freeze** or **Séance Wipe** expander directly to its right, touching it. The expander's **LINK** light comes on.
+3. Press **FREEZE** on Freeze to hold the sound's current spectrum, or turn **WIPE** on Wipe to sweep a wall across it.
+
+Expanders act only in an unbroken row to the right of the core, applied left to right. Séance's output is delayed by its frame size plus 64 samples, about 44 ms at the default size and 48 kHz; **MIX** blends in the dry signal, delayed to match. Séance is not part of the sample-sharing chain below.
 
 ## Connect the sample-sharing chain
 
