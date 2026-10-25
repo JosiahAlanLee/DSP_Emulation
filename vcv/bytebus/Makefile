@@ -1,6 +1,6 @@
 RACK_DIR ?= ../../../deps/Rack-SDK
-SOURCES += src/plugin.cpp src/Register.cpp
-DISTRIBUTABLES += res README.md LICENSE docs
+SOURCES += src/plugin.cpp src/Register.cpp src/Lookup.cpp
+DISTRIBUTABLES += res README.md LICENSE docs examples
 EXTRA_CXXFLAGS += -std=c++17
 EXTRA_FLAGS += -fno-unsafe-math-optimizations
 include $(RACK_DIR)/arch.mk

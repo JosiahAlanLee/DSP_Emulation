@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -12,6 +12,12 @@
       "name": "Clocked Register",
       "description": "One byte of clocked state: selectable clock source, reset word, explicit seed publication, and polyphonic byte-bus input/output.",
       "tags": ["Sample and hold", "Logic", "Polyphonic", "Utility"]
+    },
+    {
+      "slug": "Lookup",
+      "name": "Lookup",
+      "description": "Original generated harmonic, formant, fold, CV, Walsh and rhythm transforms, with numeric morphing, explicit ramp tracking and custom Vastish table import.",
+      "tags": ["Waveshaper", "Logic", "Polyphonic", "Utility"]
     }
   ]
 }

@@ -239,15 +239,16 @@ Each module's manual states:
 |---|---|---|
 | Converter: ADC in, DAC out (Drezno II) | transparent; sample-and-hold when clocked | Vastish covers both directions for its own signals. A small standalone converter (gain/offset per side, ±5/±10 V) is the first new module |
 | Bit logic: invert, toggle, AND mask (Lipsk, Gera) | transparent | Covered by Vastish lanes + FUN: AND, OR, XOR, AND-NOT, NOT |
-| Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent | Vastish covers the computed, modulated case. A **Lookup** module with its own 256-entry tables comes later |
+| Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent; optional explicit ramp follower | **Lookup** in [`vcv/bytebus`](../vcv/bytebus): six original generated families and original Vastish table import; [contract](../vcv/bytebus/docs/LOOKUP.md). Vastish BUS integration remains proposed |
 | Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**, new build |
 | Single-word register | latching, clock source selectable | **Clocked Register**, prototype in [`vcv/bytebus`](../vcv/bytebus) |
 | Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
 | Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**, new build; partly Merge/Split plus a poly switch today |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
 
-Order: `ByteBus.hpp` and its tests → Clocked Register → Vastish integration → Converter →
-Pipeline → Counter → Lookup → Switch.
+Implemented prototypes: `ByteBus.hpp`, Clocked Register, Lookup and the
+memoryless Vastish table compiler. Remaining order: Vastish bus integration →
+Converter → Pipeline → Counter → Switch.
 
 ## 11. Decisions to ratify
 

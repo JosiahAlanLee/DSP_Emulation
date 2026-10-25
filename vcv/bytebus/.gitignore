@@ -7,3 +7,8 @@
 /tests/module_test
 /tests/feedback_test
 /tests/*_asan
+/tests/lookup_test
+/tests/lookup_module_test
+/tools/compile_vastish_backend
+/tools/compile_vastish_backend.exe
+**/__pycache__/
