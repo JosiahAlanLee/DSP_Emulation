@@ -74,7 +74,7 @@ Leaving IN R unpatched sends IN L to both processing channels. Spoon Bender's CL
 2. Place a **Séance Freeze** or **Séance Wipe** expander directly to its right, touching it. The expander's **LINK** light comes on.
 3. Press **FREEZE** on Freeze to hold the sound's current spectrum, or turn **WIPE** on Wipe to sweep a wall across it.
 
-Expanders act only in an unbroken row to the right of the core, applied left to right. Séance's output is delayed by its frame size plus 64 samples, about 44 ms at the default size and 48 kHz; **MIX** blends in the dry signal, delayed to match. Séance is not part of the sample-sharing chain below.
+Expanders act only in an unbroken row to the right of the core, applied left to right. Séance's output is delayed by its frame size minus one plus 64 samples, about 44 ms at the default size and 48 kHz; **MIX** blends in the dry signal, delayed to match. Séance is not part of the sample-sharing chain below.
 
 ## Connect the sample-sharing chain
 
