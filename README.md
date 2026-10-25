@@ -29,6 +29,7 @@ Status: Linux has been used live in Rack. Windows and macOS builds compile and p
 
 ## Also in this repository
 
+- [`vcv/gorgon`](vcv/gorgon): Gorgon, a Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio: its clock, gates and automation out, CV back into the visuals. Built in CI but not yet part of the release bundles. [Manual](vcv/gorgon/docs/MANUAL.md).
 - [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
 - [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
 
