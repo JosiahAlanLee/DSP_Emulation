@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="380" viewBox="0 0 180 380">
+ <rect width="180" height="380" fill="#d9d8ce"/>
+ <rect x="8" y="8" width="164" height="364" rx="5" fill="none" stroke="#343d3d"/>
+ <g fill="#273638" font-family="DejaVu Sans,sans-serif" text-anchor="middle">
+  <text x="90" y="29" font-size="17" font-weight="bold">REGISTER</text>
+  <text x="90" y="44" font-size="9" letter-spacing="2">BYTE BUS</text>
+  <g font-size="7"><text x="27" y="79">7</text><text x="45" y="79">6</text><text x="63" y="79">5</text><text x="81" y="79">4</text><text x="99" y="79">3</text><text x="117" y="79">2</text><text x="135" y="79">1</text><text x="153" y="79">0</text></g>
+  <g font-size="10" font-weight="bold"><text x="50" y="95">SOURCE</text><text x="130" y="95">RATE</text><text x="50" y="164">RESET WORD</text><text x="130" y="164">LOAD</text></g>
+  <g font-size="8"><text x="50" y="143">AUTO / JACK / BUS</text><text x="50" y="152">INT / ENGINE</text><text x="130" y="143">0.125–2048 Hz</text><text x="50" y="204">0–255</text><text x="90" y="246">HELD WORD · HEX</text></g>
+  <g font-size="10" font-weight="bold"><text x="50" y="285">BUS IN</text><text x="130" y="285">BUS OUT</text><text x="35" y="310">CLOCK</text><text x="90" y="310">RESET</text><text x="145" y="310">CLK OUT</text></g>
+  <text x="90" y="363" font-size="8">LSB FIRST · 8 BITS + CLOCK</text>
+ </g>
+ <g fill="none" stroke="#586361" stroke-width="1"><path d="M20 292H160"/><path d="M22 254H78V277H22Z"/><path d="M102 254H158V277H102Z"/></g>
+</svg>

@@ -60,10 +60,10 @@ LSB-first is chosen so that short cables are small numbers, "lane *n*" means
 
 - Senders: a 1 bit and a high CLK are **10 V**; a 0 bit and a low CLK are
   **0 V**. Never bipolar.
-- Receivers: every line, data and CLK alike, passes a Schmitt trigger: high once
-  the voltage rises above **1.0 V**, low once it falls below **0.1 V** (Rack's
-  gate convention; pass both thresholds to `dsp::SchmittTrigger` explicitly
-  rather than relying on defaults). Non-finite voltages read as low.
+- Receivers: every line, data and CLK alike, passes a Schmitt trigger: high at
+  **1.0 V** or above, low at **0.1 V** or below. Between thresholds it retains
+  its previous state. Non-finite voltages clear that line to low. The portable
+  `Gate` helper implements these thresholds without a Rack dependency.
 - Consequence: any Rack gate, trigger, clock or comparator output is a valid
   bit, and a bus can drive gate inputs and polyphonic VCAs directly.
 
@@ -82,7 +82,8 @@ Two kinds of processor:
 
 - **Transparent** (combinational): the output word is a function of the current
   input word(s). It forwards the clock of its primary input unchanged and keeps
-  that input's channel count, so clocked in means clocked out. Examples: bit
+  that input's clocked/unclocked mode, emitting exactly 9/8 channels even if its
+  input is a short cable or has reserved channels. Examples: bit
   logic, masks, lookup.
 - **Latching** (sequential): registers, counters, delay lines, held
   conversions. They advance on sample instants. In unclocked mode that means
@@ -101,6 +102,23 @@ Timing facts:
   one, so the fastest clock is half the engine rate.
 - A module that emits data and CLK writes both in the same `process()` call,
   for the same sample.
+
+Input decoding and state advancement are separate. `Reader::process()` reports
+both the current decoded `rawWord` and the bus-latched `word`, along with the
+clock level and edge. A module reclocking on a local clock samples `rawWord` on
+its own selected edge; it must not add an unintended upstream-clock latch.
+An unclocked reader updating every sample does not oblige a register to advance
+at the engine rate. Sequential modules using an internal clock emit that clock
+on channel 8. A connected but stopped clock never triggers a timeout fallback.
+
+Disconnecting resets the reader. Connecting, or switching between unclocked and
+clocked mode, clears its line states; an initially high CLK counts as the first
+rising edge. Short-cable width changes inside the same mode do not reset it;
+missing high lines are cleared. Decode all inputs before evaluating an operation.
+
+A register's RESET may publish its seed as a new word-clock event. The
+[Register contract](../vcv/bytebus/docs/MANUAL.md#clock-and-reset-timing) specifies
+the low gap, reset priority and how nearby acquisition edges are suppressed.
 
 ## 6. Numeric interpretations
 
@@ -169,26 +187,32 @@ inline float   toVolts(uint8_t n)   { return bipolar(n) * FULL_SCALE_VOLTS; }
 inline uint8_t fromBipolar(float s);                // clamp(floor(128+128s+.5),0,255); non-finite -> 128
 inline uint8_t fromVolts(float v)   { return fromBipolar(v / FULL_SCALE_VOLTS); }
 
-struct Reader {                     // one per bus input
-    bool    line[9] = {};           // Schmitt state per channel
-    uint8_t word = 0;               // last latched word
-    bool    clocked = false;        // the input had >= 9 channels on the last call
-    bool    clk = false;            // current CLK level, for forwarding
-    // Call once per engine sample. Returns true on a sample instant: every
-    // call when unclocked, on a CLK rising edge when clocked. Callers decide
-    // what an unconnected input means; check in.isConnected() first.
-    bool process(const rack::engine::Input& in);
+struct Sample {
+    uint8_t rawWord = 0;            // current Schmitt-decoded lines
+    uint8_t word = 0;               // held when clocked; current when unclocked
+    bool connected = false, clocked = false, clk = false, rising = false;
+    bool updated = false;          // input word sampled, not a register tick
+};
+struct Reader {                     // one per bus input; retains Schmitt state
+    template<class Input> Sample process(Input& in);
+    void reset();
 };
 
 struct Writer {                     // one per bus output
     // 8 channels unclocked, 9 clocked; 0 V / 10 V per bit; CLK level on channel 8.
-    void write(rack::engine::Output& out, uint8_t word, bool clocked, bool clk);
+    template<class Output> void write(Output& out, uint8_t word, bool clocked, bool clk) const;
 };
 }
 ```
 
-Tests (`vcv/shared/tests/bytebus_test.cpp`, portable; Reader/Writer under an
-existing Rack-API harness):
+The helpers are implemented without including Rack. The input/output template
+arguments accept Rack ports or portable test ports; there is no allocation.
+Rack itself leaves disconnected outputs at zero channels. In Rack SDK 2.6.4,
+calling `setChannels(0)` on a connected output actually gives a silent **one**
+channel, not a disconnected port; a future OFF mode must account for this.
+
+Tests (`vcv/bytebus/tests/engine_test.cpp`, portable, and `module_test.cpp`,
+using the real Rack APIs and Vastish):
 
 - All 256 words round-trip through bipolar, phase, level and volts and back,
   bit-exact.
@@ -217,11 +241,12 @@ Each module's manual states:
 | Bit logic: invert, toggle, AND mask (Lipsk, Gera) | transparent | Covered by Vastish lanes + FUN: AND, OR, XOR, AND-NOT, NOT |
 | Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent | Vastish covers the computed, modulated case. A **Lookup** module with its own 256-entry tables comes later |
 | Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**, new build |
-| Register / pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
+| Single-word register | latching, clock source selectable | **Clocked Register**, prototype in [`vcv/bytebus`](../vcv/bytebus) |
+| Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
 | Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**, new build; partly Merge/Split plus a poly switch today |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
 
-Order: `ByteBus.hpp` and its tests → Vastish integration → Converter →
+Order: `ByteBus.hpp` and its tests → Clocked Register → Vastish integration → Converter →
 Pipeline → Counter → Lookup → Switch.
 
 ## 11. Decisions to ratify
