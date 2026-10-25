@@ -4,7 +4,7 @@ A spectral core and five expanders for VCV Rack 2. The core takes a short-time F
 
 See the [manual](docs/MANUAL.md).
 
-![Séance and its four expanders: a layout illustration of the generated panels, not a Rack screenshot](docs/panel-preview.png)
+![Original Séance core and four effects: a layout illustration of the generated panels, not a Rack screenshot](docs/panel-preview.png)
 
 | Module | HP | Does |
 |---|---|---|
@@ -25,7 +25,7 @@ Latency is the frame size minus one plus 64 samples (2111 samples, 44 ms, at 204
 | `src/Chain.hpp` | How a row finds its frame: the core's fixed pointer, each expander's link, positions. |
 | `src/Seance.cpp`, `src/Expanders.cpp` | The Rack modules and widgets. |
 | `src/Bridge.cpp`, `src/engine/Bridge.hpp` | Spectral band activity and byte-mask expander; shared frame, no additional FFT. |
-| `tools/make_panel.py` | Generates the five panels in `res/` and `src/Layout.hpp` from one table per module. |
+| `tools/make_panel.py` | Generates the six panels in `res/` and `src/Layout.hpp` from one table per module. |
 
 ## Tests
 

@@ -28,7 +28,7 @@ Files in the current preview release, **preview-1**:
 | macOS Apple Silicon | `DSP_Emulation-preview-1-macOS-AppleSilicon.zip` | `OtisLab-2.5.2-mac-arm64.vcvplugin`<br>`VastishLab-2.3.1-mac-arm64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-arm64.vcvplugin` | `plugins-mac-arm64` |
 | macOS Intel | `DSP_Emulation-preview-1-macOS-Intel.zip` | `OtisLab-2.5.2-mac-x64.vcvplugin`<br>`VastishLab-2.3.1-mac-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-x64.vcvplugin` | `plugins-mac-x64` |
 
-preview-1 predates Séance. The next release adds `SeanceLab-2.0.0-<platform>.vcvplugin` to each zip.
+preview-1 predates Séance. Current source builds `SeanceLab-2.1.0-<platform>.vcvplugin`, including Bridge.
 
 Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple Silicon; "Processor: Intel…" is Intel.
 
