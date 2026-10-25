@@ -27,9 +27,21 @@ Install steps and exact file names: **[Getting started](docs/GETTING_STARTED.md)
 
 Status: Linux has been used live in Rack. Windows and macOS builds compile and pass the portable engine tests in CI but nobody has run them inside Rack yet; reports are welcome in [Issues](https://github.com/JosiahAlanLee/DSP_Emulation/issues). The modules aren't in the VCV Library yet.
 
+## Gorgon: a CV and A/V tracker for Rack
+
+[`vcv/gorgon`](vcv/gorgon) connects Rack to Gorgon, a CV and audio/video tracker in development in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio. One score drives the visuals, the modular and Rack, and Gorgon is the master clock.
+
+- **Out of Rack's jacks:** clock, reset, run, gates, held 1 V/oct pitch and velocity (polyphonic), and the automation lanes. These are generated per sample on Rack's clock, which follows Studio's playhead. CV levels can be 10 V (Rack default) or 5 V (matching Studio's direct CV).
+- **Into the visuals:** four CV inputs set the patch's named controls, and PLAY and RESET drive Studio's transport.
+- **Audio:** four capture jacks receive Studio's optical soundtrack and synthesized breaks over JACK or PipeWire.
+- **Set up:** Rack finds a running Studio on the same machine with no configuration.
+
+For example: Gorgon's gates and pitch into OTIS and Vastish, through Spoon Bender, with the same score moving the picture.
+
+Status: in development, built and tested in CI against a pinned HydraPy commit, not yet part of the release bundles. Physical audio/video latency and hardware CV routes are still being validated. [Manual](vcv/gorgon/docs/MANUAL.md).
+
 ## Also in this repository
 
-- [`vcv/gorgon`](vcv/gorgon): Gorgon, a Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio: clock, held 1 V/oct pitch, gates and automation out, CV back into the visuals. Built in CI but not yet part of the release bundles. [Manual](vcv/gorgon/docs/MANUAL.md).
 - [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
 - [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
 
