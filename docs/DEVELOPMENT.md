@@ -148,6 +148,18 @@ Commit `59459b4` on the render workstation: Ubuntu 22.04.5, GCC 11.4, glibc 2.35
 - The same packages process audio in VCV Rack Free 2.6.6, headless, on a private JACK server at 48 kHz/256 frames. In a patch of the same modules, Fundamental's VCO and LFO drive the modules and an Audio-8 module records them. Over 10 seconds, OTIS (playing a sample saved in the patch) and Vastish sounded on all 20 LFO gates. Séance and Spoon Bender processed the VCO. Every sample was finite, and Rack's log had no errors. The plugin sources are unchanged from `59459b4` to `e7ed161`.
 - Not covered: the Rack window and mouse interaction, a physical audio device, real-time callback load under a full session, and hardware (Digi003/ADAT, Expert Sleepers CV). The remaining live checks in each validation document still stand.
 
+### Workstation run, 2026-10-25: byte bus and Séance
+
+Commit `96d0b9c` (ByteBusLab 2.2.0 with Converter, Vastish 2.5.0, OTIS 2.8.0, Séance 2.0.0) on the same workstation and SDK.
+
+- Every Linux CI step for the five plugins passed from a clean build, 49 of 49. That now includes the byte bus workflow (`check`, `tools-check`, `sanitize`, `dist`) and the Vastish pre-bus trace comparison.
+- Byte bus in VCV Rack Free 2.6.6, headless, on a private JACK server at 48 kHz/256 frames, 12 seconds: `examples/byte-bus-io.vcv`, unchanged except that an Audio-16 module records it, a constant 10 V gate plays OTIS, and four more Converters decode the buses to voltage. Every recorded sample on five buses was an exact byte. ADC(DAC(word)) returned the word on every sample. The Register clocked every 12000 samples (4 Hz), held its word between clocks and stored the ADC word from 0–1 samples earlier. The Vastish and Lookup output words were functions of their input words, Lookup's one-to-one. Lookup AUDIO carried the same word as BUS OUT (decoded one cable later). OTIS played the selected frame: across 48 holds, the same frame always sounded alike, different frames never did, and every hold's nearest neighbour was a hold of its own frame.
+- Séance in the same setup, 12 seconds: nine cores, bare or with rows of expanders, on Fundamental VCOs. A bare core passed its input through at 2112 samples (the documented 2111 plus one cable) with -139 dB error. Bypassed Scramble and Wipe, and Cross with nothing on B, were bit-identical to the bare core. Wipe at +50 % left the band below its edge at -95 dB, and Scramble cut the share of energy on the harmonic series from 100 % to 5 %. Freeze released was a pass-through (-138.6 dB). Held, it kept the pitch from the moment of freezing (240 Hz, within the 218–261 Hz the input swept in that frame) while the input ramped on by more than 300 cents. Cross with B and a row of all four expanders were active and finite.
+- Both patches passed again with four engine threads (Rack's default is one).
+- In VCV Rack Pro 2.6.6 (unsigned, loading only), all seven plugins and a patch with one of each of their 12 modules loaded and stayed loaded for 15 seconds with no errors or warnings.
+- Observations: Cross restores the level after MULT, so its peaks can pass 10 V. On a ±5 V saw with B a square, 18 of 576,000 samples did. Séance does not clamp its output, so Rack's Audio module clipped them. Headless Rack links expanders by position, as the window does: a row saved without `leftModuleId`/`rightModuleId` behaved bit-identically to one with them.
+- Not covered: as above, plus Converter clock policies other than the example's defaults in a real engine (the module tests cover them).
+
 ## Implementation scope
 
 ### OTIS
