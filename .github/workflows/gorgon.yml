@@ -12,6 +12,14 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JosiahAlanLee/hydrapy
+          ref: main
+          path: .integration/hydrapy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Install libRack runtime dependencies and jansson
         # libRack.so needs JACK and PulseAudio client libraries to load, even headless.
         # jansson is for the portable bridge tests, which don't link libRack.
@@ -27,6 +35,13 @@ jobs:
           step make -C vcv/gorgon -j2 RACK_DIR=/tmp/Rack-SDK
           # Portable engine and bridge tests (the engine against HydraPy's own outputs).
           step make -C vcv/gorgon/tests test
+          # Verify the current producer, not only the checked-in reference file.
+          step python -m pip install -e .integration/hydrapy
+          git -C .integration/hydrapy rev-parse HEAD
+          python vcv/gorgon/tools/make_fixture.py > /tmp/gorgon-current-fixture.txt
+          step cmp vcv/gorgon/tests/fixture.txt /tmp/gorgon-current-fixture.txt
+          step vcv/gorgon/tests/engine_test /tmp/gorgon-current-fixture.txt
+          step make -C vcv/gorgon/tests e2e
           sudo sysctl -w vm.mmap_rnd_bits=28   # ThreadSanitizer on newer runner kernels
           step make -C vcv/gorgon/tests sanitize
           # The real module through Rack's API, without a GUI; sanitizers first for stack traces.
