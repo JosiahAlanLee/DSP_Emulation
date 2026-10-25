@@ -5,13 +5,13 @@ A stereo echo and reverb for VCV Rack 2. Its frequency shifter can move each ech
 CLEAN runs at Rack's sample rate. ESP combines reduced-rate processing with selected 24-bit node and 16-bit memory quantization. These are original algorithms; no Ensoniq effects microcode is included or executed.
 
 - **[User manual](docs/MANUAL.md)** — first sound, controls, patching, saving and troubleshooting.
-- **[Installation and getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md)** — all three modules and their sample-sharing chain.
+- **[Installation and getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md)** — every module, and the sample-sharing chain.
 - **[Development and builds](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/DEVELOPMENT.md)** — SDK setup, tests and source layout.
 - **[Design specification](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/vcv/spoonbender/SPEC.md)** and [change history](docs/CHANGELOG.md).
 
 ## Download and install
 
-1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all three plugins.
+1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all the plugins.
 2. In Rack choose **Help → Open user folder**, then quit Rack.
 3. Copy `SpoonBenderLab-2.1.1-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other two as well to use the sample-sharing links.
 4. Start Rack.

@@ -34,7 +34,7 @@ Workflows build Linux x64, Windows x64, macOS arm64 and macOS x64. Live Linux us
 
 ## Releases
 
-Public downloads are GitHub pre-releases built by [release.yml](../.github/workflows/release.yml). It builds all three plugins for Linux x64, Windows x64, macOS arm64 and macOS x64 (cross-compiled on the arm64 runner), and [tools/bundle.sh](../tools/bundle.sh) packs each platform into one zip with the three `.vcvplugin` files and an INSTALL.txt:
+Public downloads are GitHub pre-releases built by [release.yml](../.github/workflows/release.yml). It builds the plugins named in its `PLUGINS` variable (OTIS, Vastish, Spoon Bender and Séance) for Linux x64, Windows x64, macOS arm64 and macOS x64 (cross-compiled on the arm64 runner), and [tools/bundle.sh](../tools/bundle.sh) packs each platform into one zip with their `.vcvplugin` files and an INSTALL.txt. To add a plugin to the bundles, add its folder to `PLUGINS` and to the default list in tools/bundle.sh, and give it a line in the install guide and in INSTALL.txt:
 
 | Platform | Bundle |
 |---|---|
@@ -46,7 +46,7 @@ Public downloads are GitHub pre-releases built by [release.yml](../.github/workf
 To publish:
 
 1. Bump `version` in each changed plugin's plugin.json. Rack 2 only loads versions starting with `2.`, and CI rejects anything else.
-2. Update the release name and file names in the install table of [GETTING_STARTED.md](GETTING_STARTED.md). The release job fails if that table doesn't name every plugin's current version.
+2. Update the release name and file names in the install table of [GETTING_STARTED.md](GETTING_STARTED.md). A publishing run fails if that table doesn't name every plugin's current version; a dry run only warns.
 3. Commit and push, then either push a tag (`git tag preview-2 && git push origin preview-2`, or `vX.Y.Z`) or run **Actions → Release bundles → Run workflow** with the release name filled in. A manual run creates the tag on the commit it built.
 
 Either way the run creates the GitHub pre-release with the four zips. A manual run with the name left empty builds the same zips as workflow artifacts without publishing, as a dry run.
