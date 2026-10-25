@@ -74,6 +74,7 @@ frame, not a meter of the final time-domain output.
 
 - **THRESH**, −72–0 dBFS (default −36): a low bit turns on at or above this
   band RMS level. 0 dBFS is 10 V RMS; −36 dBFS is about 0.158 V RMS.
+  This is a detector reference, not a clipping limit: Séance audio can exceed it.
 - **HYST**, 0–24 dB (default 6): a high bit turns off at or below
   `THRESH − HYST`. With zero hysteresis, the single comparison is `>= THRESH`.
 - Silence and empty bands are always low. Invalid magnitudes contribute no

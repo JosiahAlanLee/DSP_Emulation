@@ -11,11 +11,11 @@ See the [manual](docs/MANUAL.md).
 | **Séance** | 10 | Analysis and resynthesis of input A (B is a reference for Cross); frame size 512–4096; SEED and RESET for repeatable textures; dry/wet with the dry path delayed to match. |
 | **Freeze** | 4 | Holds the frame and keeps its phases turning at their measured rates; seeded DRIFT. |
 | **Scramble** | 4 | Moves every spectral peak, with its lobe, by a seeded offset up to ±RANGE, re-pitched coherently; HOLD frames per epoch; PHASE diffuser. |
-| **Cross** | 4 | B's spectrum decides A's levels: MULTIPLY (level restored) or MORPH; SMOOTH widens B's envelope. |
+| **Cross** | 4 | B's spectral shape decides A's: MULTIPLY (A's overall level kept) or MORPH; SMOOTH widens B's envelope. |
 | **Wipe** | 4 | A wall across the spectrum on a log-frequency axis, hard or SOFT, sweeping up or down under CV. |
 | **Bridge** | 8 | Pre-mask activity in eight frequency bands becomes a clocked byte; incoming bits open those bands with adjustable slew. [Contract and OTIS feedback example](docs/BYTE_BUS.md). |
 
-Latency is the frame size plus 64 samples (44 ms at 2048 and 48 kHz), fixed whether or not expanders are attached, and the dry path is delayed to match. The chain's own cost is small: the whole row, Freeze through Wipe, takes about 1.3% of one core at 48 kHz at any size.
+Latency is the frame size minus one plus 64 samples (2111 samples, 44 ms, at 2048 and 48 kHz), fixed whether or not expanders are attached, and the dry path is delayed to match. The chain's own cost is small: the whole row, Freeze through Wipe, takes about 1.3% of one core at 48 kHz at any size.
 
 ## Layout
 
