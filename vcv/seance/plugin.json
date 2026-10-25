@@ -1,0 +1,41 @@
+{
+  "slug": "SeanceLab",
+  "name": "SeanceLab",
+  "version": "2.0.0",
+  "license": "BSD-3-Clause",
+  "brand": "SeanceLab",
+  "author": "DSP_Emulation contributors",
+  "sourceUrl": "https://github.com/JosiahAlanLee/DSP_Emulation",
+  "modules": [
+    {
+      "slug": "Seance",
+      "name": "Séance",
+      "description": "Spectral frame core: STFT analysis and resynthesis of input A (with B as a reference), handed in place to the Séance expanders on its right; seeded, with RESET for repeatable replay.",
+      "tags": ["Effect", "Utility"]
+    },
+    {
+      "slug": "SeanceFreeze",
+      "name": "Séance Freeze",
+      "description": "Spectral freeze expander: holds the frame and keeps its phases turning, with seeded drift.",
+      "tags": ["Effect", "Expander"]
+    },
+    {
+      "slug": "SeanceScramble",
+      "name": "Séance Scramble",
+      "description": "Spectral scatter expander: moves every peak by a seeded offset, re-pitched coherently, with a diffuser.",
+      "tags": ["Effect", "Expander"]
+    },
+    {
+      "slug": "SeanceCross",
+      "name": "Séance Cross",
+      "description": "Cross-synthesis expander: B's spectrum shapes A's levels (multiply) or A's magnitudes morph towards B's.",
+      "tags": ["Effect", "Vocoder", "Expander"]
+    },
+    {
+      "slug": "SeanceWipe",
+      "name": "Séance Wipe",
+      "description": "Spectral wipe expander: a hard or soft wall across the spectrum that sweeps up or down under CV.",
+      "tags": ["Effect", "Filter", "Expander"]
+    }
+  ]
+}
