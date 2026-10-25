@@ -96,8 +96,8 @@ With follow enabled, a new capture replaces OTIS's current sample, and changes t
 
 | Link | Transferred | Kept at the destination |
 |---|---|---|
-| Spoon Bender → OTIS | A completed mono, 16-bit recording of Spoon Bender's post-MIX output, with its recorded sample rate. | OTIS's playback controls. The import replaces sample memory and stops its voices. |
-| OTIS → Vastish | OTIS's entire completed 16-bit sample, with its sample rate; a stereo sample as a mono mix. | Vastish's routing, envelopes and other synthesis settings. |
+| Spoon Bender → OTIS | A completed 16-bit recording of Spoon Bender's post-MIX output, with its recorded sample rate: stereo from Spoon Bender 2.2 into OTIS 2.7, otherwise a mono mix. | OTIS's playback controls. The import replaces sample memory and stops its voices. |
+| OTIS → Vastish | OTIS's entire completed 16-bit sample, with its sample rate: stereo from OTIS 2.7 into Vastish 2.4, otherwise a mono mix. | Vastish's routing, envelopes and other synthesis settings. |
 
 Vastish does not inherit OTIS's selected window, loop points, reverse setting, chip-clock setting or playback filters. To include those sounds, record OTIS's audible output into a new take, or process and capture it through Spoon Bender.
 

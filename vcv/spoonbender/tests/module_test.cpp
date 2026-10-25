@@ -109,6 +109,38 @@ int main() {
         n = share->copy(share->context, nullptr, 0, &rate, &got); assert(n == 96000 && rate == 96000 && got == 6);
         m.inputs[SpoonBender::CAPTURE_IN].setVoltage(0); m.onSampleRateChange(sr);
 
+        // Stereo capture (2.2.0): distinct dry L and R. The stereo extension gives both channels;
+        // older readers get (L + R) / 2 through v1, and only from a 2.2.0+ provider is the extension read.
+        {
+            m.params[SpoonBender::MIX].setValue(0); m.inputs[SpoonBender::IN_R].channels = 1;
+            m.inputs[SpoonBender::IN_L].setVoltage(4); m.inputs[SpoonBender::IN_R].setVoltage(-1); run(m, 4800, args);
+            m.params[SpoonBender::CAPTURE].setValue(1); run(m, 1, args); m.params[SpoonBender::CAPTURE].setValue(0); run(m, 1, args);
+            m.collectCapture();
+            assert(!dspemu::stereoExtension(share, dspemu::providerHasStereo("SpoonBenderLab", "2.1.1")));
+            auto* ext = dspemu::stereoExtension(share, dspemu::providerHasStereo("SpoonBenderLab", "2.2.0"));
+            assert(ext);
+            double r = 0; uint32_t g = 0, ch = 0;
+            size_t k = ext->copyStereo(share->context, nullptr, nullptr, 0, &r, &g, &ch);
+            assert(k > 4800 && ch == 2 && r == 48000 && g == share->revision(share->context));
+            std::vector<int16_t> L(k), R(k), M(k);
+            assert(ext->copyStereo(share->context, L.data(), R.data(), k, &r, &g, &ch) == k);
+            assert(share->copy(share->context, M.data(), k, &r, &g) == k);
+            assert(L.back() == 13107 && R.back() == -3277);   // 4 V and -1 V of the ±10 V range
+            for (size_t i = 0; i < k; i++) assert(M[i] == int16_t((int32_t(L[i]) + R[i]) >> 1));
+            // IN R unpatched normals to IN L: identical channels are shared as mono. (A first
+            // capture clears the frames still recorded with distinct inputs.)
+            m.inputs[SpoonBender::IN_R].channels = 0; m.inputs[SpoonBender::IN_L].setVoltage(2);
+            for (int take = 0; take < 2; take++) {
+                run(m, 4800, args);
+                m.params[SpoonBender::CAPTURE].setValue(1); run(m, 1, args); m.params[SpoonBender::CAPTURE].setValue(0); run(m, 1, args);
+                m.collectCapture();
+            }
+            k = ext->copyStereo(share->context, nullptr, nullptr, 0, &r, &g, &ch); assert(ch == 1);
+            L.resize(k); R.resize(k); M.resize(k);
+            ext->copyStereo(share->context, L.data(), R.data(), k, &r, &g, &ch); share->copy(share->context, M.data(), k, &r, &g);
+            assert(L == R && L == M && L.back() == 6554);
+        }
+
         // ESP: reconfigure rate and budget off the audio path; output stays finite.
         m.params[SpoonBender::ENGINE].setValue(1); m.params[SpoonBender::MIX].setValue(1);
         for (int r = 0; r < 3; r++) {
@@ -121,5 +153,5 @@ int main() {
         SpoonBender n2; n2.dataFromJson(j); json_decref(j);
         assert(n2.espRateIndex == 2 && n2.espBudget == true && n2.engine.preparedRate == 2);
     }
-    std::cout << "PASS: Spoon Bender module: dry path and normalling, clock-synced echo, shift display, freeze gate, capture to share, ESP reconfiguration, JSON\n";
+    std::cout << "PASS: Spoon Bender module: dry path and normalling, clock-synced echo, shift display, freeze gate, capture to share (stereo and mono), ESP reconfiguration, JSON\n";
 }

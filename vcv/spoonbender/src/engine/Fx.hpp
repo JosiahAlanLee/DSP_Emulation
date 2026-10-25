@@ -272,8 +272,8 @@ struct Params {
 constexpr double espRates[3] = {10000000.0 / 336.0, 10000000.0 / 224.0, 10000000.0 / 128.0};
 constexpr size_t ESP_BUDGET_WORDS = 65536;  // shared by both echo lines in budget mode
 
-// Retroactive capture: the audio thread writes the post-mix mono signal into one
-// of two rings. CAPTURE freezes the current ring and switches to the other; the
+// Retroactive capture: the audio thread writes the post-mix stereo signal into one
+// of two rings (frames interleaved L, R). CAPTURE freezes the current ring and switches to the other; the
 // UI thread copies the frozen one and releases it. No allocation or waiting on
 // the audio thread.
 // Threads: write() and trigger() run on the audio thread; prepare() runs with the
@@ -281,7 +281,7 @@ constexpr size_t ESP_BUDGET_WORDS = 65536;  // shared by both echo lines in budg
 // thread. `guard` serialises collect() with prepare(), so a sample-rate change
 // cannot replace the rings mid-copy. The audio thread never takes it.
 struct Capture {
-    std::vector<int16_t> ring[2];
+    std::vector<int16_t> ring[2];  // 2 * size samples each
     size_t size = 0, writePos = 0, filled = 0;
     double rate = 0;  // rate the rings are recorded at
     int writing = 0;
@@ -291,12 +291,14 @@ struct Capture {
     // Not real-time safe. Discards a capture that has not been collected yet.
     void prepare(size_t frames, double recordRate) {
         std::lock_guard<std::mutex> lock(guard);
-        ring[0].assign(frames, 0); ring[1].assign(frames, 0); size = frames; rate = recordRate;
+        ring[0].assign(2 * frames, 0); ring[1].assign(2 * frames, 0); size = frames; rate = recordRate;
         writePos = filled = 0; writing = 0; state = 0;
     }
-    void write(float x) {
+    static int16_t pcm(float x) { return int16_t(std::lround(clampf(x, -1, 32767.f / 32768) * 32768)); }
+    void write(float x) { write(x, x); }
+    void write(float l, float r) {
         if (!size) return;
-        ring[writing][writePos] = int16_t(std::lround(clampf(x, -1, 32767.f / 32768) * 32768));
+        ring[writing][2 * writePos] = pcm(l); ring[writing][2 * writePos + 1] = pcm(r);
         writePos = (writePos + 1) % size;
         filled = std::min(size, filled + 1);
     }
@@ -309,13 +311,23 @@ struct Capture {
         return true;
     }
     // UI thread: copy the frozen capture (oldest first) and its rate, and release the ring.
-    bool collect(std::vector<int16_t>& out, double& outRate) {
+    bool collect(std::vector<int16_t>& left, std::vector<int16_t>& right, double& outRate) {
         std::lock_guard<std::mutex> lock(guard);
         if (state.load(std::memory_order_acquire) != 1) return false;
         outRate = frozenRate;
-        out.resize(frozenLen);
-        for (size_t i = 0; i < frozenLen; i++) out[i] = ring[frozen][(frozenEnd + size - frozenLen + i) % size];
+        left.resize(frozenLen); right.resize(frozenLen);
+        for (size_t i = 0; i < frozenLen; i++) {
+            size_t k = (frozenEnd + size - frozenLen + i) % size;
+            left[i] = ring[frozen][2 * k]; right[i] = ring[frozen][2 * k + 1];
+        }
         state.store(0, std::memory_order_release);
+        return true;
+    }
+    // Mono: (L + R) / 2, which equals either channel when they are the same.
+    bool collect(std::vector<int16_t>& out, double& outRate) {
+        std::vector<int16_t> right;
+        if (!collect(out, right, outRate)) return false;
+        for (size_t i = 0; i < out.size(); i++) out[i] = int16_t((int32_t(out[i]) + right[i]) >> 1);
         return true;
     }
 };
@@ -404,7 +416,7 @@ struct Engine {
         const float mix = clampf(p.mix, 0, 1);
         std::array<float, 2> out = {{lerp(inL, wet[0], mix), lerp(inR, wet[1], mix)}};
         for (auto& o : out) if (!std::isfinite(o)) { clear(); out = {{0, 0}}; break; }
-        capture.write(.5f * (out[0] + out[1]));
+        capture.write(out[0], out[1]);
         return out;
     }
 };

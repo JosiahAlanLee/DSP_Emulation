@@ -46,6 +46,45 @@ int main(int argc,char** argv) {
     v.leftExpander.module=nullptr; v.followShare(Vastish::findOtisShare(v.leftExpander.module));
     assert(v.linkState==Vastish::LINK_NOT_FOUND && v.sampleLabel()=="OTIS: take-2.wav");
     v.collectSamples(); v.process(args); v.collectSamples();
+
+    // Stereo (OTIS 2.7.0+): a stereo OTIS sample arrives in Vastish with both channels. With the
+    // version unset above, the link was mono, as with an older OTIS: it gets the mix.
+    std::vector<int16_t> L(3000),R(3000);
+    for(size_t i=0;i<L.size();++i) { L[i]=int16_t(9000*std::sin(i*.04)); R[i]=int16_t(-7000*std::sin(i*.013)); }
+    json_t* st=json_object();
+    json_object_set_new(st,"pcm16le",json_string(otis::encodePcm(L.data(),L.size()).c_str()));
+    json_object_set_new(st,"pcm16le_r",json_string(otis::encodePcm(R.data(),R.size()).c_str()));
+    json_object_set_new(st,"rate",json_real(44100)); json_object_set_new(st,"name",json_string("wide.wav"));
+    otis->dataFromJson(st); json_decref(st);
+    v.leftExpander.module=otis.get();
+    assert(!Vastish::findOtisStereo(otis.get()));
+    v.followShare(Vastish::findOtisShare(otis.get()),Vastish::findOtisStereo(otis.get()));
+    assert(!v.uiSample->data.stereo() && v.uiSample->data.pcm.size()==L.size());
+    for(size_t i=0;i<L.size();++i) assert(v.uiSample->data.pcm[i]==int16_t((int32_t(L[i])+R[i])>>1));
+    otisPlugin.version="2.7.0";
+    auto* ext=Vastish::findOtisStereo(otis.get()); assert(ext);
+    Vastish w; w.setFollowOtis(true); w.leftExpander.module=otis.get();
+    w.followShare(Vastish::findOtisShare(otis.get()),ext);
+    assert(w.uiSample->data.stereo() && w.uiSample->data.pcm==L && w.uiSample->data.right==R);
+    assert(w.sampleLabel()=="OTIS: wide.wav (stereo)" && w.sampleShortLabel()=="\xe2\x97\x80 ST wide");
+    // It plays in stereo and saves both channels; a restore brings them back.
+    for(auto& o:w.outputs) o.channels=1; w.inputs[Vastish::PITCH_IN].channels=w.inputs[Vastish::GATE_IN].channels=1;
+    w.params[PITCH_WAVE].setValue(SAMPLE_WAVE); w.process(args); w.inputs[Vastish::GATE_IN].setVoltage(10);
+    double diff=0,sum=0;
+    for(int i=0;i<24000;++i) { w.process(args); float l=w.outputs[0].getVoltage(),r=w.outputs[1].getVoltage(); diff+=(l-r)*(l-r); sum+=l*l+r*r; }
+    assert(sum>1e-3 && diff>.1*sum);
+    json_t* saved=w.dataToJson();
+    assert(json_string_value(json_object_get(json_object_get(saved,"sample"),"pcm16le_r")));
+    Vastish back; back.dataFromJson(saved); json_decref(saved);
+    assert(back.uiSample && back.uiSample->data.pcm==L && back.uiSample->data.right==R);
+    // A mono OTIS sample through the stereo link stays mono.
+    json_t* mono=json_object();
+    json_object_set_new(mono,"pcm16le",json_string(otis::encodePcm(L.data(),L.size()).c_str()));
+    json_object_set_new(mono,"rate",json_real(44100)); json_object_set_new(mono,"name",json_string("narrow.wav"));
+    otis->dataFromJson(mono); json_decref(mono);
+    w.followShare(Vastish::findOtisShare(otis.get()),ext);
+    assert(!w.uiSample->data.stereo() && w.uiSample->data.pcm==L && w.sampleLabel()=="OTIS: narrow.wav");
+    w.collectSamples(); w.process(args); w.collectSamples(); back.collectSamples();
     otis.reset();
-    std::cout<<"PASS: Vastish follows a real OTIS module from the compiled OtisLab plugin, plays it, and tracks new samples\n";
+    std::cout<<"PASS: Vastish follows a real OTIS module from the compiled OtisLab plugin, plays it, and tracks new samples; stereo from OTIS 2.7.0 (mix from older), stereo playback, save and restore\n";
 }

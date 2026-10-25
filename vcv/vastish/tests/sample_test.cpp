@@ -88,6 +88,48 @@ int main() {
         auto saw = programs()[1]; Engine a, b; std::array<VoiceInput, 8> g{}; g[0].gate = true;
         for (int i = 0; i < 4800; i++) { auto x = a.tick(saw, g, 1, nullptr), y = b.tick(saw, g, 1, &view); assert(x[0] == y[0] && x[1] == y[1]); }
     }
+    // Stereo samples (2.4.0): each side runs through its own copy of the blocks with the same controls,
+    // so the left output equals a mono voice playing the left channel, and the right output one playing
+    // the right channel, bit for bit, in every program, with several voices, transposed and looped.
+    {
+        std::vector<int16_t> L(6000), R(6000);
+        for (size_t i = 0; i < L.size(); i++) { L[i] = int16_t(15000 * std::sin(i * .031) + (i % 11) * 200); R[i] = int16_t(12000 * std::sin(i * .007 + 1)); }
+        for (int prog = 0; prog < 6; prog++) for (bool loop : {false, true}) {
+            auto p = programs()[prog]; p[PITCH_WAVE] = SAMPLE_WAVE;
+            SampleView st{L.data(), L.size(), 44100, loop, R.data()}, ml{L.data(), L.size(), 44100, loop}, mr{R.data(), R.size(), 44100, loop};
+            Engine es, el, er; std::array<VoiceInput, 8> in{};
+            for (int i = 0; i < 9600; i++) {
+                for (int v = 0; v < 3; v++) { in[v].note = SAMPLE_ROOT_NOTE + v * 5 - 3; in[v].gate = (i / (1500 + 400 * v)) % 2 == 0; in[v].velocity = .5f + .2f * v; }
+                auto ys = es.tick(p, in, 3, &st), yl = el.tick(p, in, 3, &ml), yr = er.tick(p, in, 3, &mr);
+                assert(ys[0] == yl[0] && ys[1] == yr[1] && std::isfinite(ys[0]) && std::isfinite(ys[1]));
+            }
+            assert(!es.faults);
+        }
+        // Identical channels sound exactly like the mono sample, even when stereo starts mid-note.
+        auto p = programs()[2]; p[PITCH_WAVE] = SAMPLE_WAVE;
+        SampleView mono{L.data(), L.size(), 48000, true}, same{L.data(), L.size(), 48000, true, L.data()};
+        Engine a, b; std::array<VoiceInput, 8> in{}; in[0].gate = true; in[0].note = 64;
+        for (int i = 0; i < 9600; i++) {
+            auto ya = a.tick(p, in, 1, &mono), yb = b.tick(p, in, 1, i < 3000 ? &mono : &same);
+            assert(ya[0] == yb[0] && ya[1] == yb[1]);
+        }
+        assert(b.voices[0].stereoActive && !a.voices[0].stereoActive);
+        // Back to mono: the right path stops.
+        b.tick(p, in, 1, &mono); assert(!b.voices[0].stereoActive);
+    }
+    // WAV import keeps a two-channel file stereo on request.
+    {
+        std::vector<int16_t> l(900), r(900);
+        for (int i = 0; i < 900; i++) { l[i] = int16_t(i * 31); r[i] = int16_t(-i * 17); }
+        const char* path = "vastish_stereo_test.wav";
+        writeStereo16(path, l, r, 32000);
+        auto st = dspemu::loadWav(path, 1 << 20, true);
+        assert(st.stereo() && st.pcm == l && st.right == r && st.rate == 32000);
+        auto mono = dspemu::loadWav(path, 1 << 20, false);
+        assert(!mono.stereo() && mono.pcm == dspemu::loadWavMono(path, 1 << 20).pcm);
+        auto cut = dspemu::loadWav(path, 300, true); assert(cut.truncated && cut.pcm.size() == 300 && cut.right.size() == 300);
+        std::remove(path);
+    }
     // WAV import: stereo mixed to mono, rate kept, name from the path, truncation flagged.
     {
         std::vector<int16_t> l(1000), r(1000);
@@ -115,5 +157,5 @@ int main() {
         try { dspemu::decodePcm16("####", 10); } catch (const std::exception&) { threw = true; }
         assert(threw);
     }
-    std::cout << "PASS: sample playback exact at root (every frame), two-frame and loop-period exactness, seam interpolation, transposition, resampling, loop, gate restart, silence without a sample, other waves unaffected, WAV import, patch round-trip\n";
+    std::cout << "PASS: sample playback exact at root (every frame), two-frame and loop-period exactness, seam interpolation, transposition, resampling, loop, gate restart, silence without a sample, other waves unaffected, stereo sides equal per-channel mono voices in all programs, identical channels equal mono mid-note, stereo WAV import, WAV import, patch round-trip\n";
 }

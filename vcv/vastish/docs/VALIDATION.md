@@ -82,3 +82,15 @@ sample rate clears comb buffers. Existing ES5505/OTIS code is unchanged.
 The source port retains oscillator aliasing, squared amplitude envelopes,
 quadrature filter behavior, equal-power pan and Pd mix coefficients. It does not
 add a Kurzweil sample engine, manufacturer DSP programs, or a firmware emulator.
+
+## 2.4.0 stereo samples
+
+- `tests/sample_test.cpp`: in all six programs, with three voices, transposition, gating and both loop
+  settings, a stereo sample's left output equals a mono voice playing the left channel and its right
+  output one playing the right channel, bit for bit. A stereo sample with identical channels equals the
+  mono sample exactly, including when stereo starts mid-note. Two-channel WAV files load stereo or mono.
+- `tests/link_test.cpp`: Vastish follows a stereo sample from OTIS 2.7.0's compiled plugin with both
+  channels, gets the mono mix from an older OTIS, plays in stereo, and saves and restores both channels.
+- The mono path is unchanged: a 120-scenario differential trace of random programs, parameters, waves,
+  voices and sample rates gives identical output before and after the change, and the Pd reference
+  comparisons still pass.
