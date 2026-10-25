@@ -76,8 +76,8 @@ Leaving IN R unpatched sends IN L to both processing channels. Spoon Bender's CL
 
 Expanders act only in an unbroken row to the right of the core, applied left to right. Séance's output is delayed by its frame size minus one plus 64 samples, about 44 ms at the default size and 48 kHz; **MIX** blends in the dry signal, delayed to match. Séance is not part of the sample-sharing chain below.
 
-**Séance Bridge** adds a byte-bus connection: eight incoming bits open eight
-frequency bands, while BUS OUT reports activity before that mask. Its
+**Séance Bridge** adds a byte-bus connection: eight bits at MASK IN open eight
+frequency bands, while ACT OUT reports activity before that mask. Its
 [OTIS feedback example and controls](../vcv/seance/docs/BYTE_BUS.md) need
 ByteBusLab 2.2.0, OTIS 2.8.0 and SeanceLab 2.1.0.
 
