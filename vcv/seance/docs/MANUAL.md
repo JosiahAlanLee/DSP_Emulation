@@ -66,7 +66,9 @@ A peak is moved with its lobe and re-pitched coherently: the lobe keeps its inte
 |---|---|
 | DEPTH | 0–100%. **DEPTH CV**: 10 V spans the knob. |
 | SMOOTH | 0–100%: widens B's spectral envelope from single bins to ±127 bins, so B acts as a formant shape rather than a set of lines. |
-| MULT / MORPH | MULT (down): A's magnitudes are multiplied by B's normalised envelope raised to DEPTH, then the overall level is restored (up to 24 dB of make-up). With B silent and DEPTH above zero the output is silent. MORPH (up): A's magnitudes move towards B's, geometrically, by DEPTH; at 100% the output has B's magnitudes under A's phases. |
+| MULT / MORPH | MULT (down): A's magnitudes are multiplied by B's normalised envelope raised to DEPTH, then the overall level is restored (up to 24 dB of make-up). MORPH (up): A's magnitudes move towards B's, geometrically, by DEPTH; at 100% the output has B's magnitudes under A's phases. |
+
+With nothing patched to **B** on the core, Cross passes the frame through unchanged. With B patched but silent and DEPTH above zero, MULT is silent (the modulator gates the carrier, as in a vocoder) and MORPH fades A out by DEPTH.
 
 Cross is a vocoder when A is noise or a rich synth and B is a voice or a drum loop; with SMOOTH up it imposes B's formants. The reverse assignment (A the voice, B a chord) gives the voice the chord's lines.
 

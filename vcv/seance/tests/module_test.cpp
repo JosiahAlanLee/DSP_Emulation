@@ -105,14 +105,16 @@ int main() {
     out.clear(); feed(24000, &out, 0.f);
     assert(rms(out, 12000) < 1e-3f);
 
-    // Detach Wipe: Cross becomes last, the chain reports three, Wipe is unlinked.
+    // Detach Wipe: Cross becomes last, the chain reports three, Wipe is unlinked. If Wipe
+    // happened to hold the frame at that instant, the core reclaims it once (one stall).
     detach(cr, wp);
     feed(8192);
-    assert(wp.shownPosition == 0 && core.core.frame.length.load() == 3 && core.core.stalls == 0);
-    // Detach everything: the core runs alone, no stalls.
+    assert(wp.shownPosition == 0 && core.core.frame.length.load() == 3 && core.core.stalls <= 1);
+    // Detach everything: the core runs alone.
     detach(core, fz);
     feed(8192);
-    assert(core.lights[Seance::CHAIN_LIGHT].getBrightness() == 0 && fz.shownPosition == 0 && core.core.stalls == 0);
+    assert(core.lights[Seance::CHAIN_LIGHT].getBrightness() == 0 && fz.shownPosition == 0 && core.core.stalls <= 2);
+    int stallsSoFar = core.core.stalls;
     // A module that is not Séance to the right is not a chain.
     attach(core, fz); attach(fz, sc); attach(sc, cr); attach(cr, wp);
 
@@ -127,7 +129,7 @@ int main() {
         step(1, &out);
     }
     for (float v : out) assert(std::isfinite(v));
-    assert(rms(out, 24000) > .1f);
+    assert(rms(out, 24000) > .1f && core.core.stalls == stallsSoFar);
     cr.params[SeanceCross::DEPTH].setValue(.5f); core.inputs[Seance::B_IN].channels = 0;
 
     // RESET: trigger input restarts the frame count; the button does the same.
@@ -148,7 +150,7 @@ int main() {
     assert(sq->getDisplayValueString() == "2048");
     sq->setDisplayValueString("1000"); assert(sq->getDisplayValueString() == "1024");
     sq->setDisplayValueString("5000"); assert(sq->getDisplayValueString() == "4096");
-    feed(8192); assert(core.core.latency() == 4096 - 1 + 64 && core.core.stalls == 0);
+    feed(8192); assert(core.core.latency() == 4096 - 1 + 64 && core.core.stalls == stallsSoFar);
     sq->setDisplayValueString("512"); feed(8192); assert(core.core.latency() == 512 - 1 + 64);
     for (int i = 0; i < 1100; i++) feed(1);
     assert(core.shownLatency.load() == 575);

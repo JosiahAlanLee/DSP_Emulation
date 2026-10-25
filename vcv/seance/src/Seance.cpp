@@ -52,6 +52,7 @@ struct Seance : Module {
         int seed = int(std::round(params[SEED].getValue() + cv(SEED_CV, 100.f)));
         p.seed = uint32_t(((seed % 1000) + 1000) % 1000);
         p.mix = clamp(params[MIX].getValue() + cv(MIX_CV, .1f), 0.f, 1.f);
+        p.hasB = inputs[B_IN].isConnected();
         if (resetTrigger.process(inputs[RESET_IN].getVoltage(), .1f, 1.f) | resetButton.process(params[RESET].getValue())) core.reset();
         bool chain = rightExpander.module && isExpander(rightExpander.module->model);
         // Rack audio is ±5 V nominal; ±10 V maps to ±1 internally (6 dB headroom).

@@ -55,6 +55,7 @@ struct FrameV1 {
     int size = 2048, bins = 1025, hop = 512;
     float sampleRate = 48000;
     uint32_t seed = 0;
+    bool hasB = true;  // whether anything is patched to B (Cross passes the frame through when not)
     float mag[MAX_BINS], phase[MAX_BINS];  // A, changed in place down the chain
     float magB[MAX_BINS];                   // B, a read-only reference
 };
@@ -99,6 +100,7 @@ struct CoreParams {
     int sizeIndex = 2;  // 2048
     uint32_t seed = 0;
     float mix = 1;      // 0 dry .. 1 wet
+    bool hasB = true;   // B is patched
 };
 
 // Analysis, the hand-off, and overlap-add resynthesis. Hann windows on both sides at a
@@ -189,7 +191,7 @@ struct Core {
         if (++hopCounter >= hop && !pending) {
             hopCounter = 0;
             if (pendingSizeIndex >= 0) { sizeIndex = pendingSizeIndex; pendingSizeIndex = -1; applySize(); }
-            frame.seed = p.seed; frame.serial = serial++;
+            frame.seed = p.seed; frame.serial = serial++; frame.hasB = p.hasB;
             analyze();
             frameTime = t;
             if (chain) { pending = true; frame.stage.store(1, std::memory_order_release); }
@@ -320,11 +322,14 @@ struct Scramble {
 // IV Centre of decision (authority, contestable): B's spectrum decides A's levels, bin by
 // bin, to a depth the knob contests. MULTIPLY scales A by B's normalised envelope raised
 // to `depth`, then restores the overall level (up to 24 dB); MORPH walks A's magnitudes
-// towards B's geometrically. `smooth` (0..1) widens B's envelope up to ±127 bins.
+// towards B's geometrically. `smooth` (0..1) widens B's envelope up to ±127 bins. With
+// nothing patched to B the frame passes unchanged; with B patched but silent, MULTIPLY
+// is silent (the modulator gates the carrier) and MORPH fades A by `depth`.
 struct Cross {
     float env[MAX_BINS];
     double prefix[MAX_BINS + 1];
     void process(FrameV1& f, float depth, float smooth, bool morph) {
+        if (!f.hasB) return;  // nothing patched to B: nothing to cross with
         int bins = f.bins; depth = clampf(depth, 0, 1);
         int s = int(std::pow(128.f, clampf(smooth, 0, 1)) + .5f) - 1;
         if (s <= 0) std::memcpy(env, f.magB, sizeof(float) * bins);

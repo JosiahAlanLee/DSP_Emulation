@@ -231,6 +231,11 @@ static void testCross() {
     float frac = bandFraction(out, at, len, 900, 1100), total = rms(out, at, len);
     assert(frac > .9f);
     assert(dB(total / rms(a, 0, a.size())) > -12);  // level restored
+    // Nothing patched to B: Cross passes the frame through at any depth.
+    Core c5; Cross cr5; CoreParams noB = p; noB.hasB = false;
+    auto o5 = runChain(c5, a, noB, [&](FrameV1& f) { cr5.process(f, 1, .5f, false); });
+    double w5 = 0; for (size_t i = at; i < a.size(); i++) w5 = std::max(w5, double(std::abs(o5[i] - a[i - D])));
+    assert(w5 < 2e-4);
     // Depth 0 is an identity in both modes.
     Core c2; Cross cr2; auto o2 = runChain(c2, a, p, [&](FrameV1& f) { cr2.process(f, 0, 0, false); }, &b);
     Core c3; Cross cr3; auto o3 = runChain(c3, a, p, [&](FrameV1& f) { cr3.process(f, 0, 0, true); }, &b);
