@@ -30,7 +30,7 @@ Use an absolute SDK path. Plugin Makefile defaults differ, so an explicit RACK_D
 
 The .vcvplugin package is created in the plugin's dist/ directory. Each Makefile includes docs/ in its distributables, including the local user manual.
 
-Workflows build Linux x64, Windows x64, macOS arm64 and macOS x64. Live Linux use has been reported; live Windows/macOS use is unverified. Portable engine tests do not establish GUI, audio-driver or complete host behavior.
+Workflows build Linux x64, Windows x64, macOS arm64 and macOS x64. Live Linux use has been reported, and the packaged Linux plugins load and run headless in Rack Pro 2.6.6 (see [Workstation run](#workstation-run-2026-10-25)); live Windows/macOS use is unverified. Portable engine tests do not establish GUI, audio-driver or complete host behavior.
 
 ## Releases
 
@@ -113,6 +113,14 @@ vcv/seance/tests/module_test
 ~~~
 
 The portable test checks the FFT against a direct DFT, reconstruction at every frame size, latency, the hand-off protocol under random module order and with a stalled chain, RESET continuity and the four operations. The module test wires a core and four expanders as the engine wires them and steps them in random order. Linux CI also runs both under AddressSanitizer/UndefinedBehaviorSanitizer; see [the workflow](../.github/workflows/seance.yml).
+
+### Workstation run, 2026-10-25
+
+Commit `59459b4` on the render workstation: Ubuntu 22.04.5, GCC 11.4, glibc 2.35, Rack SDK 2.6.6 (CI pins 2.6.4).
+
+- Every Linux CI step for the four plugins passed, 41 of 41. That covers the builds, portable and module tests, sanitizers, the OTIS ES5505 reference and 2.2.0 trace comparisons, the Vastish Pd reference comparison, the OTIS–Spoon Bender and Vastish–OTIS links, and the dist packages. ThreadSanitizer ran under `setarch -R` (no address randomization) instead of lowering `vm.mmap_rnd_bits`.
+- The four `.vcvplugin` packages loaded in VCV Rack Pro 2.6.6 for Linux, run headless (`-h`) with an empty user folder. A patch with one of each module (OTIS, Séance and its four expanders, Spoon Bender, Vastish) loaded, and the engine ran for 15 seconds with no errors or warnings in Rack's log.
+- Not covered: the Rack window and mouse interaction, an audio device, real-time callback load, and hardware (Digi003/ADAT, Expert Sleepers CV). The remaining live checks in each validation document still stand.
 
 ## Implementation scope
 
