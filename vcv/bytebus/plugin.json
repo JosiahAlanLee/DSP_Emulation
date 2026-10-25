@@ -1,12 +1,18 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
   "sourceUrl": "https://github.com/JosiahAlanLee/DSP_Emulation",
   "modules": [
+    {
+      "slug": "Converter",
+      "name": "Converter",
+      "description": "Independent calibrated ADC/DAC paths with selectable voltage ranges and clock policies.",
+      "tags": ["Sample and hold", "Utility", "Logic"]
+    },
     {
       "slug": "ClockedRegister",
       "name": "Clocked Register",

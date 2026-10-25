@@ -12,11 +12,12 @@ names = list(pd['defaults']())
 fnames = ['NONE'] + [f[0] for f in pd['FUNCS']]
 # Native-only extensions, appended so saved patches keep their indices:
 # FUN 3/4 as K2000-style extra function blocks, AUX 1-4 as polyphonic CV inputs.
-sources = pd['SOURCES'] + ['FUN3', 'FUN4', 'AUX1', 'AUX2', 'AUX3', 'AUX4']
+sources = pd['SOURCES'] + ['FUN3', 'FUN4', 'AUX1', 'AUX2', 'AUX3', 'AUX4', 'BUS A', 'BUS B', 'LANE A', 'LANE B', 'ONE']
 native_params = ['fun3-a', 'fun3-b', 'fun3-eq', 'fun4-a', 'fun4-b', 'fun4-eq']
+native_params += ['bus-out-mode', 'bus-out-source', 'fun1-bit', 'fun2-bit', 'fun3-bit', 'fun4-bit']
 # SAMPLE is a native-only addition (not in the Pd patch): plays the loaded WAV,
 # K2000-style, as the oscillator feeding F1-F3.
-waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE', 'SAMPLE']
+waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE', 'SAMPLE', 'BUS']
 shapes = ['COSINE', 'TRI', 'SAW', 'SQUARE', 'S&H']
 eqs = ['A+B','A-B','A*B','(A+B)/2','MAX','MIN','ABS(A-B)','A*(B+1)/2']
 algs = [v[0] for v in pd['ALGS'].values()]
@@ -25,7 +26,10 @@ def ident(n): return n.replace('-', '_').upper()
 def spec(n):
     opts = []
     lo, hi = -128, 135
-    if n == 'alg': lo, hi, opts = 1, 6, algs
+    if n == 'bus-out-mode': lo, hi, opts = 0, 2, ['Neutral (80)', 'WORD', 'LANES']
+    elif n == 'bus-out-source': lo, hi, opts = 0, len(sources)+1, sources + ['DSP', 'MIX']
+    elif n.endswith('-bit'): lo, hi, opts = 0, 1, ['Numeric', 'BIT (finite positive)']
+    elif n == 'alg': lo, hi, opts = 1, 6, algs
     elif n == 'master': lo, hi = -60, 24
     elif n.endswith('-wave'): lo, hi, opts = 0,len(waves)-1,waves
     elif n.endswith('-pw'): lo, hi = .01,.99
@@ -51,6 +55,8 @@ lines += ['    }}; return table;', '}', f'constexpr int SOURCE_COUNT = {len(sour
 for _, overrides in pd['PROGRAMS']:
     vals = pd['defaults'](); vals.update(overrides)
     for n in native_params: vals.setdefault(n, 0)
+    vals['bus-out-mode'] = 1
+    vals['bus-out-source'] = len(sources)
     lines += ['        {{'+','.join(str(vals[n]) for n in names)+'}},']
 lines += ['    }}; return table;', '}', 'static constexpr const char* programNames[] = {'+','.join(json.dumps(n) for n,_ in pd['PROGRAMS'])+'};', 'static constexpr float routes[6][9] = {']
 for _,coef in pd['ALGS'].values(): lines += ['    {'+','.join(str(x) for x in coef)+'},']

@@ -13,7 +13,7 @@ Developed from this repository's [Pure Data Vastish](https://github.com/JosiahAl
 
 1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all the plugins.
 2. In Rack choose **Help → Open user folder**, then quit Rack.
-3. Copy `VastishLab-2.4.0-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other two as well to use the sample-sharing links.
+3. Copy `VastishLab-2.5.0-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other modules as well to use the sample-sharing and byte-bus links.
 4. Start Rack.
 
 Exact file names for each platform are in [Getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md#install). Linux has been used live in Rack; the Windows and macOS builds haven't been run inside Rack yet, so please [report](https://github.com/JosiahAlanLee/DSP_Emulation/issues) how they go. To build from source, see the [development guide](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/DEVELOPMENT.md).
@@ -23,6 +23,11 @@ Exact file names for each platform are in [Getting started](https://github.com/J
 Add **VastishLab → Vastish** (56 HP). Patch a pitch/gate source to V/OCT and GATE, and L/R to your mixer or Audio module. The initial program is Ladder Bass; click its name to select another starting program. The sample and all parameter edits save in the Rack patch.
 
 Vastish directly to the right of OTIS can follow its completed sample. Enable **Follow OTIS on the left** in Vastish's right-click menu. This shares stored audio; OTIS's playback settings remain separate.
+
+Vastish 2.5 also reads two [byte buses](BUS_SPEC.md), exports words or eight
+logical lanes, and processes a BUS waveform through its DSP chain without
+gates. Optional FUN BIT normalization makes chained logic predictable. Try
+ByteBusLab's `examples/byte-bus-io.vcv` for a complete connection to OTIS.
 
 ## License
 

@@ -9,6 +9,8 @@
 /tests/*_asan
 /tests/lookup_test
 /tests/lookup_module_test
+/tests/io_test
+/tests/io_module_test
 /tools/compile_vastish_backend
 /tools/compile_vastish_backend.exe
 **/__pycache__/

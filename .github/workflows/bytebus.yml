@@ -1,9 +1,9 @@
 name: Byte bus instruments native Linux
 on:
   push:
-    paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
+    paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'vcv/otislab/src/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
   pull_request:
-    paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
+    paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'vcv/otislab/src/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
   workflow_dispatch:
 permissions:
   contents: read

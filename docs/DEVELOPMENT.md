@@ -121,6 +121,7 @@ The portable test checks the FFT against a direct DFT, reconstruction at every f
 make -C vcv/bytebus/tests test
 make -C vcv/bytebus/tests check RACK_DIR=/absolute/path/to/Rack-SDK
 make -C vcv/bytebus/tests tools-check
+python3 vcv/bytebus/tools/make_io_patch.py
 make -C vcv/otislab/tests bus-check RACK_DIR=/absolute/path/to/Rack-SDK
 make -C vcv/otislab/tests bus-sanitize RACK_DIR=/absolute/path/to/Rack-SDK
 make -C vcv/bytebus/tests sanitize RACK_DIR=/absolute/path/to/Rack-SDK

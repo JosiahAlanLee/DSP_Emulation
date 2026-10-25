@@ -111,6 +111,12 @@ MHz-rate interface. Display/driver/hardware timing is outside the software tests
 
 ## Compile a Vastish table
 
+Vastish 2.5 BUS I/O also applies its live DSP chain to byte streams, including
+stateful filters and delays. The table compiler remains a frozen memoryless
+snapshot. Compiler v2 supports the new sources and per-FUN BIT flags, and
+accepts historical 80-parameter/18-source snapshots by padding the appended
+fields. Existing compiled v1 Lookup tables remain unchanged and importable.
+
 OTIS 2.8 can also [export its selected stored frame](../../otislab/docs/BYTE_BUS.md)
 in the same custom-table format. Left, right or mono-mix export lets recordings
 and original REWORK results become Lookup material; load the exported JSON with

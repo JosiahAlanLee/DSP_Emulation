@@ -27,6 +27,7 @@ inline Table compileVastish(vastish::Parameters params, const FrozenControls& fr
     vastish::Voice voice;
     voice.velocity = frozen.velocity; voice.sources = frozen.sources;
     voice.sources[0] = 0; voice.sources[8] = frozen.velocity; voice.sources[9] = frozen.note / 127.f;
+    voice.sources[vastish::SRC_ONE] = 1;
     unsigned busy = 0, done = 0;
     for (int i = 0; i < vastish::FUN_COUNT; ++i) voice.evaluateFun(i, params, busy, done);
     const float* r = vastish::routes[std::max(0, vastish::choice(params[vastish::ALG], 6) - 1)];

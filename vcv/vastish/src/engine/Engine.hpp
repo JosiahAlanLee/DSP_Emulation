@@ -8,9 +8,15 @@ inline float fun(int eq,float a,float b) {
         case 7:return a*(b+1)*.5f; default:return a+b; }
 }
 inline int choice(float v,int max) { return int(clamp(std::round(v),0,float(max))); }
-struct VoiceInput { float note=60,velocity=1,modwheel=0; bool gate=false; std::array<float,4> aux{}; }; // aux: AUX 1-4, ±1
+struct VoiceInput {
+    float note=60,velocity=1,modwheel=0; bool gate=false; std::array<float,4> aux{};
+    float busA=0,busB=0,laneA=0,laneB=0; bool busAConnected=false;
+};
 // Control-source indices. 0-11 match the Pd patch; 12+ are native additions.
-enum SourceId { SRC_FUN1=5, SRC_FUN2=6, SRC_AMPENV=11, SRC_FUN3=12, SRC_FUN4=13, SRC_AUX1=14 };
+enum SourceId { SRC_FUN1=5, SRC_FUN2=6, SRC_AMPENV=11, SRC_FUN3=12, SRC_FUN4=13, SRC_AUX1=14,
+    SRC_BUS_A=18, SRC_BUS_B=19, SRC_LANE_A=20, SRC_LANE_B=21, SRC_ONE=22 };
+constexpr int BUS_SOURCE_DSP=SOURCE_COUNT, BUS_SOURCE_MIX=SOURCE_COUNT+1;
+constexpr int ORIGINAL_PARAM_COUNT=80;
 constexpr int FUN_COUNT=4;
 inline int funSource(int f) { return f<2 ? SRC_FUN1+f : SRC_FUN3+(f-2); }
 inline int sourceFun(int src) { return src==SRC_FUN1||src==SRC_FUN2 ? src-SRC_FUN1 : (src==SRC_FUN3||src==SRC_FUN4 ? src-SRC_FUN3+2 : -1); }
@@ -23,6 +29,12 @@ struct SampleView {
     bool valid() const { return pcm && frames>=2 && rate>0; }
 };
 constexpr int SAMPLE_WAVE=5;
+constexpr int BUS_WAVE=6;
+inline bool positiveBit(float value) { return std::isfinite(value) && value>0; }
+inline float rotateBus(float value,float control) {
+    double x=double(value)+1.+2.*(double(control)-60.)/12.;
+    return std::isfinite(x) ? float(x-2.*std::floor(x/2.)-1.) : 0.f;
+}
 constexpr float SAMPLE_ROOT_NOTE=60;
 struct Voice {
     Phasor pitch; Noise noise; Lfo lfo[2]; Envelope env[3]; FunctionBlock block[3];
@@ -31,6 +43,7 @@ struct Voice {
     FunctionBlock blockR[3]; bool stereoActive=false;
     uint32_t noteRandom=1; Ramp wheel; bool gate=false; float velocity=0,random=0; std::array<float,SOURCE_COUNT> sources{};
     double samplePos=0; bool samplePlaying=false;
+    float tap=0;
     // 4-point Hermite read over the half-open range [0, frames). One-shot clamps
     // the interpolation neighbours at the ends; a loop wraps them across the seam,
     // so the loop period is exactly `frames` samples at the root pitch.
@@ -66,6 +79,7 @@ struct Voice {
         gate=false; for(auto& e:env) e=Envelope{};
         for(auto* set:{block,blockR}) for(int k=0;k<3;++k) { auto& b=set[k]; b.comb.clear(); b.ladder.state={}; b.lop.last=b.hipLop.last=0; b.lp2=Vcf{}; b.bp=Vcf{}; b.notch=Vcf{}; }
         stereoActive=false;
+        tap=0;
     }
     float control(int base,const Parameters& p,float note) const {
         return p[base]+p[base+1]*(note-60)+p[base+2]*velocity+
@@ -78,10 +92,11 @@ struct Voice {
         busy|=bit; int base=funBase(f);
         auto read=[&](int src) { int g=sourceFun(src); return g>=0 ? evaluateFun(g,p,busy,done) : sources[src]; };
         float a=read(choice(p[base],SOURCE_COUNT-1)), b=read(choice(p[base+1],SOURCE_COUNT-1));
-        sources[funSource(f)]=fun(choice(p[base+2],7),a,b);
+        float value=fun(choice(p[base+2],7),a,b);
+        sources[funSource(f)]=p[FUN1_BIT+f]>=.5f ? float(positiveBit(value)) : value;
         busy&=~bit; done|=bit; return sources[funSource(f)];
     }
-    std::array<float,2> tick(const Parameters& p,const VoiceInput& in,float sr,const SampleView* sample=nullptr) {
+    void tickControl(const Parameters& p,const VoiceInput& in,float sr) {
         if(in.gate!=gate) {
             gate=in.gate;
             if(gate) { velocity=clamp(in.velocity,0,1); noteRandom=noteRandom*472940017u+832416023u; samplePos=0; samplePlaying=true;
@@ -98,14 +113,22 @@ struct Voice {
         sources[7]=wheel.tick(); sources[8]=velocity; sources[9]=in.note/127;
         sources[10]=random; sources[11]=env[0].tick();
         for(int k=0;k<4;++k) sources[SRC_AUX1+k]=std::isfinite(in.aux[k]) ? clamp(in.aux[k],-1,1) : 0.f;
+        sources[SRC_BUS_A]=in.busA; sources[SRC_BUS_B]=in.busB;
+        sources[SRC_LANE_A]=in.laneA; sources[SRC_LANE_B]=in.laneB; sources[SRC_ONE]=1;
         unsigned busy=0,done=0; for(int f=0;f<FUN_COUNT;++f) evaluateFun(f,p,busy,done);
-        float pitchHz=mtof(clamp(control(PITCH_ADJ,p,in.note),-20,135));
-        float ph=pitch.tick(pitchHz,sr);
-        float n=noise.tick(), x, xR=0; bool stereo=false;
-        switch(choice(p[PITCH_WAVE],SAMPLE_WAVE)) { case 1:x=(ph>clamp(p[PITCH_PW],.01,.99)?1.f:-1.f); break;
+    }
+    std::array<float,2> tickAudio(const Parameters& p,const VoiceInput& in,float sr,const SampleView* sample=nullptr) {
+        float pitchControl=control(PITCH_ADJ,p,in.note);
+        float x=0,xR=0; bool stereo=false;
+        if(choice(p[PITCH_WAVE],BUS_WAVE)==BUS_WAVE) x=in.busAConnected ? rotateBus(in.busA,pitchControl) : 0.f;
+        else {
+        float pitchHz=mtof(clamp(pitchControl,-20,135));
+        float ph=pitch.tick(pitchHz,sr), n=noise.tick();
+        switch(choice(p[PITCH_WAVE],BUS_WAVE)) { case 1:x=(ph>clamp(p[PITCH_PW],.01,.99)?1.f:-1.f); break;
             case 2:x=1-std::abs(ph*4-2); break; case 3:x=cosine(ph); break; case 4:x=n; break;
             case SAMPLE_WAVE:x=sampleTick(sample,pitchHz,sr,&xR); stereo=sample && sample->valid() && sample->pcmR; break;
             default:x=ph*2-1; }
+        }
         const float* r=routes[std::max(0,choice(p[ALG],6)-1)];
         const int t1=choice(p[F1_TYPE],14), t2=choice(p[F2_TYPE],14), t3=choice(p[F3_TYPE],14);
         const float k1=control(F1_ADJ,p,in.note), k2=control(F2_ADJ,p,in.note), k3=control(F3_ADJ,p,in.note);
@@ -115,6 +138,7 @@ struct Voice {
         float a=block[0].tick(t1,x,k1,p[F1_B],sr);
         float b=block[1].tick(t2,r[0]*x+r[1]*a,k2,p[F2_B],sr);
         float c=block[2].tick(t3,r[2]*x+r[3]*a+r[4]*b+r[5]*a*b,k3,p[F3_B],sr);
+        tap=r[6]*a+r[7]*b+r[8]*c;
         const float amp=dbgain(control(AMP_ADJ,p,in.note));
         float out=(r[6]*a+r[7]*b+r[8]*c)*amp*sources[11]*sources[11];
         float pan=clamp(control(PAN_ADJ,p,in.note),-1,1), t=(pan+1)*.125f;
@@ -128,6 +152,9 @@ struct Voice {
         stereoActive=false;
         return {{out*cosine(t),out*cosine(t-.25f)}};
     }
+    std::array<float,2> tick(const Parameters& p,const VoiceInput& in,float sr,const SampleView* sample=nullptr) {
+        tickControl(p,in,sr); return tickAudio(p,in,sr,sample);
+    }
 };
 struct Engine {
     std::array<Voice,8> voices;
@@ -140,10 +167,13 @@ struct Engine {
     // at or above usedVoices are skipped once their gate is low and their amp
     // envelope has finished, so a mono patch no longer pays for eight voices; a
     // voice that is still releasing keeps running until its tail ends.
-    std::array<float,2> tick(const Parameters& p,const std::array<VoiceInput,8>& inputs,int usedVoices=8,const SampleView* sample=nullptr) {
+    std::array<float,2> tick(const Parameters& p,const std::array<VoiceInput,8>& inputs,int usedVoices=8,const SampleView* sample=nullptr,bool controlAll=false,bool audioAll=false) {
         std::array<float,2> sum{};
         for(int i=0;i<8;++i) {
-            if(i>=usedVoices && !inputs[i].gate && !voices[i].gate && voices[i].env[0].stage==Envelope::Idle) continue;
+            if(!audioAll && i>=usedVoices && !inputs[i].gate && !voices[i].gate && voices[i].env[0].stage==Envelope::Idle) {
+                if(controlAll) voices[i].tickControl(p,inputs[i],sampleRate);
+                continue;
+            }
             auto y=voices[i].tick(p,inputs[i],sampleRate,sample); sum[0]+=y[0]; sum[1]+=y[1];
         }
         float gain=dbgain(p[MASTER]); if(gain!=master.target) master.set(gain,50,sampleRate);

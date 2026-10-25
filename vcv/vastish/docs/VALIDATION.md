@@ -1,5 +1,25 @@
 # Validation — native Vastish 2.0.0
 
+## 2.5 byte-bus extension
+
+The [bus contract](../BUS_SPEC.md) covers appended ports/sources, optional FUN
+BIT normalization, gate-free DSP and clock ownership. Portable and real Rack
+tests in `vcv/bytebus/tests/io_test.cpp` and `io_module_test.cpp` cover all byte
+values/rotations, all 65,536 two-word XOR pairs, sleeping control lanes,
+explicit DSP lanes, parameter/program compatibility and a delayed randomized
+Converter/Register/Vastish/Lookup/OTIS patch at 44.1/48/96 kHz. The included
+patch's own saved parameters, original stereo PCM and cable graph are tested.
+
+The original mono/stereo audio and modulation traces match pre-bus main
+`2d30d4a` exactly: `aa97f2a77d0fbb8b`. This comparison includes six programs,
+three sample rates, procedural/mono/stereo sources, changing polyphony and
+gate releases. ASan/UBSan cover the new portable/native I/O tests; allocation
+checks cover steady ADC/DAC processing. The existing sample and adapter suites
+continue to pass. Live mouse interaction, physical CV and high-rate hardware
+behavior are outside these native tests. Statefully processed buses may alias.
+
+## Original validation
+
 Built 2026-10-14 with GCC 13.3, Rack SDK 2.6.4 Linux x64, Ubuntu 24.04.
 Port based on DSP_Emulation commit `85c829141249de7fac947f6468f125c854f3748f`.
 Pd reference: Pure Data tag 0.55-2, commit
