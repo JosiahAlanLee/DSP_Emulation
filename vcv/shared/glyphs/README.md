@@ -11,6 +11,7 @@ drawn by that project's generator with the seal ornament left off.
 | Spoon Bender | VII Revision | returns displaced (each shifted repeat comes back moved) |
 | OTIS | IX Substitutive change | old route struck out (REWORK replaces the loop) |
 | Vastish | X Generative substrate | conditions beneath (the synthesis layer under the chain) |
+| Gorgon | XI Reflexive loop | the map moves it (Rack follows Gorgon's clock and moves it back) |
 
 They identify the modules at a glance; per the source text, a mark's meaning is
 stated wherever it is used, which is this table.
