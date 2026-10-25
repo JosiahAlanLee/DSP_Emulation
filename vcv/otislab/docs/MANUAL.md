@@ -2,7 +2,7 @@
 
 **Sampler, short-loop scanner and sample reworking instrument · OtisLab · 36 HP**
 
-OTIS records or loads a mono sample and plays it through an ES5505-derived integer engine. Pitch, interpolation and chip filters provide its basic playback character. LAB controls add variable clocking, short-window scanning, frame stepping and an original loop-reworking process.
+OTIS records or loads a mono or stereo sample and plays it through an ES5505-derived integer engine. Pitch, interpolation and chip filters provide its basic playback character. LAB controls add variable clocking, short-window scanning, frame stepping and an original loop-reworking process.
 
 It is an independent instrument inspired by EPS-era sampling. It includes no Ensoniq firmware, instrument library or original ESP effects.
 
@@ -11,17 +11,17 @@ It is an independent instrument inspired by EPS-era sampling. It includes no Ens
 ## First sound
 
 1. Choose **Load included demo** from OTIS's right-click menu.
-2. Patch **L** to a mixer or Audio output.
+2. Patch **L** (and **R** for stereo samples) to a mixer or Audio output.
 3. Press **PLAY**. Change **PITCH** to hear transposition.
 4. Set **LOOP** to **FWD** and press PLAY again for repeating playback.
 
-L and R carry identical mono audio. OTIS has no internal amplitude envelope. By default, a gate starts a one-shot and releasing the gate does not stop it.
+A mono sample plays the same audio on L and R; a stereo sample plays its left channel on L and its right on R (see [Stereo samples](#stereo-samples)). OTIS has no internal amplitude envelope. By default, a gate starts a one-shot and releasing the gate does not stop it.
 
 ## Record or load a sample
 
 ### Record the AUDIO input
 
-1. Patch the sound source to **AUDIO**.
+1. Patch the sound source to **AUDIO L**. For a stereo take, also patch **AUDIO R**.
 2. Set **REC RATE** and **REC GAIN**. At gain 1, ±5 V fills the 16-bit recording range.
 3. Raise the REC switch, or hold the REC input high.
 4. Lower both record controls to finish. Press PLAY or send a new gate to hear the new sample.
@@ -30,29 +30,43 @@ The switch and REC gate are combined: recording continues if either remains high
 
 REC RATE is latched at recording start. Changing it during a take affects the next take.
 
-| REC RATE position, left to right | Rate | Maximum duration |
-|---|---:|---:|
-| 1 | 11,160.714 Hz | 93.93 s |
-| 2 | 12,755.102 Hz | 82.19 s |
-| 3 | 14,880.952 Hz | 70.45 s |
-| 4 | 17,857.143 Hz | 58.71 s |
-| 5 | 22,321.429 Hz | 46.96 s |
-| 6, default | 29,761.905 Hz | 35.22 s |
-| 7 | 44,642.857 Hz | 23.48 s |
+| REC RATE position, left to right | Rate | Maximum duration, mono | Maximum duration, stereo |
+|---|---:|---:|---:|
+| 1 | 11,160.714 Hz | 93.93 s | 46.96 s |
+| 2 | 12,755.102 Hz | 82.19 s | 41.09 s |
+| 3 | 14,880.952 Hz | 70.45 s | 35.22 s |
+| 4 | 17,857.143 Hz | 58.71 s | 29.35 s |
+| 5 | 22,321.429 Hz | 46.96 s | 23.48 s |
+| 6, default | 29,761.905 Hz | 35.22 s | 17.61 s |
+| 7 | 44,642.857 Hz | 23.48 s | 11.74 s |
 
-Capacity is 1,048,320 mono sample frames. Recording ends automatically when memory fills and FULL lights. Lower the record controls before starting another take.
+Capacity is 1,048,320 mono sample frames, or 524,160 frames per channel for a stereo sample. Recording ends automatically when memory fills and FULL lights. Lower the record controls before starting another take.
 
 ### Load or export a WAV
 
-Use **Load WAV…** to import PCM 8/16/24/32-bit or float 32/64-bit WAV audio. Channels are averaged to mono, samples become 16-bit, and the file's rate is retained. Long files are truncated to capacity and marked TRUNCATED. File loading does not apply the recording input's capture-rate conversion.
+Use **Load WAV…** to import PCM 8/16/24/32-bit or float 32/64-bit WAV audio. A two-channel file loads as a stereo sample; other channel counts are averaged to mono. **Load WAV as mono…** averages a two-channel file too, keeping the full memory and voice count. Samples become 16-bit, and the file's rate is retained. Long files are truncated to capacity and marked TRUNCATED. File loading does not apply the recording input's capture-rate conversion.
 
-**Export finished sample as WAV…** writes the completed sample memory as a 16-bit mono WAV at its stored rate. Playback settings such as transposition, chip filters and clock changes are not baked into that export.
+**Export finished sample as WAV…** writes the completed sample memory as a 16-bit mono or stereo WAV at its stored rate. Playback settings such as transposition, chip filters and clock changes are not baked into that export.
 
 ### Record OTIS's own output
 
-In **Record source**, select **Own output (resample)** or **AUDIO + own output**. The new take passes through the recording path at REC RATE. This can bake playback treatments into a new generation of sample memory.
+In **Record source**, select **Own output (resample)** or **AUDIO + own output**. The new take passes through the recording path at REC RATE. Resampling a stereo sample makes a stereo take; with only AUDIO L patched, AUDIO + own output adds that input to both sides. This can bake playback treatments into a new generation of sample memory.
 
 Set up a sound on the old sample, start recording, and finish the take before replaying it. Repeated resampling can change bandwidth, transients and level. REC GAIN still applies.
+
+## Stereo samples
+
+A stereo sample keeps its two channels in the two halves of sample memory, and each Rack voice plays them as a pair of chip voices: the same pitch, position, loop, window, filter settings and level, one on each side. Both sides of a pair advance by the same increment, so they cannot drift apart, and each output is exactly what a mono sample of that channel would give. This follows the chip, whose voices are mono: stereo playback takes two voices, one on each side.
+
+The pairing has the hardware's costs. A stereo sample holds half as long as a mono one (524,160 frames per channel), and each clock mode allows half as many Rack voices (8, 7 or 4). The display shows **ST** after PCM or REC while a stereo sample is loaded or recorded.
+
+A sample becomes stereo when:
+
+- **Load WAV…** reads a two-channel file;
+- a take starts with **AUDIO R** patched, or resamples a stereo sample's own output;
+- a patch saved with a stereo sample is opened.
+
+Use **Load WAV as mono…** to fold a two-channel file into a mono sample with the full memory and voice count. REWORK changes both channels of the window with the same grains and one gain, so the stereo image is kept. Vastish receives a mono mix of a stereo sample; Spoon Bender captures are mono.
 
 ## Playback controls
 
@@ -89,11 +103,11 @@ Enable **Gate release stops playback (default: one-shot)** to stop a voice on ga
 | INTERP | 0–9 effective fractional bits for interpolation, rounded to integer steps. 9 is the chip baseline; 0 gives drop-sample playback. |
 | Chip output clock | Selects the baseline output rate and voice limit, shown below. |
 
-| Baseline clock | Maximum Rack voices |
-|---|---:|
-| 29.76 kHz, default | 16 |
-| 44.64 kHz | 14 |
-| 78.125 kHz | 8 |
+| Baseline clock | Maximum Rack voices, mono | Maximum Rack voices, stereo |
+|---|---:|---:|
+| 29.76 kHz, default | 16 | 8 |
+| 44.64 kHz | 14 | 7 |
+| 78.125 kHz | 8 | 4 |
 
 Lowering the voice limit stops excess voices. CLOCK modulation retains the selected mode's voice limit. Effective clock rate is clamped to at least 1 kHz and at most the lower of four times Rack's rate or 400 kHz.
 
@@ -144,7 +158,8 @@ Pitch and gate channel counts establish the voice count, subject to the selected
 
 | Input | Scaling / behavior |
 |---|---|
-| AUDIO | Mono recording input; ±5 V is full scale at REC GAIN 1. |
+| AUDIO L | Recording input, left or mono; ±5 V is full scale at REC GAIN 1. |
+| AUDIO R | Right recording input. Patched when a take starts, the take is stereo. |
 | V/OCT | 1 V/oct; 0 V is the sample's original pitch before PITCH offset. |
 | GATE | Per-voice play trigger; high at 2 V, low at 0.1 V. |
 | REC | Record gate, with the same thresholds; combined with the panel switch. |
@@ -164,7 +179,7 @@ VCA defaults to the chip's logarithmic response: a linear voltage ramp gives a s
 
 | Output | Behavior |
 |---|---|
-| L, R | Identical mono voice sum. Internal ±1 maps to ±5 V before LEVEL. Multiple voices may exceed that range. |
+| L, R | Voice sum: a mono sample's on both, a stereo sample's left and right channels. Internal ±1 maps to ±5 V before LEVEL. Multiple voices may exceed that range. |
 | EOC | Combined end/loop-crossing pulse from any voice, 10 V for about 1 ms. Very short loops can keep it high. |
 | POS | Position of the first active voice across the whole sample, 0–10 V. Returns to zero when no voice is active. |
 
@@ -175,7 +190,7 @@ Place the modules directly adjacent in the order **Spoon Bender → OTIS → Vas
 - Use **Import capture from Spoon Bender on the left** for a one-time import, or enable **Follow Spoon Bender captures** for automatic imports.
 - In Vastish, enable **Follow OTIS on the left** to use OTIS's finished sample as its SAMPLE source.
 
-These links need no audio cable, but do require the Rack UI to run. They transfer completed mono sample data and its rate. Spoon Bender imports replace OTIS's sample and stop its voices.
+These links need no audio cable, but do require the Rack UI to run. They transfer completed mono sample data and its rate: Spoon Bender's captures are mono, and Vastish receives a stereo sample as a mono mix, (L + R) / 2. Spoon Bender imports replace OTIS's sample and stop its voices.
 
 OTIS retains its own playback settings when importing. Its window, filters and clock settings are not sent onward to Vastish. Loading a WAV does not turn off Follow Spoon Bender captures: the next capture can replace that WAV while follow remains enabled.
 
@@ -183,7 +198,7 @@ Spoon Bender captures retain Rack's sample rate. OTIS's fixed capacity therefore
 
 ## Saving and troubleshooting
 
-Completed sample audio, its rate and module settings are embedded in the Rack patch. A recording still in progress is not saved as a finished take. Finish recording or reworking before saving the result you want. Pending REWORK jobs and random-seed progression are not restored.
+Completed sample audio, its rate and module settings are embedded in the Rack patch. A stereo sample saves both channels; OTIS versions before 2.6 open such a patch with the left channel only. A recording still in progress is not saved as a finished take. Finish recording or reworking before saving the result you want. Pending REWORK jobs and random-seed progression are not restored.
 
 | Symptom | Action |
 |---|---|
@@ -193,6 +208,8 @@ Completed sample audio, its rate and module settings are embedded in the Rack pa
 | REWORK has no effect | Check AMOUNT, sample availability and BUSY. It targets voice 1's current region. |
 | Export sounds different from playback | Export writes stored audio. Resample the audible output to include playback treatments. |
 | The new sample appears unexpectedly | Check whether Follow Spoon Bender captures is enabled. |
+| Fewer voices or a shorter take than expected | A stereo sample uses two chip voices per Rack voice and half the memory per channel. Use **Load WAV as mono…**, or record without AUDIO R. |
+| A take is unexpectedly stereo | AUDIO R was patched when it started, or it resampled a stereo sample. |
 
 File imports and patch restores can briefly interrupt audio. Completed-sample saving/export does not need to stop playback.
 

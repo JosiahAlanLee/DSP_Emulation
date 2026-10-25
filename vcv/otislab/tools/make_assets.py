@@ -39,8 +39,9 @@ for row,labels in [(151,['PITCH','START','END','K1']),(211,['REC RATE','REC GAIN
 for i,label in enumerate(['PLAY','REC','LOOP','REV']): parts.append(text(label,45+80*i,229,10,'#f1b875'))
 for label,y in [('PING',238.5),('FWD',248),('OFF',257.5)]: parts.append(text(label,216,y,6,center=False))
 parts.append(text('FULL',302,258,6,'#f1b875'))
-for i,label in enumerate(['AUDIO','V/OCT','GATE','REC','START','END']):
-    parts.append(text(label,30+54*i,277,9))
+# Record row: AUDIO L/R (R patched = stereo take), then V/OCT .. END, 45 px apart.
+for i,label in enumerate(['AUDIO L','AUDIO R','V/OCT','GATE','REC','START','END']):
+    parts.append(text(label,30+45*i,277,8 if i<2 else 9))
 # Bottom row: 3 inputs (K1, K2, VCA) + 4 outputs, 46 px apart.
 for i,label in enumerate(['K1','K2','VCA','L','R','EOC','POS']):
     parts.append(text(label,27+46*i,327,9,'#80ddc7' if i>=3 else '#d5dfde'))
@@ -68,7 +69,7 @@ preview.append(text('PCM 1.40s  29.76k / CHIP 29.76k',20,83,9,'#80ddc7',False))
 for y in [125,187]:
     for x in [45,125,205,285,360,435,510]:
         preview.append(f'<circle cx="{x}" cy="{y}" r="15" fill="#111717" stroke="#81918e" stroke-width="1.4"/><path d="M{x} {y-12}V{y-4}" stroke="#d5dfde" stroke-width="2"/>')
-for y,xs in [(292,[30,84,138,192,246,300,360,435,510]),(341,[27+46*i for i in range(7)]+[360,435,510])]:
+for y,xs in [(292,[30+45*i for i in range(7)]+[360,435,510]),(341,[27+46*i for i in range(7)]+[360,435,510])]:
     for x in xs:
         preview.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#9ba6a1"/><circle cx="{x}" cy="{y}" r="7.5" fill="#313939"/><circle cx="{x}" cy="{y}" r="5" fill="#090e0d"/>')
 # Preview switches at Rack's real component sizes (CKSS 14x20.6, CKSSThree 13.5x28.3).

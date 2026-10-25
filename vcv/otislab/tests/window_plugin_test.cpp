@@ -16,7 +16,7 @@ int main() {
     auto init=reinterpret_cast<void(*)(Plugin*)>(dlsym(handle,"init")); assert(init);
     Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.3.0"; init(&plugin); rack::plugin::plugins.push_back(&plugin);
     auto model=plugin.models.front(); auto m=std::unique_ptr<engine::Module>(model->createModule()); m->model=model;
-    assert(m->params.size()==20 && m->inputs.size()==15 && m->outputs.size()==4);
+    assert(m->params.size()==20 && m->inputs.size()==16 && m->outputs.size()==4); // AUDIO R appended in 2.6.0
     for(auto& o:m->outputs) o.channels=1;
     std::vector<int16_t> pcm(1024);
     for(size_t i=0;i<pcm.size();++i) pcm[i]=int16_t((i/256+1)*4096);

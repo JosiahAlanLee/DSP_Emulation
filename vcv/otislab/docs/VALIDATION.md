@@ -34,8 +34,8 @@ about 4.5 dB (−10.0 to −28.5 dBFS over four generations); with matching it h
 at −9.9 to −10.0 dBFS, and `window_test` asserts eight generations stay within
 ±1 dB at AMOUNT 25/65/100%. Spectral darkening across generations remains. No Ensoniq Synthesized Loop algorithm
 or ESP program is included. Frame changes have no crossfade; reworked PCM uses
-a 5 ms source crossfade before the chip filters. Samples remain mono and shared
-by the voices. There is no rolling live delay buffer. Rack GUI interaction,
+a 5 ms source crossfade before the chip filters. Samples are shared by the voices
+(stereo samples since 2.6.0). There is no rolling live delay buffer. Rack GUI interaction,
 listening comparison and physical ADAT/CV operation remain untested here.
 
 ## Completed checks
@@ -103,7 +103,8 @@ nor a perceptual match to a physical sampler.
   is about 31 chip samples (1.04 ms at the default clock), in addition to host
   and interface latency. EOC is emitted at the chip crossing, before that
   delayed audio reaches the output.
-- Monophonic sample memory; L and R are currently the same mixed signal.
+- Stereo samples (2.6.0) are two linked chip voices per Rack voice, reading two halves of
+  sample memory. There is no per-voice pan: a mono sample plays the same on L and R.
 - Polyphonic voices are mixed without automatic gain compensation. Many
   voices can exceed nominal ±5 V; use LEVEL and downstream attenuation.
 - Trigger controls and CV-to-register updates are a new host design. Continuous
