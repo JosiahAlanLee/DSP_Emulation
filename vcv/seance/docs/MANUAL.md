@@ -85,8 +85,7 @@ With A noise or a rich synth and B a voice or a drum loop, MULT gives A the spec
 
 ## Patch starting points
 
-- **Spectral byte feedback.** Bridge measures activity in eight bands before applying its incoming bit mask. Feed its BUS OUT through Register and Lookup, then return the transformed word to Bridge and OTIS FRAME BUS. [Controls, timing, bands and self-contained example](BYTE_BUS.md). Bridge fits anywhere in the row; it hears the preceding expanders and masks the frame before the following ones.
-
+- **Spectral byte feedback.** Bridge measures activity in eight bands before applying its incoming bit mask. Feed its ACT OUT through Register and Lookup, then return the transformed word to its MASK IN and to OTIS FRAME BUS. [Controls, timing, bands and self-contained example](BYTE_BUS.md). Bridge fits anywhere in the row; it hears the preceding expanders and masks the frame before the following ones.
 - **Resampling through the row.** OTIS → Séance (with Freeze and Scramble) → Spoon Bender → CAPTURE → OTIS. Destructive reworking becomes resampling through the patch: each pass through CAPTURE is a new OTIS sample with the row's changes baked in.
 - **Gorgon as the hand on the seed.** Gorgon's RESET into Séance's RESET and an automation lane into SEED CV: every row of the score replays its texture exactly, and a different lane value gives a different scatter.
 - **Vocoded modular.** Vastish or the modular into A, a drum loop into B, Cross in MULT with SMOOTH around 40%. The loop changes A's timbre hit by hit; A keeps its own level.
