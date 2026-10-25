@@ -1,9 +1,9 @@
 name: Séance native Linux
 on:
   push:
-    paths: ['vcv/seance/**', 'vcv/shared/**', '.github/workflows/seance.yml']
+    paths: ['vcv/seance/**', 'vcv/shared/**', 'vcv/bytebus/**', 'vcv/otislab/**', '.github/workflows/seance.yml']
   pull_request:
-    paths: ['vcv/seance/**', 'vcv/shared/**', '.github/workflows/seance.yml']
+    paths: ['vcv/seance/**', 'vcv/shared/**', 'vcv/bytebus/**', 'vcv/otislab/**', '.github/workflows/seance.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,6 +32,8 @@ jobs:
           step g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include vcv/seance/tests/module_test.cpp -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -Wl,--allow-shlib-undefined -o /tmp/module_test_asan
           step env ASAN_OPTIONS=detect_leaks=0 /tmp/module_test_asan
           step vcv/seance/tests/module_test
+          step make -C vcv/seance/tests bridge-check RACK_DIR=/tmp/Rack-SDK
+          step make -C vcv/seance/tests bridge-sanitize RACK_DIR=/tmp/Rack-SDK
           # Sanitizers on the portable engine.
           step g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-unsafe-math-optimizations vcv/seance/tests/engine_test.cpp -o /tmp/seance_asan
           step /tmp/seance_asan

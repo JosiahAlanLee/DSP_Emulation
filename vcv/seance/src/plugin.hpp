@@ -7,3 +7,4 @@ extern Model* modelSeanceFreeze;
 extern Model* modelSeanceScramble;
 extern Model* modelSeanceCross;
 extern Model* modelSeanceWipe;
+extern Model* modelSeanceBridge;

@@ -13,7 +13,7 @@
 namespace seance {
 
 inline bool isExpander(const Model* m) {
-    return m == modelSeanceFreeze || m == modelSeanceScramble || m == modelSeanceCross || m == modelSeanceWipe;
+    return m == modelSeanceFreeze || m == modelSeanceScramble || m == modelSeanceCross || m == modelSeanceWipe || m == modelSeanceBridge;
 }
 
 // From an expander: the frame of the core at the head of its row, and this module's

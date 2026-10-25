@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Séance panels (outlined text) for the core and its four expanders, and the matching
+"""Séance panels (outlined text) for the core and five expanders, and the matching
 widget layout header. One table per module drives both, so artwork and component positions
 cannot drift apart. Requires fontTools and DejaVu Sans."""
 from pathlib import Path
@@ -122,7 +122,29 @@ expander('SeanceWipe', 'wipe', 'WIPE', 5, 'V Bottleneck: fails the bypass test',
          knobs={'WIPE': (30, 112, 'WIPE'), 'SOFT': (30, 180, 'SOFT')}, switches={}, latches={},
          jacks={'WIPE_CV': (30, 318, 'WIPE')})
 
+# ---------------------------------------------------------------- Bridge (8 HP)
+W = 120
+knobs = {'THRESHOLD': (32, 116, 'THRESH'), 'HYSTERESIS': (88, 116, 'HYST'),
+         'SLEW': (60, 194, 'SLEW')}
+jacks = {'BUS_IN': (32, 317, 'MASK IN'), 'BUS_OUT': (88, 317, 'ACT OUT')}
+lights = {'LINK_LIGHT': (60, 350), **{f'BIT{b}_LIGHT': (18 + b * 12, 252) for b in range(8)}}
+p = frame(W) + [text('Séance', 12, 27, 14, OUT, 'start'), text('BRIDGE', 12, 44, 9, LABEL, 'start')]
+p.append(glyph(3, 96, 31, 24, LABEL, ACCENT))
+p.append(f'<path d="M8 84H{W-8}" stroke="{RULE}"/>')
+for x, y, label in knobs.values():
+    p.append(text(label, x, y + 30, 8))
+p += [text('dBFS', 32, 160, 6, DIM), text('dB', 88, 160, 6, DIM), text('ms', 60, 238, 6, DIM)]
+for b in range(8):
+    p.append(text(str(b), 18 + b * 12, 267, 6, DIM))
+p += [text('LOW', 10, 280, 5.5, DIM, 'start'), text('ACTIVITY', 60, 280, 6, LABEL), text('HIGH', 110, 280, 5.5, DIM, 'end')]
+p.append(f'<rect x="69" y="285" width="38" height="49" rx="4" fill="{BLOCK}"/>')
+for x, y, label in jacks.values():
+    p.append(text(label, x, y - 18, 7, OUT if label == 'ACT OUT' else LABEL))
+p.append(text('LINK', 60, 366, 5.5, DIM))
+(root / 'res/SeanceBridge.svg').write_text(''.join(p) + '</svg>')
+emit('bridge', (('KNOB', knobs), ('JACK', jacks), ('LIGHT', lights)), W)
+
 header.append('} // namespace seance_layout')
 header.append('')
 (root / 'src/Layout.hpp').write_text('\n'.join(header))
-print('Wrote res/Seance.svg, res/SeanceFreeze.svg, res/SeanceScramble.svg, res/SeanceCross.svg, res/SeanceWipe.svg and src/Layout.hpp')
+print('Wrote res/Seance.svg, res/SeanceFreeze.svg, res/SeanceScramble.svg, res/SeanceCross.svg, res/SeanceWipe.svg, res/SeanceBridge.svg and src/Layout.hpp')

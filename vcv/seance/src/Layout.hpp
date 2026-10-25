@@ -46,4 +46,21 @@ constexpr float JACK_WIPE_CV_X = 30, JACK_WIPE_CV_Y = 318;
 constexpr float LIGHT_LINK_LIGHT_X = 30.0, LIGHT_LINK_LIGHT_Y = 350;
 constexpr float WIDTH = 60;
 } // namespace wipe
+namespace bridge {
+constexpr float KNOB_THRESHOLD_X = 32, KNOB_THRESHOLD_Y = 116;
+constexpr float KNOB_HYSTERESIS_X = 88, KNOB_HYSTERESIS_Y = 116;
+constexpr float KNOB_SLEW_X = 60, KNOB_SLEW_Y = 194;
+constexpr float JACK_BUS_IN_X = 32, JACK_BUS_IN_Y = 317;
+constexpr float JACK_BUS_OUT_X = 88, JACK_BUS_OUT_Y = 317;
+constexpr float LIGHT_LINK_LIGHT_X = 60, LIGHT_LINK_LIGHT_Y = 350;
+constexpr float LIGHT_BIT0_LIGHT_X = 18, LIGHT_BIT0_LIGHT_Y = 252;
+constexpr float LIGHT_BIT1_LIGHT_X = 30, LIGHT_BIT1_LIGHT_Y = 252;
+constexpr float LIGHT_BIT2_LIGHT_X = 42, LIGHT_BIT2_LIGHT_Y = 252;
+constexpr float LIGHT_BIT3_LIGHT_X = 54, LIGHT_BIT3_LIGHT_Y = 252;
+constexpr float LIGHT_BIT4_LIGHT_X = 66, LIGHT_BIT4_LIGHT_Y = 252;
+constexpr float LIGHT_BIT5_LIGHT_X = 78, LIGHT_BIT5_LIGHT_Y = 252;
+constexpr float LIGHT_BIT6_LIGHT_X = 90, LIGHT_BIT6_LIGHT_Y = 252;
+constexpr float LIGHT_BIT7_LIGHT_X = 102, LIGHT_BIT7_LIGHT_Y = 252;
+constexpr float WIDTH = 120;
+} // namespace bridge
 } // namespace seance_layout

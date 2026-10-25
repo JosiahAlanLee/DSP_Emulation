@@ -7,6 +7,7 @@
 #include <context.hpp>
 #include "../src/Seance.cpp"
 #include "../src/Expanders.cpp"
+#include "../src/Bridge.cpp"
 #include <cassert>
 #include <iostream>
 #include <random>

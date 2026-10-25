@@ -1,7 +1,7 @@
 {
   "slug": "SeanceLab",
   "name": "SeanceLab",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "license": "BSD-3-Clause",
   "brand": "SeanceLab",
   "author": "DSP_Emulation contributors",
@@ -36,6 +36,12 @@
       "name": "Séance Wipe",
       "description": "Spectral wipe expander: a hard or soft wall across the spectrum that sweeps up or down under CV.",
       "tags": ["Effect", "Filter", "Expander"]
+    },
+    {
+      "slug": "SeanceBridge",
+      "name": "Séance Bridge",
+      "description": "Spectral byte-bus expander: eight-band activity detector and smoothed bit mask on the shared frame.",
+      "tags": ["Effect", "Utility", "Expander"]
     }
   ]
 }
