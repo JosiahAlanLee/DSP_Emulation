@@ -1,4 +1,4 @@
-name: Byte bus register native Linux
+name: Byte bus instruments native Linux
 on:
   push:
     paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
@@ -22,6 +22,8 @@ jobs:
         run: |
           make -C vcv/bytebus -j2 RACK_DIR=/tmp/Rack-SDK
           make -C vcv/bytebus/tests check RACK_DIR=/tmp/Rack-SDK
+      - name: Verify original library and Vastish table compiler
+        run: make -C vcv/bytebus/tests tools-check
       - name: Address and undefined-behavior sanitizers
         env:
           ASAN_OPTIONS: detect_leaks=0
