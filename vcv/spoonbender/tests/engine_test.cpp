@@ -230,7 +230,14 @@ static void captureBuffer() {
     assert(!c.collect(got, rate));
     for (int i = 0; i < 70; i++) c.write(.25f);
     assert(c.trigger(2000) && c.collect(got, rate) && got.size() == 70 && rate == 96000 && got[0] == 8192);
-    std::cout << "capture: oldest-first copy of the last N frames with its rate, one pending capture at a time, reset by a rate change\n";
+    // Stereo: both channels in step; the mono collect is (L + R) / 2.
+    for (int i = 0; i < 40; i++) c.write(.5f, -.25f + i / 32768.f);
+    std::vector<int16_t> l, r;
+    assert(c.trigger(40) && c.collect(l, r, rate) && l.size() == 40 && r.size() == 40);
+    for (int i = 0; i < 40; i++) assert(l[i] == 16384 && r[i] == -8192 + i);
+    for (int i = 0; i < 40; i++) c.write(.5f, -.25f);
+    assert(c.trigger(40) && c.collect(got, rate) && got.size() == 40 && got[0] == (16384 - 8192) / 2);
+    std::cout << "capture: oldest-first copy of the last N stereo frames with its rate, mono mix, one pending capture at a time, reset by a rate change\n";
 }
 
 // The dry signal never passes the ESP converters: with both stage mixes at zero the

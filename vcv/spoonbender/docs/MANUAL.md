@@ -141,7 +141,7 @@ CAPTURE records what you have already heard, rather than starting a new recordin
 3. Press CAPTURE or send a trigger to CAPT.
 4. Import the capture into an adjacent OTIS instance.
 
-The captured audio is the mono average of OUT L/R after all mixes, quantized to 16 bits at Rack's sample rate. Audio beyond the capture's full-scale range is clipped. Set MIX to zero to capture the dry input.
+The captured audio is OUT L and OUT R after all mixes, in stereo, quantized to 16 bits at Rack's sample rate. When the two channels are identical (a mono source and no stereo effect), the capture is shared as mono. Audio beyond the capture's full-scale range is clipped. Set MIX to zero to capture the dry input.
 
 Only one capture can await collection at a time. The capture light indicates a pending capture, not that the history has filled. Collection occurs on a UI refresh; the most recently collected capture replaces the previous slot.
 
@@ -151,9 +151,9 @@ After a capture, the new history starts empty. A capture two seconds later conta
 
 Place Spoon Bender immediately to the left of OTIS. In OTIS's menu, choose **Import capture from Spoon Bender on the left**, or enable **Follow Spoon Bender captures**.
 
-The Rack UI must be running for collection and import. Importing replaces OTIS's sample and stops its voices. OTIS's memory limit can shorten high-rate captures: at 96 kHz it holds about 10.9 seconds.
+The Rack UI must be running for collection and import. Importing replaces OTIS's sample and stops its voices. OTIS 2.7 and later import a stereo capture as a stereo sample, which holds about 10.9 seconds at 48 kHz (5.5 at 96 kHz). For twice that, enable **Import Spoon Bender captures as mono (twice as long)** in OTIS. An older OTIS imports the mono mix, (L + R) / 2.
 
-If Vastish sits directly right of OTIS with its follow link enabled, it can adopt that completed sample too. Physical adjacency moves sample data; normal audio routing still requires cables.
+If Vastish sits directly right of OTIS with its follow link enabled, it can adopt that completed sample too, in stereo from Vastish 2.4. Physical adjacency moves sample data; normal audio routing still requires cables.
 
 ## Patch starting points
 

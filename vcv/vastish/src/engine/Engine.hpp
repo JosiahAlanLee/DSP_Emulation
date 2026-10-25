@@ -17,21 +17,27 @@ inline int sourceFun(int src) { return src==SRC_FUN1||src==SRC_FUN2 ? src-SRC_FU
 inline int funBase(int f) { static constexpr int base[FUN_COUNT]={FUN1_A,FUN2_A,FUN3_A,FUN4_A}; return base[f]; }
 // Read-only view of the loaded sample for the SAMPLE pitch wave (native-only).
 // 0 V / MIDI 60 plays the sample at its recorded pitch, as a K2000 keymap root.
+// pcmR: a stereo sample's right channel, `frames` long; null for mono.
 struct SampleView {
-    const int16_t* pcm=nullptr; size_t frames=0; double rate=0; bool loop=false;
+    const int16_t* pcm=nullptr; size_t frames=0; double rate=0; bool loop=false; const int16_t* pcmR=nullptr;
     bool valid() const { return pcm && frames>=2 && rate>0; }
 };
 constexpr int SAMPLE_WAVE=5;
 constexpr float SAMPLE_ROOT_NOTE=60;
 struct Voice {
     Phasor pitch; Noise noise; Lfo lfo[2]; Envelope env[3]; FunctionBlock block[3];
+    // A stereo sample's right channel takes its own copy of the three blocks, with the same
+    // controls; stereoActive while it does.
+    FunctionBlock blockR[3]; bool stereoActive=false;
     uint32_t noteRandom=1; Ramp wheel; bool gate=false; float velocity=0,random=0; std::array<float,SOURCE_COUNT> sources{};
     double samplePos=0; bool samplePlaying=false;
     // 4-point Hermite read over the half-open range [0, frames). One-shot clamps
     // the interpolation neighbours at the ends; a loop wraps them across the seam,
     // so the loop period is exactly `frames` samples at the root pitch.
-    float sampleTick(const SampleView* s,float hz,float sr) {
+    // right: a stereo sample's right channel at the same position (0 for mono).
+    float sampleTick(const SampleView* s,float hz,float sr,float* right=nullptr) {
         static const double rootHz=mtof(SAMPLE_ROOT_NOTE);
+        if(right) *right=0;
         if(!s || !s->valid() || !samplePlaying) return 0;
         const double n=double(s->frames);
         if(samplePos>=n) {
@@ -40,19 +46,27 @@ struct Voice {
         }
         const long frames=long(s->frames);
         long i=long(samplePos); float f=float(samplePos-double(i));
-        auto at=[&](long k) {
-            k=s->loop ? ((k%frames)+frames)%frames : std::max(0L,std::min(frames-1,k));
-            return s->pcm[k]*(1.f/32768);
+        auto hermite=[&](const int16_t* pcm) {
+            auto at=[&](long k) {
+                k=s->loop ? ((k%frames)+frames)%frames : std::max(0L,std::min(frames-1,k));
+                return pcm[k]*(1.f/32768);
+            };
+            float y0=at(i-1), y1=at(i), y2=at(i+1), y3=at(i+2);
+            float c1=.5f*(y2-y0), c2=y0-2.5f*y1+2*y2-.5f*y3, c3=.5f*(y3-y0)+1.5f*(y1-y2);
+            return ((c3*f+c2)*f+c1)*f+y1;
         };
-        float y0=at(i-1), y1=at(i), y2=at(i+1), y3=at(i+2);
-        float c1=.5f*(y2-y0), c2=y0-2.5f*y1+2*y2-.5f*y3, c3=.5f*(y3-y0)+1.5f*(y1-y2);
-        float out=((c3*f+c2)*f+c1)*f+y1;
+        float out=hermite(s->pcm);
+        if(right && s->pcmR) *right=hermite(s->pcmR);
         samplePos+=double(hz)/rootHz*s->rate/double(sr);
         return out;
     }
     explicit Voice(uint32_t seed=307) : noise(seed) { noteRandom=seed+701; lfo[0].noise.state=seed+177; lfo[1].noise.state=seed+393; }
-    void prepare(float sr) { for(auto& b:block) b.prepare(sr); }
-    void panic() { gate=false; for(auto& e:env) e=Envelope{}; for(auto& b:block) { b.comb.clear(); b.ladder.state={}; b.lop.last=b.hipLop.last=0; b.lp2=Vcf{}; b.bp=Vcf{}; b.notch=Vcf{}; } }
+    void prepare(float sr) { for(auto& b:block) b.prepare(sr); for(auto& b:blockR) b.prepare(sr); }
+    void panic() {
+        gate=false; for(auto& e:env) e=Envelope{};
+        for(auto* set:{block,blockR}) for(int k=0;k<3;++k) { auto& b=set[k]; b.comb.clear(); b.ladder.state={}; b.lop.last=b.hipLop.last=0; b.lp2=Vcf{}; b.bp=Vcf{}; b.notch=Vcf{}; }
+        stereoActive=false;
+    }
     float control(int base,const Parameters& p,float note) const {
         return p[base]+p[base+1]*(note-60)+p[base+2]*velocity+
             sources[choice(p[base+3],SOURCE_COUNT-1)]*p[base+4]+sources[choice(p[base+5],SOURCE_COUNT-1)]*p[base+6];
@@ -87,16 +101,31 @@ struct Voice {
         unsigned busy=0,done=0; for(int f=0;f<FUN_COUNT;++f) evaluateFun(f,p,busy,done);
         float pitchHz=mtof(clamp(control(PITCH_ADJ,p,in.note),-20,135));
         float ph=pitch.tick(pitchHz,sr);
-        float n=noise.tick(), x;
+        float n=noise.tick(), x, xR=0; bool stereo=false;
         switch(choice(p[PITCH_WAVE],SAMPLE_WAVE)) { case 1:x=(ph>clamp(p[PITCH_PW],.01,.99)?1.f:-1.f); break;
             case 2:x=1-std::abs(ph*4-2); break; case 3:x=cosine(ph); break; case 4:x=n; break;
-            case SAMPLE_WAVE:x=sampleTick(sample,pitchHz,sr); break; default:x=ph*2-1; }
+            case SAMPLE_WAVE:x=sampleTick(sample,pitchHz,sr,&xR); stereo=sample && sample->valid() && sample->pcmR; break;
+            default:x=ph*2-1; }
         const float* r=routes[std::max(0,choice(p[ALG],6)-1)];
-        float a=block[0].tick(choice(p[F1_TYPE],14),x,control(F1_ADJ,p,in.note),p[F1_B],sr);
-        float b=block[1].tick(choice(p[F2_TYPE],14),r[0]*x+r[1]*a,control(F2_ADJ,p,in.note),p[F2_B],sr);
-        float c=block[2].tick(choice(p[F3_TYPE],14),r[2]*x+r[3]*a+r[4]*b+r[5]*a*b,control(F3_ADJ,p,in.note),p[F3_B],sr);
-        float out=(r[6]*a+r[7]*b+r[8]*c)*dbgain(control(AMP_ADJ,p,in.note))*sources[11]*sources[11];
+        const int t1=choice(p[F1_TYPE],14), t2=choice(p[F2_TYPE],14), t3=choice(p[F3_TYPE],14);
+        const float k1=control(F1_ADJ,p,in.note), k2=control(F2_ADJ,p,in.note), k3=control(F3_ADJ,p,in.note);
+        // Entering stereo, the right blocks take the left blocks' state before either side runs,
+        // so a stereo sample with identical channels sounds exactly like the mono one, even mid-note.
+        if(stereo && !stereoActive) { for(int k=0;k<3;++k) blockR[k]=block[k]; stereoActive=true; }
+        float a=block[0].tick(t1,x,k1,p[F1_B],sr);
+        float b=block[1].tick(t2,r[0]*x+r[1]*a,k2,p[F2_B],sr);
+        float c=block[2].tick(t3,r[2]*x+r[3]*a+r[4]*b+r[5]*a*b,k3,p[F3_B],sr);
+        const float amp=dbgain(control(AMP_ADJ,p,in.note));
+        float out=(r[6]*a+r[7]*b+r[8]*c)*amp*sources[11]*sources[11];
         float pan=clamp(control(PAN_ADJ,p,in.note),-1,1), t=(pan+1)*.125f;
+        if(stereo) {   // PAN is balance: each side keeps its own gain from the pan law
+            float aR=blockR[0].tick(t1,xR,k1,p[F1_B],sr);
+            float bR=blockR[1].tick(t2,r[0]*xR+r[1]*aR,k2,p[F2_B],sr);
+            float cR=blockR[2].tick(t3,r[2]*xR+r[3]*aR+r[4]*bR+r[5]*aR*bR,k3,p[F3_B],sr);
+            float outR=(r[6]*aR+r[7]*bR+r[8]*cR)*amp*sources[11]*sources[11];
+            return {{out*cosine(t),outR*cosine(t-.25f)}};
+        }
+        stereoActive=false;
         return {{out*cosine(t),out*cosine(t-.25f)}};
     }
 };

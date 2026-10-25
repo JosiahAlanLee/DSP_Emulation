@@ -66,7 +66,7 @@ A sample becomes stereo when:
 - a take starts with **AUDIO R** patched, or resamples a stereo sample's own output;
 - a patch saved with a stereo sample is opened.
 
-Use **Load WAV as mono…** to fold a two-channel file into a mono sample with the full memory and voice count. REWORK changes both channels of the window with the same grains and one gain, so the stereo image is kept. Vastish receives a mono mix of a stereo sample; Spoon Bender captures are mono.
+Use **Load WAV as mono…** to fold a two-channel file into a mono sample with the full memory and voice count. REWORK changes both channels of the window with the same grains and one gain, so the stereo image is kept. From Spoon Bender 2.2 captures arrive in stereo, and Vastish 2.4 receives stereo samples in stereo; see [Connect to Spoon Bender and Vastish](#connect-to-spoon-bender-and-vastish).
 
 ## Playback controls
 
@@ -190,11 +190,11 @@ Place the modules directly adjacent in the order **Spoon Bender → OTIS → Vas
 - Use **Import capture from Spoon Bender on the left** for a one-time import, or enable **Follow Spoon Bender captures** for automatic imports.
 - In Vastish, enable **Follow OTIS on the left** to use OTIS's finished sample as its SAMPLE source.
 
-These links need no audio cable, but do require the Rack UI to run. They transfer completed mono sample data and its rate: Spoon Bender's captures are mono, and Vastish receives a stereo sample as a mono mix, (L + R) / 2. Spoon Bender imports replace OTIS's sample and stop its voices.
+These links need no audio cable, but do require the Rack UI to run. They transfer the completed sample and its rate, in stereo between Spoon Bender 2.2, OTIS 2.7 and Vastish 2.4. With an older version on either side, a link carries a mono mix, (L + R) / 2. Spoon Bender imports replace OTIS's sample and stop its voices.
 
 OTIS retains its own playback settings when importing. Its window, filters and clock settings are not sent onward to Vastish. Loading a WAV does not turn off Follow Spoon Bender captures: the next capture can replace that WAV while follow remains enabled.
 
-Spoon Bender captures retain Rack's sample rate. OTIS's fixed capacity therefore holds about 21.8 seconds at 48 kHz or 10.9 seconds at 96 kHz. Longer imports are truncated.
+Spoon Bender captures retain Rack's sample rate. A stereo capture becomes a stereo sample, which holds about 10.9 seconds at 48 kHz or 5.5 seconds at 96 kHz. **Import Spoon Bender captures as mono (twice as long)** imports the mono mix instead: about 21.8 or 10.9 seconds. Longer imports are truncated, keeping the oldest audio.
 
 ## Saving and troubleshooting
 

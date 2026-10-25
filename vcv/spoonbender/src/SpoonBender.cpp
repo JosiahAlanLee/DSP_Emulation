@@ -55,10 +55,12 @@ struct SpoonBender : Module {
     float sampleRate = 48000;
 
     // Capture share (UI thread writes, the reader's UI thread reads; mutex for safety).
+    // sharePcm is the mono mix older readers get; shareLeft/shareRight the stereo capture.
     std::mutex shareMutex;
-    std::vector<int16_t> sharePcm; double shareRate = 0; std::string shareName = "NO CAPTURE";
+    std::vector<int16_t> sharePcm, shareLeft, shareRight; bool shareStereo = false;
+    double shareRate = 0; std::string shareName = "NO CAPTURE";
     std::atomic<uint32_t> shareRevision{0}; int captureCount = 0;
-    dspemu::SampleShareV1 share{};
+    dspemu::SampleShareWithStereo share{};
 
     // Display and typed entry are in Hz for the current range (FINE/WIDE).
     struct ShiftQuantity : ParamQuantity {
@@ -117,11 +119,12 @@ struct SpoonBender : Module {
     }
 
     void exposeShare() {
-        share.magic = dspemu::SAMPLE_SHARE_MAGIC; share.version = dspemu::SAMPLE_SHARE_VERSION; share.context = this;
+        auto& v1 = share.v1;
+        v1.magic = dspemu::SAMPLE_SHARE_MAGIC; v1.version = dspemu::SAMPLE_SHARE_VERSION; v1.context = this;
         // revision() is called on the reader's UI thread; it collects a pending capture first,
         // so a reader sees it even before this module's own widget has stepped.
-        share.revision = [](void* c) -> uint32_t { auto* m = static_cast<SpoonBender*>(c); m->collectCapture(); return m->shareRevision.load(std::memory_order_acquire); };
-        share.copy = [](void* c, int16_t* dst, size_t capacity, double* rate, uint32_t* revision) -> size_t {
+        v1.revision = [](void* c) -> uint32_t { auto* m = static_cast<SpoonBender*>(c); m->collectCapture(); return m->shareRevision.load(std::memory_order_acquire); };
+        v1.copy = [](void* c, int16_t* dst, size_t capacity, double* rate, uint32_t* revision) -> size_t {
             auto* m = static_cast<SpoonBender*>(c);
             std::lock_guard<std::mutex> guard(m->shareMutex);
             if (dst) std::memcpy(dst, m->sharePcm.data(), std::min(capacity, m->sharePcm.size()) * sizeof(int16_t));
@@ -129,23 +132,43 @@ struct SpoonBender : Module {
             if (revision) *revision = m->shareRevision.load(std::memory_order_relaxed);
             return m->sharePcm.size();
         };
-        share.name = [](void* c, char* buffer, size_t size) {
+        v1.name = [](void* c, char* buffer, size_t size) {
             if (!buffer || !size) return;
             auto* m = static_cast<SpoonBender*>(c);
             std::lock_guard<std::mutex> guard(m->shareMutex);
             std::snprintf(buffer, size, "%s", m->shareName.c_str());
         };
-        rightExpander.producerMessage = rightExpander.consumerMessage = &share;  // fixed; no flip is requested
+        // Stereo extension (2.2.0+): OTIS reads both channels; older readers see v1 alone.
+        share.stereo.magic = dspemu::SAMPLE_SHARE_STEREO_MAGIC; share.stereo.version = dspemu::SAMPLE_SHARE_STEREO_VERSION;
+        share.stereo.copyStereo = [](void* c, int16_t* left, int16_t* right, size_t capacity, double* rate, uint32_t* revision, uint32_t* channels) -> size_t {
+            auto* m = static_cast<SpoonBender*>(c);
+            std::lock_guard<std::mutex> guard(m->shareMutex);
+            const auto& l = m->shareStereo ? m->shareLeft : m->sharePcm;
+            const auto& r = m->shareStereo ? m->shareRight : m->sharePcm;
+            if (left) std::memcpy(left, l.data(), std::min(capacity, l.size()) * sizeof(int16_t));
+            if (right) std::memcpy(right, r.data(), std::min(capacity, r.size()) * sizeof(int16_t));
+            if (rate) *rate = m->shareRate;
+            if (revision) *revision = m->shareRevision.load(std::memory_order_relaxed);
+            if (channels) *channels = m->shareStereo ? 2 : 1;
+            return l.size();
+        };
+        rightExpander.producerMessage = rightExpander.consumerMessage = &share.v1;  // fixed; no flip is requested
     }
 
     // UI thread: move a finished capture into the share.
     void collectCapture() {
-        std::vector<int16_t> pcm;
+        std::vector<int16_t> left, right, mono;
         double rate = 0;
-        if (!engine.capture.collect(pcm, rate)) return;
+        if (!engine.capture.collect(left, right, rate)) return;
+        // Identical channels (a mono source, no stereo spread) are shared as mono.
+        bool stereo = left != right;
+        mono.resize(left.size());
+        for (size_t i = 0; i < left.size(); i++) mono[i] = int16_t((int32_t(left[i]) + right[i]) >> 1);
         std::lock_guard<std::mutex> guard(shareMutex);
         shareRevision.fetch_add(1, std::memory_order_acq_rel);  // odd: changing
-        sharePcm.swap(pcm); shareRate = rate;  // the rate it was recorded at, not the current one
+        sharePcm.swap(mono); shareRate = rate;  // the rate it was recorded at, not the current one
+        if (stereo) { shareLeft.swap(left); shareRight.swap(right); } else { shareLeft.clear(); shareRight.clear(); }
+        shareStereo = stereo;
         shareName = string::f("Spoon Bender capture %d", ++captureCount);
         shareRevision.fetch_add(1, std::memory_order_release);  // even: ready
     }
@@ -280,7 +303,7 @@ struct SpoonBenderWidget : ModuleWidget {
                                           [m](bool on) { m->reconfigure(m->espRateIndex.load(), on); }));
         menu->addChild(new MenuSeparator);
         std::string status;
-        { std::lock_guard<std::mutex> guard(m->shareMutex); status = m->sharePcm.empty() ? "No capture yet" : string::f("%s, %.1f s", m->shareName.c_str(), m->sharePcm.size() / m->shareRate); }
+        { std::lock_guard<std::mutex> guard(m->shareMutex); status = m->sharePcm.empty() ? "No capture yet" : string::f("%s, %.1f s, %s", m->shareName.c_str(), m->sharePcm.size() / m->shareRate, m->shareStereo ? "stereo" : "mono"); }
         menu->addChild(createMenuLabel(status));
         menu->addChild(createMenuLabel("Place OTIS directly to the right to import captures"));
     }

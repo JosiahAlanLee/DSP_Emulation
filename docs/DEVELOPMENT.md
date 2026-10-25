@@ -131,7 +131,7 @@ The engine adapts ES5505 integer interpolation, frequency/address scaling, chip-
 
 Recording, control routing, LAB behavior, windows and REWORK are host-side or original extensions. REWORK uses randomized circular grains, overlap/add and seam/boundary smoothing with limited RMS compensation. It is not Ensoniq's Synthesized Loop algorithm.
 
-Exports and shared samples contain stored mono 16-bit PCM, rather than a render of current playback settings.
+Exports and shared samples contain stored 16-bit PCM, mono or stereo, rather than a render of current playback settings.
 
 ### Vastish
 
@@ -158,6 +158,8 @@ The hand-off is a single token (`FrameV1::stage`) passed with acquire/release at
 ## Sample sharing
 
 The [versioned interface](../vcv/shared/SampleShare.hpp) exposes completed PCM, rate, name and revision. Receivers copy on the UI thread and check provider identity and interface version. Physical adjacency is required; audio cables are independent.
+
+`SampleShareV1` is mono. Stereo travels in `SampleShareStereoV1`, which a provider places directly after its V1 struct (`SampleShareWithStereo`), so readers that predate it still see a valid V1 and get a mono mix through `copy`. V1 cannot say whether anything follows it, so a reader reads the extension only when the provider's plugin version guarantees it (`providerHasStereo`: Spoon Bender 2.2.0, OTIS 2.7.0) and its magic matches. Raising V1's version number would instead have made every older reader reject newer providers.
 
 - Spoon Bender collects a frozen capture into a shareable slot.
 - OTIS imports it, retains its playback settings and exposes its finished sample on the right.

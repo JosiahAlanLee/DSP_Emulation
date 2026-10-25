@@ -40,11 +40,13 @@ struct OtisSampler : Module {
     // Lets a module placed to the right (Vastish) read the finished sample. See
     // shared/SampleShare.hpp. Served from that module's UI thread; snapshot() only
     // takes the finished-sample lock, which the audio thread never waits on.
-    dspemu::SampleShareV1 share{};
+    // 2.7.0+: with the stereo extension after the V1 share.
+    dspemu::SampleShareWithStereo share{};
     void exposeShare() {
-        share.magic=dspemu::SAMPLE_SHARE_MAGIC; share.version=dspemu::SAMPLE_SHARE_VERSION; share.context=this;
-        share.revision=[](void* c)->uint32_t { return static_cast<OtisSampler*>(c)->engine.sequence(); };
-        share.copy=[](void* c,int16_t* dst,size_t capacity,double* rate,uint32_t* revision)->size_t {
+        auto& v1=share.v1;
+        v1.magic=dspemu::SAMPLE_SHARE_MAGIC; v1.version=dspemu::SAMPLE_SHARE_VERSION; v1.context=this;
+        v1.revision=[](void* c)->uint32_t { return static_cast<OtisSampler*>(c)->engine.sequence(); };
+        v1.copy=[](void* c,int16_t* dst,size_t capacity,double* rate,uint32_t* revision)->size_t {
             try {
                 // SampleShareV1 is mono: a stereo sample is shared as (L+R)/2.
                 std::vector<int16_t> pcm,right; double r=0; uint32_t s=0;
@@ -56,15 +58,29 @@ struct OtisSampler : Module {
                 return pcm.size();
             } catch(...) { return 0; }
         };
-        share.name=[](void* c,char* buffer,size_t size) {
+        v1.name=[](void* c,char* buffer,size_t size) {
             if(!buffer || !size) return;
             auto* m=static_cast<OtisSampler*>(c);
             std::lock_guard<std::mutex> guard(m->nameMutex);
             const std::string& n=m->liveSample.load() ? std::string("LIVE RECORDING") : m->sampleName;
             std::snprintf(buffer,size,"%s",n.c_str());
         };
+        share.stereo.magic=dspemu::SAMPLE_SHARE_STEREO_MAGIC; share.stereo.version=dspemu::SAMPLE_SHARE_STEREO_VERSION;
+        share.stereo.copyStereo=[](void* c,int16_t* left,int16_t* right,size_t capacity,double* rate,uint32_t* revision,uint32_t* channels)->size_t {
+            try {
+                std::vector<int16_t> l,r; double rt=0; uint32_t s=0;
+                bool stereo=static_cast<OtisSampler*>(c)->engine.snapshotStereo(l,r,rt,s);
+                const auto& rr=stereo ? r : l;
+                if(left) std::memcpy(left,l.data(),std::min(capacity,l.size())*sizeof(int16_t));
+                if(right) std::memcpy(right,rr.data(),std::min(capacity,rr.size())*sizeof(int16_t));
+                if(rate) *rate=rt;
+                if(revision) *revision=s;
+                if(channels) *channels=stereo ? 2 : 1;
+                return l.size();
+            } catch(...) { return 0; }
+        };
         // Fixed pointers; no flip is ever requested, so Rack leaves them alone.
-        rightExpander.producerMessage=rightExpander.consumerMessage=&share;
+        rightExpander.producerMessage=rightExpander.consumerMessage=&share.v1;
     }
     OtisSampler() {
         config(NUM_PARAMS,NUM_INPUTS,NUM_OUTPUTS,NUM_LIGHTS);
@@ -135,40 +151,54 @@ struct OtisSampler : Module {
     // Reading Spoon Bender captures from the module directly to the LEFT (UI thread only).
     // Same versioned interface OTIS itself provides to Vastish on its right.
     bool followFx=false; uint32_t fxRevision=0; bool fxSeen=false; const dspemu::SampleShareV1* fxShare=nullptr;
+    std::atomic<bool> fxMono{false};  // import stereo captures as mono: twice the length, all the voices
     static const dspemu::SampleShareV1* findFxShare(Module* left) {
         if(!left || !left->model || !left->model->plugin) return nullptr;
         if(left->model->plugin->slug!="SpoonBenderLab" || left->model->slug!="SpoonBender") return nullptr;
         void* p=left->rightExpander.producerMessage;
         return dspemu::validShare(p) ? static_cast<const dspemu::SampleShareV1*>(p) : nullptr;
     }
+    // Its stereo extension: Spoon Bender 2.2.0+ only.
+    static const dspemu::SampleShareStereoV1* findFxStereo(Module* left) {
+        auto* s=findFxShare(left);
+        return s ? dspemu::stereoExtension(s,dspemu::providerHasStereo(left->model->plugin->slug.c_str(),left->model->plugin->version.c_str())) : nullptr;
+    }
     // Copy the provider's sample and install it. Returns false if there is nothing
     // usable or it changed while copying (the caller retries on the next frame).
-    bool importFrom(const dspemu::SampleShareV1* s) {
+    bool importFrom(const dspemu::SampleShareV1* s,const dspemu::SampleShareStereoV1* stereo=nullptr) {
         if(!s) return false;
         uint32_t rev=s->revision(s->context);
         if(rev&1) return false;
-        double rate=0; uint32_t got=0;
-        size_t total=s->copy(s->context,nullptr,0,&rate,&got);
+        double rate=0; uint32_t got=0, channels=1;
+        size_t total=stereo ? stereo->copyStereo(s->context,nullptr,nullptr,0,&rate,&got,&channels) : s->copy(s->context,nullptr,0,&rate,&got);
         if(total<2 || !std::isfinite(rate) || rate<1000 || rate>384000) return false;
-        std::vector<int16_t> pcm(std::min(total,otis::memoryWords));
-        if(s->copy(s->context,pcm.data(),pcm.size(),&rate,&got)!=total || got!=rev) return false;
+        bool asStereo=stereo && channels==2 && !fxMono.load();
+        size_t capacity=asStereo ? otis::stereoFrames : otis::memoryWords;
+        std::vector<int16_t> pcm(std::min(total,capacity)), right;
+        if(asStereo) {
+            right.resize(pcm.size());
+            if(stereo->copyStereo(s->context,pcm.data(),right.data(),pcm.size(),&rate,&got,&channels)!=total || got!=rev || channels!=2) return false;
+        } else if(s->copy(s->context,pcm.data(),pcm.size(),&rate,&got)!=total || got!=rev) return false;
         char name[256]={}; s->name(s->context,name,sizeof name);
+        std::vector<int16_t> image;
+        if(asStereo) image=otis::stereoImage(pcm.data(),right.data(),pcm.size());
         {
             std::lock_guard<std::mutex> guard(engineMutex);
-            engine.install(pcm,rate); liveSample=false;
+            if(asStereo) engine.install(image,rate,pcm.size(),true); else engine.install(pcm,rate);
+            liveSample=false;
         }
-        { std::lock_guard<std::mutex> names(nameMutex); sampleName=std::string(name)+(total>otis::memoryWords ? " [TRUNCATED]" : ""); lastError.clear(); }
+        { std::lock_guard<std::mutex> names(nameMutex); sampleName=std::string(name)+(total>capacity ? " [TRUNCATED]" : ""); lastError.clear(); }
         refreshDisplay();
         fxRevision=rev; fxSeen=true;
         return true;
     }
     // Called every UI frame with the current left neighbour's share (or null).
-    void followFxShare(const dspemu::SampleShareV1* s) {
+    void followFxShare(const dspemu::SampleShareV1* s,const dspemu::SampleShareStereoV1* stereo=nullptr) {
         if(s!=fxShare) { fxShare=s; fxSeen=false; }
         if(!followFx || !s) return;
         uint32_t rev=s->revision(s->context);
         if(rev==0 || (rev&1) || (fxSeen && rev==fxRevision)) return;  // 0: nothing captured yet
-        importFrom(s);
+        importFrom(s,stereo);
     }
     void save(const std::string& path) {
         std::vector<int16_t> pcm,right; double rate=0;
@@ -285,6 +315,7 @@ struct OtisSampler : Module {
         json_object_set_new(root,"linearLevel",json_boolean(linearLevel.load())); json_object_set_new(root,"declick",json_boolean(declick.load()));
         json_object_set_new(root,"varispeed",json_boolean(varispeed.load())); json_object_set_new(root,"recordSource",json_integer(recordSource.load()));
         json_object_set_new(root,"followFx",json_boolean(followFx));
+        json_object_set_new(root,"fxMono",json_boolean(fxMono.load()));
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -297,6 +328,7 @@ struct OtisSampler : Module {
             varispeed=json_is_true(json_object_get(root,"varispeed"));
             auto rs=json_object_get(root,"recordSource"); recordSource=rs ? int(otis::clamp<json_int_t>(json_integer_value(rs),0,2)) : 0;
             followFx=json_is_true(json_object_get(root,"followFx")); fxSeen=false;
+            fxMono=json_is_true(json_object_get(root,"fxMono"));
             auto dc=json_object_get(root,"declick"); declick=dc ? json_is_true(dc) : true;
             auto text=json_string_value(json_object_get(root,"pcm16le"));
             if(text && *text) {
@@ -411,7 +443,7 @@ struct OtisSamplerWidget : ModuleWidget {
         return id>=0 ? APP->engine->getModule(id) : nullptr;
     }
     void step() override {
-        if(auto* m=getModule<OtisSampler>()) m->followFxShare(OtisSampler::findFxShare(leftNeighbour(m)));
+        if(auto* m=getModule<OtisSampler>()) { Module* left=leftNeighbour(m); m->followFxShare(OtisSampler::findFxShare(left),OtisSampler::findFxStereo(left)); }
         ModuleWidget::step();
     }
     void appendContextMenu(Menu* menu) override {
@@ -419,8 +451,9 @@ struct OtisSamplerWidget : ModuleWidget {
         menu->addChild(new MenuSeparator);
         bool fxPresent=OtisSampler::findFxShare(leftNeighbour(m))!=nullptr;
         // Resolve the neighbour again at click time; it may have moved or been deleted.
-        menu->addChild(createMenuItem("Import capture from Spoon Bender on the left","",[m]{ m->importFrom(OtisSampler::findFxShare(leftNeighbour(m))); },!fxPresent));
+        menu->addChild(createMenuItem("Import capture from Spoon Bender on the left","",[m]{ Module* left=leftNeighbour(m); m->importFrom(OtisSampler::findFxShare(left),OtisSampler::findFxStereo(left)); },!fxPresent));
         menu->addChild(createBoolMenuItem("Follow Spoon Bender captures","",[m]{return m->followFx;},[m](bool on){ m->followFx=on; m->fxSeen=false; }));
+        menu->addChild(createBoolMenuItem("Import Spoon Bender captures as mono (twice as long)","",[m]{return m->fxMono.load();},[m](bool on){ m->fxMono=on; m->fxSeen=false; }));
         if(!fxPresent) menu->addChild(createMenuLabel("Place Spoon Bender directly left of OTIS to import its captures"));
         menu->addChild(createMenuItem("Load WAV…","",[m]() {
             auto filters=osdialog_filters_parse("WAV:wav"); char* path=osdialog_file(OSDIALOG_OPEN,nullptr,nullptr,filters); osdialog_filters_free(filters);

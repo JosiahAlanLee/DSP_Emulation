@@ -26,7 +26,7 @@ int main() {
     void* handle = dlopen("./plugin.so", RTLD_NOW | RTLD_LOCAL);
     if (!handle) { std::cerr << dlerror() << "\n"; return 1; }
     auto initialize = reinterpret_cast<void (*)(Plugin*)>(dlsym(handle, "init")); assert(initialize);
-    Plugin plugin; plugin.slug = "OtisLab"; plugin.version = "2.6.0"; initialize(&plugin);
+    Plugin plugin; plugin.slug = "OtisLab"; plugin.version = "2.7.0"; initialize(&plugin);
     auto model = plugin.models.front();
     auto make = [&] { auto m = std::unique_ptr<engine::Module>(model->createModule()); m->model = model; return m; };
     auto st = make(), ml = make(), mr = make(), old = make();
@@ -77,6 +77,16 @@ int main() {
         std::vector<int16_t> mix(n); share->copy(share->context, mix.data(), n, &r, &got);
         assert(n == L.size() && r == 29761.9);
         for (size_t i = 0; i < n; ++i) assert(mix[i] == int16_t((int32_t(L[i]) + R[i]) >> 1));
+        // 2.7.0+: the stereo extension after it gives both channels (a mono sample in both).
+        assert(!dspemu::stereoExtension(share, dspemu::providerHasStereo("OtisLab", "2.6.0")));
+        auto* ext = dspemu::stereoExtension(share, dspemu::providerHasStereo("OtisLab", "2.7.0")); assert(ext);
+        uint32_t channels = 0; std::vector<int16_t> l(n), rr(n);
+        assert(ext->copyStereo(share->context, l.data(), rr.data(), n, &r, &got, &channels) == n);
+        assert(channels == 2 && l == L && rr == R && got == share->revision(share->context));
+        auto* monoShare = static_cast<const dspemu::SampleShareV1*>(old->rightExpander.producerMessage);
+        auto* monoExt = dspemu::stereoExtension(monoShare, true); assert(monoExt);
+        assert(monoExt->copyStereo(monoShare->context, l.data(), rr.data(), n, &r, &got, &channels) == L.size());
+        assert(channels == 1 && l == L && rr == L);
     }
 
     // Recording: AUDIO R patched when the take starts makes it stereo; unpatched, it stays mono.
@@ -100,5 +110,5 @@ int main() {
     }
     st.reset(); ml.reset(); mr.reset(); old.reset();
     std::cout << "PASS: stereo patch data round trip, L/R equal per-channel mono modules for 1 s, old patches stay mono, "
-                 "mono mix for Vastish, stereo take from AUDIO R\n";
+                 "mono mix and stereo extension for Vastish, stereo take from AUDIO R\n";
 }

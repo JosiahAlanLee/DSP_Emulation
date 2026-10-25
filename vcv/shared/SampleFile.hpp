@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Mono 16-bit sample loading and patch serialization shared by the repo's Rack
-// plugins. No Rack headers; usable from engine tests.
+// 16-bit sample loading (mono, or stereo on request) and patch serialization shared by
+// the repo's Rack plugins. No Rack headers; usable from engine tests.
 #pragma once
 #include <algorithm>
 #include <cmath>
@@ -13,12 +13,15 @@
 
 namespace dspemu {
 
-struct MonoSample {
-    std::vector<int16_t> pcm;
+struct PcmSample {
+    std::vector<int16_t> pcm;    // mono, or a stereo sample's left channel
+    std::vector<int16_t> right;  // a stereo sample's right channel; empty for mono
     double rate = 0;
     std::string name;
     bool truncated = false;
+    bool stereo() const { return !right.empty(); }
 };
+using MonoSample = PcmSample;  // the name before stereo
 
 inline uint16_t le16(const uint8_t* p) { return uint16_t(p[0] | (p[1] << 8)); }
 inline uint32_t le32(const uint8_t* p) { return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24); }
@@ -33,9 +36,10 @@ inline std::string baseName(const std::string& path) {
     return path.substr(slash == std::string::npos ? 0 : slash + 1);
 }
 
-// Reads PCM 8/16/24/32-bit or float 32/64 WAV (including WAVE_FORMAT_EXTENSIBLE),
-// averages channels to mono and keeps at most maxFrames frames.
-inline MonoSample loadWavMono(const std::string& path, size_t maxFrames) {
+// Reads PCM 8/16/24/32-bit or float 32/64 WAV (including WAVE_FORMAT_EXTENSIBLE) and keeps
+// at most maxFrames frames. With keepStereo a two-channel file keeps both channels; otherwise
+// channels are averaged to mono.
+inline PcmSample loadWav(const std::string& path, size_t maxFrames, bool keepStereo) {
     std::ifstream f(path, std::ios::binary);
     if (!f) throw std::runtime_error("Cannot open WAV");
     uint8_t header[12];
@@ -76,8 +80,10 @@ inline MonoSample loadWavMono(const std::string& path, size_t maxFrames) {
     if (align != channels * word || dataBytes % align) throw std::runtime_error("Invalid WAV frame alignment");
     size_t allFrames = dataBytes / align, frames = std::min(allFrames, maxFrames);
     if (frames < 2) throw std::runtime_error("WAV needs at least two samples");
-    MonoSample out;
+    const bool stereo = keepStereo && channels == 2;
+    PcmSample out;
     out.rate = rate; out.truncated = frames < allFrames; out.name = baseName(path); out.pcm.resize(frames);
+    if (stereo) out.right.resize(frames);
     f.clear(); f.seekg(dataPosition);
     std::vector<uint8_t> frame(align);
     for (size_t i = 0; i < frames; i++) {
@@ -93,12 +99,14 @@ inline MonoSample loadWavMono(const std::string& path, size_t maxFrames) {
             else if (bits == 16) x = int16_t(le16(p)) / 32768.0;
             else if (bits == 24) { int32_t v = p[0] | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16); if (v & 0x800000) v -= 0x1000000; x = v / 8388608.0; }
             else x = int32_t(le32(p)) / 2147483648.0;
-            if (std::isfinite(x)) sum += x;
+            if (stereo) (c ? out.right : out.pcm)[i] = toPcm16(std::isfinite(x) ? x : 0.0);
+            else if (std::isfinite(x)) sum += x;
         }
-        out.pcm[i] = toPcm16(sum / channels);
+        if (!stereo) out.pcm[i] = toPcm16(sum / channels);
     }
     return out;
 }
+inline PcmSample loadWavMono(const std::string& path, size_t maxFrames) { return loadWav(path, maxFrames, false); }
 
 // Base64 of little-endian int16 PCM, for storing a sample inside a Rack patch.
 inline std::string encodePcm16(const int16_t* pcm, size_t frames) {

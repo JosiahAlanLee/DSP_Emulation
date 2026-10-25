@@ -1,5 +1,9 @@
 # OTIS change history
 
+## 2.7.0
+
+Stereo sample links. Captures from Spoon Bender 2.2.0+ import as stereo samples, and Vastish 2.4.0+ follows stereo samples in stereo, through a stereo extension placed after the existing share (older readers still see the mono mix). **Import Spoon Bender captures as mono (twice as long)**, saved with the patch, imports the mix instead. A capture longer than stereo memory is truncated and marked.
+
 ## 2.6.0
 
 Added stereo samples. Each Rack voice plays a stereo sample as a linked pair of chip voices with the same registers, one per channel, so L and R stay sample-locked and each equals a mono playback of its channel. A stereo sample holds half the memory per channel and gets half the voices (8, 7 or 4 by clock mode).

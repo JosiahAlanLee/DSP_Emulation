@@ -135,18 +135,20 @@ The output channel count of the modulation ports follows pitch/gate polyphony, w
 
 Choose **Load sample WAV…** from the right-click menu. Loading succeeds before the PITCH selector switches to SAMPLE.
 
-- PCM 8/16/24/32-bit and float 32/64-bit WAV files are supported.
-- Multiple channels are averaged to mono and stored as 16-bit audio.
-- Capacity is 2,097,152 frames, about 43.7 seconds at 48 kHz. Longer files are truncated.
+- PCM 8/16/24/32-bit and float 32/64-bit WAV files are supported, stored as 16-bit audio.
+- A two-channel file loads as a stereo sample. **Load sample WAV as mono…** averages it instead; other channel counts are always averaged to mono.
+- Capacity is 2,097,152 frames per channel, about 43.7 seconds at 48 kHz. Longer files are truncated.
 - At the normal PITCH settings (ADJUST 60, KEY 1), 0 V plays the recording at its original pitch. There is no automatic tuning analysis.
 - A gate restarts the sample. Enable **Loop sample** for a whole-sample forward loop.
 - Sample playback uses four-point Hermite interpolation.
+
+A stereo sample plays each channel through its own copy of the three DSP blocks, with the same settings and modulation, so the two sides stay identical in everything but their source. PAN acts as a balance control: centred, each side plays at the level a centred mono sample has on that side. A stereo sample with identical channels sounds exactly like the mono sample. The second set of blocks runs only while a stereo sample is sounding, and it roughly doubles the DSP work for those voices. The PITCH selector shows **ST** before a stereo sample's name.
 
 Loading or clearing a sample disables the OTIS follow link. **Clear sample** removes the sample; it does not select another waveform.
 
 ### Follow OTIS
 
-Place Vastish immediately to the right of OTIS and enable **Follow OTIS on the left**. The PITCH wave switches to SAMPLE. Completed recordings, file loads and REWORK results in OTIS update Vastish's source sample.
+Place Vastish immediately to the right of OTIS and enable **Follow OTIS on the left**. The PITCH wave switches to SAMPLE. Completed recordings, file loads and REWORK results in OTIS update Vastish's source sample. OTIS 2.7 and later share a stereo sample in stereo; an older OTIS shares a mono mix.
 
 The link transfers **the entire stored sample**, with its rate. OTIS's playback window, pitch, filters, clock and reverse setting are not transferred. To include those treatments, record OTIS's audible output as a new take before sharing it.
 
@@ -154,7 +156,7 @@ The Rack UI must be running to copy updates. If OTIS is moved away, Vastish reta
 
 ## Saving and troubleshooting
 
-Rack patches save parameter edits, the loaded sample, loop setting and follow setting. The sample is embedded, so the original WAV path is not needed. Export audio from OTIS if you also want a separate WAV.
+Rack patches save parameter edits, the loaded sample (both channels of a stereo sample; Vastish before 2.4 opens it with the left channel only), loop setting and follow setting. The sample is embedded, so the original WAV path is not needed. Export audio from OTIS if you also want a separate WAV.
 
 | Symptom | Action |
 |---|---|
