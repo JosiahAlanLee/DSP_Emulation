@@ -27,9 +27,9 @@ jobs:
           make -j2 RACK_DIR=/tmp/Rack-SDK
           make -C tests test
           make -C tests bus-check RACK_DIR=/tmp/Rack-SDK
-          make -C tests bus-sanitize RACK_DIR=/tmp/Rack-SDK
           # Newer runner kernels use more mmap randomness than GCC 11's sanitizers expect.
           sudo sysctl -w vm.mmap_rnd_bits=28
+          make -C tests bus-sanitize RACK_DIR=/tmp/Rack-SDK
           make -C tests sanitize
           make -C tests window-sanitize
           make -C tests thread-sanitize
