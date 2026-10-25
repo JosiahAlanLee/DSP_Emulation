@@ -21,7 +21,7 @@ For a simple editing starting point, choose INIT: a saw waveform with the DSP bl
 
 ## Routing and DSP blocks
 
-The PITCH column supplies SAW, PULSE, TRI, COSINE, NOISE or SAMPLE. **PW** changes the pulse width when PULSE is selected.
+The PITCH column supplies SAW, PULSE, TRI, COSINE, NOISE, SAMPLE or BUS. **PW** changes the pulse width when PULSE is selected. BUS reads BUS A and uses PITCH as phase rotation, described below.
 
 The algorithm selector above F1–F3 controls their connections. P means the source waveform. These are signal paths; internal mixes use fixed level factors rather than always summing at unity.
 
@@ -82,6 +82,9 @@ For example, a PITCH ADJUST of 60 and KEY of 1 follows the incoming pitch normal
 | KEYNUM | Current note number divided by 127. This differs from KEY's offset from note 60. |
 | RAND | A bipolar random value selected at note onset. |
 | AUX1–AUX4 | External CV mapped from ±10 V to ±1 and clamped to that range. |
+| BUS A, BUS B | The held byte as bipolar (n−128)/128, shared by all voices; zero when unconnected. |
+| LANE A, LANE B | Bit v of the held byte as 0 or 1 in voice v. Short cables do not broadcast. |
+| ONE | Constant 1, without a gate. |
 
 ## Envelopes, LFOs and FUNs
 
@@ -104,6 +107,12 @@ Each FUN selects A, B and an equation:
 
 A FUN may use another FUN as an input, in either numerical order. Recursive connections do not create a feedback delay: the edge that closes a cycle reads zero. Avoid cycles when you want a predictable mathematical result.
 
+Each FUN has an optional **BIT normalization** setting in the context menu.
+It changes a finite positive result to 1 and every other result to 0 before
+another FUN reads it. Enable it when composing Boolean operations: A+B then
+acts as OR without passing the value 2 into the next operation. Numeric is the
+default. Loading a starting program resets these flags to Numeric.
+
 ### Patch idea: an LFO shaped by an envelope
 
 Set FUN1 A to LFO1, B to ENV2, and EQ to A*B. Select FUN1 as a modulation source, or patch its output to another module through an attenuator. The envelope controls how much LFO movement reaches the destination.
@@ -119,6 +128,7 @@ When sending polyphonic FUN output to a monophonic destination, select or combin
 | VEL | 0–10 V, clamped; sampled on gate rise. Unpatched is maximum velocity. |
 | MOD | 0–10 V, clamped; feeds MWHEEL. |
 | AUX 1–4 | Bipolar per-voice control sources. ±10 V gives ±1; mono cables broadcast. |
+| BUS A, BUS B | One byte each, LSB first, optional clock on channel 9; each input holds its own clocked word. |
 
 Pitch and gate channel counts determine the number of voices, up to eight. A mono input broadcasts across the other cable's polyphony. VEL, MOD and AUX do not establish additional voices on their own. Pitch updates while the gate is high and holds its last value during release.
 
@@ -128,8 +138,40 @@ Pitch and gate channel counts determine the number of voices, up to eight. A mon
 | AMP, ENV2, ENV3 | Per-voice envelopes, 0–10 V. |
 | LFO1, LFO2 | Per-voice LFOs, generally −10 to +10 V. |
 | FUN1–FUN4 | Per-voice result multiplied by 10 V. Sums can exceed ±10 V. |
+| BUS OUT | Selected numeric word or eight positive-value bit lanes; optional forwarded primary clock. |
 
-The output channel count of the modulation ports follows pitch/gate polyphony, with at least one channel. Use **MASTER** to control the final audio level. Several voices or high-gain DSP settings can exceed nominal audio levels.
+The modulation ports follow pitch/gate polyphony, with at least one channel.
+Connecting either bus, or choosing BUS OUT LANES, runs all eight control lanes
+and emits eight modulation channels, including sleeping voices. This does not
+open their amplitude envelopes. Use **MASTER** to control the final audio level.
+Several voices or high-gain DSP settings can exceed nominal audio levels.
+
+## Byte processing
+
+Choose **BUS** in the PITCH selector and patch BUS A. For identity, use INIT,
+KEY 0 and ADJUST 60. Add F1 SHAPER at ADJUST 2 for a sine transform. In BUS
+mode PITCH rotates the input: 12 semitones (1 V through KEY 1) is a full turn;
+66 is a half turn. The chain runs continuously, including filters and delays,
+while upstream bytes hold. The pre-amp DSP tap works without gates; L/R still
+need an envelope.
+
+In the context menu, **BUS OUT mode** selects WORD, LANES or Neutral and
+**BUS OUT source** selects a modulation source, DSP or MIX. WORD uses voice 1;
+DSP is its left chain before AMP, pan, MASTER and DC blocking. MIX is the
+post-output stereo average. A source's +/-1 fills the byte range, although the
+ordinary FUN jacks use +/-10 V. LANES sets bit v when voice v's selected value
+is finite and positive; selecting DSP explicitly runs all eight chains.
+
+BUS A owns the output clock when connected, otherwise BUS B. With a clocked
+primary the output word, including control edits, holds between edges.
+Unclocked output has eight channels. Neutral emits 80 on eight channels: zero
+bipolar signal, with bit 7 high. Disconnect the cable to remove lane activity.
+Loading a program preserves BUS OUT mode/source. The [full contract](../BUS_SPEC.md)
+details timing and source meanings.
+
+For byte-wide XOR, select FUN1 A=LANE A, B=LANE B, EQ=ABS(A−B), then BUS OUT
+LANES/FUN1. Both bit inputs now work without an eight-channel pitch cable or
+any gates. For ordinary audio/CV, use ByteBusLab's Converter on either side.
 
 ## Use a sample
 

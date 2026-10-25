@@ -2,6 +2,7 @@
 #include "engine/Engine.hpp"
 #include "../../shared/SampleFile.hpp"
 #include "../../shared/SampleShare.hpp"
+#include "../../shared/ByteBus.hpp"
 #include <osdialog.h>
 #include <atomic>
 #include <cctype>
@@ -18,12 +19,14 @@ struct SampleSlot {
 using namespace vastish;
 struct Vastish : Module {
     // AUX and FUN3/4 are appended so existing patches keep their cable ids.
-    enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, AUX1_IN, AUX2_IN, AUX3_IN, AUX4_IN, INPUTS };
-    enum { LEFT_OUT, RIGHT_OUT, AMP_OUT, ENV2_OUT, ENV3_OUT, LFO1_OUT, LFO2_OUT, FUN1_OUT, FUN2_OUT, FUN3_OUT, FUN4_OUT, OUTPUTS };
+    enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, AUX1_IN, AUX2_IN, AUX3_IN, AUX4_IN, BUS_A_IN, BUS_B_IN, INPUTS };
+    enum { LEFT_OUT, RIGHT_OUT, AMP_OUT, ENV2_OUT, ENV3_OUT, LFO1_OUT, LFO2_OUT, FUN1_OUT, FUN2_OUT, FUN3_OUT, FUN4_OUT, BUS_OUT, OUTPUTS };
     enum { GATE_LIGHT, FAULT_LIGHT, LIGHTS };
     vastish::Engine engine;
     dsp::SchmittTrigger triggers[8];
     std::array<VoiceInput,8> in{};
+    dspemu::bus::Reader busA,busB; dspemu::bus::Writer busWriter;
+    uint8_t heldBusWord=128;
     std::atomic<int> requestedProgram{-1}, displayedProgram{1};
     std::atomic<bool> requestedPanic{false};
     // Sample handoff (SAMPLE pitch wave). The UI thread publishes into pendingSample;
@@ -126,12 +129,16 @@ struct Vastish : Module {
         configInput(VEL_IN,"Velocity, 0–10 V (latched on gate rise)");
         configInput(MOD_IN,"Mod wheel, 0–10 V");
         for(int k=0;k<4;++k) configInput(AUX1_IN+k,string::f("AUX %d, ±10 V = ±1 source, one value per voice",k+1));
+        configInput(BUS_A_IN,"Byte bus A; optional CLK on channel 9 (primary clock)");
+        configInput(BUS_B_IN,"Byte bus B; optional CLK on channel 9");
         const char* outNames[]={"Left audio","Right audio","Amp envelope","Envelope 2","Envelope 3","LFO 1","LFO 2","FUN 1","FUN 2","FUN 3","FUN 4"};
-        for(int i=0;i<Vastish::OUTPUTS;++i) configOutput(i,outNames[i]);
+        for(int i=0;i<=FUN4_OUT;++i) configOutput(i,outNames[i]);
+        configOutput(BUS_OUT,"Selected word or eight logical lanes; primary bus clock forwarded");
     }
     void onSampleRateChange(const SampleRateChangeEvent& e) override { engine.prepare(e.sampleRate); }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e); engine.panic(); for(auto& t:triggers) t.reset(); in={}; displayedProgram=1;
+        busA.reset(); busB.reset(); heldBusWord=128;
     }
     void process(const ProcessArgs& args) override {
         if(requestedPanic.exchange(false)) {
@@ -140,12 +147,19 @@ struct Vastish : Module {
             for(int i=0;i<8;++i) in[i].gate=false;
         }
         int pg=requestedProgram.exchange(-1);
-        if(pg>=0 && pg<6) { for(int i=0;i<PARAM_COUNT;++i) params[i].setValue(programs()[pg][i]); displayedProgram=pg; }
+        if(pg>=0 && pg<6) {
+            for(int i=0;i<ORIGINAL_PARAM_COUNT;++i) params[i].setValue(programs()[pg][i]);
+            for(int f=0;f<FUN_COUNT;++f) params[FUN1_BIT+f].setValue(0);
+            displayedProgram=pg;
+        }
         Parameters p;
         for(int i=0;i<PARAM_COUNT;++i) {
             float x=params[i].getValue(); p[i]=std::isfinite(x)?vastish::clamp(x,metadata()[i].lo,metadata()[i].hi):programs()[0][i];
         }
         int channels=std::min(8,std::max(inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels()));
+        auto a=busA.process(inputs[BUS_A_IN]), b=busB.process(inputs[BUS_B_IN]);
+        bool lanes=choice(p[BUS_OUT_MODE],2)==2;
+        bool controlAll=a.connected || b.connected || lanes;
         bool active=false;
         for(int i=0;i<8;++i) {
             auto voltage=[&](int port) {
@@ -162,6 +176,11 @@ struct Vastish : Module {
             }
             // AUX: per voice from a poly cable; a mono cable reaches every voice.
             for(int k=0;k<4;++k) in[i].aux[k]=vastish::clamp(voltage(AUX1_IN+k)*.1f,-1,1);
+            in[i].busAConnected=a.connected;
+            in[i].busA=a.connected ? dspemu::bus::bipolar(a.word) : 0.f;
+            in[i].busB=b.connected ? dspemu::bus::bipolar(b.word) : 0.f;
+            in[i].laneA=a.connected && (a.word&(1<<i)) ? 1.f : 0.f;
+            in[i].laneB=b.connected && (b.word&(1<<i)) ? 1.f : 0.f;
             if(!triggers[i].isHigh()) in[i].gate=false;
             active|=in[i].gate;
         }
@@ -171,13 +190,29 @@ struct Vastish : Module {
                 liveSample=s;
             }
         SampleView view; if(liveSample) { view=liveSample->view; view.loop=sampleLoop.load(std::memory_order_relaxed); }
-        auto y=engine.tick(p,in,std::max(1,channels),liveSample ? &view : nullptr);
+        int selected=choice(p[BUS_OUT_SOURCE],BUS_SOURCE_MIX);
+        auto y=engine.tick(p,in,std::max(1,channels),liveSample ? &view : nullptr,controlAll,lanes && selected==BUS_SOURCE_DSP);
         outputs[LEFT_OUT].setVoltage(y[0]*5); outputs[RIGHT_OUT].setVoltage(y[1]*5);
         const int source[]={SRC_AMPENV,1,2,3,4,SRC_FUN1,SRC_FUN2,SRC_FUN3,SRC_FUN4};
-        int n=std::max(1,channels);
-        for(int o=AMP_OUT;o<OUTPUTS;++o) {
+        int n=controlAll ? 8 : std::max(1,channels);
+        for(int o=AMP_OUT;o<=FUN4_OUT;++o) {
             outputs[o].setChannels(n);
             for(int i=0;i<n;++i) outputs[o].setVoltage(engine.voices[i].sources[source[o-AMP_OUT]]*10,i);
+        }
+        auto value=[&](int voice) {
+            return selected==BUS_SOURCE_DSP ? engine.voices[voice].tap : selected==BUS_SOURCE_MIX ?
+                (y[0]+y[1])*.5f : engine.voices[voice].sources[selected];
+        };
+        const auto& primary=a.connected ? a : b;
+        if(choice(p[BUS_OUT_MODE],2)==0) {
+            heldBusWord=128; busWriter.write(outputs[BUS_OUT],heldBusWord,false,false);
+        } else {
+            if(!primary.clocked || primary.updated) {
+                heldBusWord=0;
+                if(lanes) { for(int i=0;i<8;++i) if(positiveBit(value(i))) heldBusWord|=uint8_t(1<<i); }
+                else heldBusWord=dspemu::bus::fromBipolar(value(0));
+            }
+            busWriter.write(outputs[BUS_OUT],heldBusWord,primary.clocked,primary.clk);
         }
         lights[GATE_LIGHT].setBrightness(active?1:0);
         lights[FAULT_LIGHT].setBrightness(engine.faults?1:0);
@@ -242,7 +277,7 @@ struct Selector : app::ParamWidget {
         // The SAMPLE wave shows which sample is loaded: a short name, marked with an
         // arrow when it comes from OTIS on the left, truncated rather than shrunk.
         bool sampleName=false;
-        if(q && q->paramId==PITCH_WAVE && choice(q->getValue(),SAMPLE_WAVE)==SAMPLE_WAVE)
+        if(q && q->paramId==PITCH_WAVE && choice(q->getValue(),BUS_WAVE)==SAMPLE_WAVE)
             if(auto* v=dynamic_cast<Vastish*>(module)) { value=v->sampleShortLabel(); sampleName=true; }
         if(sampleName) {
             nvgFontSize(args.vg,9);
@@ -316,7 +351,10 @@ struct VastishWidget : ModuleWidget {
             select(funBase(f)+k,610+f*50,252+k*24,47); // clears the output labels at y=331
         for(int i=0;i<Vastish::AUX1_IN;++i) addInput(createInputCentered<PJ301MPort>(Vec(30+i*48,348),m,i));
         for(int k=0;k<4;++k) addInput(createInputCentered<PJ301MPort>(Vec(780,92+40*k),m,Vastish::AUX1_IN+k));
-        for(int i=0;i<Vastish::OUTPUTS;++i) addOutput(createOutputCentered<PJ301MPort>(Vec(245+i*40,348),m,i));
+        for(int i=0;i<=Vastish::FUN4_OUT;++i) addOutput(createOutputCentered<PJ301MPort>(Vec(245+i*40,348),m,i));
+        addInput(createInputCentered<PJ301MPort>(Vec(705,348),m,Vastish::BUS_A_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(755,348),m,Vastish::BUS_B_IN));
+        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(805,348),m,Vastish::BUS_OUT));
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(180,14),m,Vastish::GATE_LIGHT));
         addChild(createLightCentered<SmallLight<RedLight>>(Vec(180,27),m,Vastish::FAULT_LIGHT));
     }
@@ -340,6 +378,15 @@ struct VastishWidget : ModuleWidget {
             for(int k=0;k<6;++k) child->addChild(createMenuItem(programNames[k],"",[m,k]{m->requestedProgram=k;}));
         }));
         menu->addChild(createMenuItem("Panic / silence held gates","",[m]{m->requestedPanic=true;}));
+        for(int param:{BUS_OUT_MODE,BUS_OUT_SOURCE}) menu->addChild(createSubmenuItem(param==BUS_OUT_MODE ? "BUS OUT mode" : "BUS OUT source","",[m,param](Menu* child) {
+            const auto& info=metadata()[param];
+            for(size_t k=0;k<info.options.size();++k) child->addChild(createCheckMenuItem(info.options[k],"",
+                [m,param,k]{return choice(m->params[param].getValue(),int(metadata()[param].hi))==int(k);},
+                [m,param,k]{m->params[param].setValue(float(k));}));
+        }));
+        for(int f=0;f<FUN_COUNT;++f) menu->addChild(createCheckMenuItem(string::f("FUN %d BIT normalization",f+1),"",
+            [m,f]{return m->params[FUN1_BIT+f].getValue()>=.5f;},
+            [m,f]{m->params[FUN1_BIT+f].setValue(m->params[FUN1_BIT+f].getValue()<.5f ? 1.f : 0.f);}));
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Sample: "+m->sampleLabel()));
         if(!m->sampleError.empty()) menu->addChild(createMenuLabel("Error: "+m->sampleError));

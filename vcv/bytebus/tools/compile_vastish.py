@@ -64,6 +64,8 @@ def main():
     args = parser.parse_args()
     try:
         describe = json.loads(subprocess.check_output([str(args.backend),"--describe"],text=True))
+        if describe["parameter_count"] < 86 or describe["source_count"] < 23:
+            raise ValueError("Backend predates Vastish 2.5; rebuild with: make -C vcv/bytebus/tools")
         source = read_document(args.input)
         if "modules" in source:
             candidates = [m for m in source["modules"] if m.get("model") == "Vastish" and m.get("plugin") == "VastishLab"]
@@ -86,17 +88,21 @@ def main():
                 if type(key) is not int or key < 0 or key >= count or key in seen:
                     raise ValueError("Invalid, duplicate or unsupported parameter id")
                 params[key] = entry["value"]; seen.add(key)
-        elif isinstance(supplied,list) and len(supplied) == count:
-            params = supplied
+        elif isinstance(supplied,list) and len(supplied) in (80,count):
+            params[:len(supplied)] = supplied
         elif supplied or not isinstance(supplied,list):
             raise ValueError("params must be Rack id/value entries or a complete parameter array")
         frozen = source.get("frozen",{})
         note = args.note if args.note is not None else frozen.get("note",60)
         velocity = args.velocity if args.velocity is not None else frozen.get("velocity",1)
         sources = frozen.get("sources",[0]*describe["source_count"])
+        if isinstance(sources,list) and len(sources)==18:
+            sources = sources + [0]*(describe["source_count"]-18)
         values = [note,velocity,*params,*sources]
         if len(sources) != describe["source_count"] or any(type(v) not in (int,float) or not math.isfinite(v) for v in values):
             raise ValueError("Frozen values must be finite numbers with the declared source count")
+        sources[22] = 1  # ONE is an unconditional native constant.
+        values = [note,velocity,*params,*sources]
         request = " ".join(format(v,".9g") for v in values).encode()
         result = subprocess.run([str(args.backend)],input=request,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
         if result.returncode:
@@ -107,7 +113,7 @@ def main():
         document = {
             "format":"ByteBusLab.LookupTable","version":1,"name":args.name or args.input.stem,
             "hash":fnv(table),"sha256":hashlib.sha256(table).hexdigest(),"values":list(table),
-            "source":{"kind":"Vastish.memoryless","compiler":"compile_vastish v1","algorithm":"phase rotation then F1-F3, before amp/master/pan",
+            "source":{"kind":"Vastish.memoryless","compiler":"compile_vastish v2","algorithm":"phase rotation then F1-F3, before amp/master/pan",
                       "params":params,"frozen":{"note":note,"velocity":velocity,"sources":sources}},
         }
         # Write only after a successful compile. A rejected patch leaves output untouched.

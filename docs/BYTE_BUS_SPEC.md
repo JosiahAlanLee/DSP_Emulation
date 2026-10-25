@@ -242,18 +242,18 @@ Each module's manual states:
 
 | Role (hardware counterpart, reference only) | Kind | Here |
 |---|---|---|
-| Converter: ADC in, DAC out (Drezno II) | transparent; sample-and-hold when clocked | Vastish covers both directions for its own signals. A small standalone converter (gain/offset per side, ±5/±10 V) is the first new module |
-| Bit logic: invert, toggle, AND mask (Lipsk, Gera) | transparent | Covered by Vastish lanes + FUN: AND, OR, XOR, AND-NOT, NOT |
-| Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent; optional explicit ramp follower | **Lookup** in [`vcv/bytebus`](../vcv/bytebus): six original generated families and original Vastish table import; [contract](../vcv/bytebus/docs/LOOKUP.md). Vastish BUS integration remains proposed |
+| Converter: ADC in, DAC out (Drezno II) | transparent; sample-and-hold when clocked | **Converter**, with independent ranges, trims and clock policies; [contract](../vcv/bytebus/docs/CONVERTER.md). Vastish also reads/exports its own signals |
+| Bit logic: invert, toggle, AND mask (Lipsk, Gera) | transparent | Vastish LANE A/B + FUN, with optional per-FUN BIT normalization for composable logic |
+| Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent; optional explicit ramp follower | **Lookup**: original generated families and Vastish/OTIS table import; [contract](../vcv/bytebus/docs/LOOKUP.md). **Vastish BUS**: gate-free pre-amp DSP and stateful transforms; [contract](../vcv/vastish/BUS_SPEC.md) |
 | Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**, new build |
 | Single-word register | latching, clock source selectable | **Clocked Register**, prototype in [`vcv/bytebus`](../vcv/bytebus) |
 | Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
 | Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**, new build; partly Merge/Split plus a poly switch today |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
 
-Implemented prototypes: `ByteBus.hpp`, Clocked Register, Lookup and the
-memoryless Vastish table compiler. Remaining order: Vastish bus integration →
-Converter → Pipeline → Counter → Switch.
+Implemented prototypes: `ByteBus.hpp`, Clocked Register, Lookup, Converter,
+Vastish bus I/O with optional normalized FUNs, OTIS frame control/export and
+the memoryless Vastish table compiler. Remaining order: Pipeline → Counter → Switch.
 
 ## 11. Decisions to ratify
 

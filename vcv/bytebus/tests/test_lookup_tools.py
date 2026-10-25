@@ -55,8 +55,9 @@ class Tools(unittest.TestCase):
         table = self.run_compile(self.write("sine.json",self.recipe))
         self.assertEqual([table["values"][n] for n in (0,64,128,192)],[128,0,128,255])
         self.assertEqual(table["source"]["kind"],"Vastish.memoryless")
-        self.assertEqual(len(table["source"]["params"]),80)
-        self.assertEqual(len(table["source"]["frozen"]["sources"]),18)
+        self.assertEqual(len(table["source"]["params"]),86)
+        self.assertEqual(len(table["source"]["frozen"]["sources"]),23)
+        self.assertEqual(table["source"]["frozen"]["sources"][22],1)
     def test_stateful_rejection_preserves_output(self):
         bad = copy.deepcopy(self.recipe)
         next(x for x in bad["params"] if x["id"]==46)["value"] = 1
@@ -64,6 +65,23 @@ class Tools(unittest.TestCase):
         result = self.run_compile(self.write("filter.json",bad),False)
         self.assertIn("stateful",result.stderr)
         self.assertEqual((self.work/"out.json").read_text(),"keep")
+    def test_legacy_arrays_and_normalized_fun(self):
+        describe=json.loads(subprocess.check_output([str(ROOT/"tools/compile_vastish_backend"),"--describe"],text=True))
+        params=describe["defaults"][:80]
+        for entry in self.recipe["params"]:
+            params[entry["id"]]=entry["value"]
+        legacy={**self.recipe,"params":params,"frozen":{"sources":[0]*18}}
+        expected=self.run_compile(self.write("legacy.json",legacy))["values"]
+        names=describe["names"]; current=describe["defaults"][:]
+        current[:80]=params
+        for name,value in {"fun1-a":22,"fun1-b":22,"fun1-eq":0,"pitch-s1":5,"pitch-d1":6}.items():
+            current[names.index(name)]=value
+        recipe={**legacy,"params":current}
+        numeric=self.run_compile(self.write("numeric.json",recipe))["values"]
+        self.assertEqual(numeric,expected)  # (ONE+ONE)*6 is a full-cycle rotation.
+        current[names.index("fun1-bit")]=1
+        normalized=self.run_compile(self.write("bits.json",recipe))["values"]
+        self.assertEqual(normalized,expected[128:]+expected[:128])
     def test_validation(self):
         duplicate = copy.deepcopy(self.recipe); duplicate["params"].append({"id":0,"value":1})
         self.assertIn("duplicate",self.run_compile(self.write("duplicate.json",duplicate),False).stderr)

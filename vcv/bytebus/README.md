@@ -1,14 +1,15 @@
 # ByteBusLab
 
-Two modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Three modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
 |---|---|---|
+| **Converter**, 14 HP | Independent ADC/DAC paths, +/-5 or +/-10 V ranges, gain/offset trims and explicit clock policies. | [Converter](docs/CONVERTER.md) |
 | **Clocked Register**, 12 HP | One word of state, selectable clock and reset word; an explicit sampling point for feedback. | [Register](docs/MANUAL.md) |
 | **Lookup**, 16 HP | Six generated waveform/CV/Walsh/rhythm families, numeric morphs, ramp tracking, analog or byte input, and a raw DAC output. Imports original Vastish tables. | [Lookup](docs/LOOKUP.md) |
 
-Plugin **ByteBusLab**, version **2.1.0**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.2.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -26,6 +27,9 @@ Rack tests run Register/Vastish FUN and Register/Lookup feedback with one-sample
 cables, random module order and RESET replay at 44.1/48/96 kHz. Lookup tests also
 check every Walsh shape/seed, rhythm gates, audio bounds and seams, imports,
 tracking, persistence, and compiler parity with the actual Vastish Voice.
+I/O tests also cover calibrated conversions, all 65,536 two-byte XOR pairs,
+gate-free Vastish DSP, and the delayed Converter/Register/Vastish/Lookup/OTIS
+chain. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS 2.8 installed.
 
 The [generator](tools/generate_lookup.py) and per-table manifest ship with the
 source. Regenerate/verify assets with `python3 vcv/bytebus/tools/generate_lookup.py
@@ -34,3 +38,6 @@ Vastish patches and includes an original sine recipe and importable example.
 
 Prototype: not in the release bundles or the VCV Library.
 Hardware clock paths are outside these software tests.
+
+Converter's outlined panel labels use DejaVu Sans; its
+[font license](docs/DEJAVU-LICENSE.txt) accompanies the generated SVG.

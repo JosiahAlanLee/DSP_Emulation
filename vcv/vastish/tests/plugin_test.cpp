@@ -18,7 +18,7 @@ int main() {
     Plugin plugin; plugin.slug="VastishLab"; plugin.version="2.0.0"; init(&plugin); assert(plugin.models.size()==1); rack::plugin::plugins.push_back(&plugin);
     auto model=plugin.models.front(); auto m=std::unique_ptr<engine::Module>(model->createModule()); m->model=model;
     for(auto& out:m->outputs) out.channels=1;
-    assert(m->params.size()==80 && m->inputs.size()==8 && m->outputs.size()==11);
+    assert(m->params.size()==86 && m->inputs.size()==10 && m->outputs.size()==12);
     engine::Module::SampleRateChangeEvent rate; rate.sampleRate=48000; rate.sampleTime=1.f/48000; m->onSampleRateChange(rate);
     engine::Module::ProcessArgs args; args.sampleRate=rate.sampleRate; args.sampleTime=rate.sampleTime;
     for(int i=0;i<100;++i) m->process(args);

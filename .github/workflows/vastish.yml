@@ -29,6 +29,14 @@ jobs:
           step make -C vcv/vastish -j2 RACK_DIR=/tmp/Rack-SDK
           step make -C vcv/vastish/tests -j2 all reference_compare RACK_DIR=/tmp/Rack-SDK PD_DIR=/tmp/pure-data
           step vcv/vastish/tests/engine_test
+          # Preserve the pre-bus mono/stereo audio and original modulation sources.
+          mkdir -p /tmp/vastish-bus-baseline
+          for header in Engine.hpp Dsp.hpp Programs.hpp; do
+            curl --fail --location "https://raw.githubusercontent.com/JosiahAlanLee/DSP_Emulation/2d30d4a9826bba1bcd4d57dd425a422f2be20073/vcv/vastish/src/engine/$header" -o "/tmp/vastish-bus-baseline/$header"
+          done
+          step g++ -std=c++17 -O2 -DVASTISH_ENGINE_HEADER='"/tmp/vastish-bus-baseline/Engine.hpp"' vcv/vastish/tests/legacy_trace.cpp -o /tmp/vastish-before
+          step g++ -std=c++17 -O2 vcv/vastish/tests/legacy_trace.cpp -o /tmp/vastish-after
+          test "$(/tmp/vastish-before)" = "$(/tmp/vastish-after)"
           step bash -c "cd vcv/vastish/tests && ./sample_test"
           step vcv/vastish/tests/adapter_test
           # Cross-plugin OTIS link against OtisLab's compiled binary.
