@@ -171,6 +171,11 @@ Test vectors:
 
 ## 8. Shared header: `vcv/shared/ByteBus.hpp`
 
+OTIS's optional frame selector is specified separately in
+[`vcv/otislab/docs/BYTE_BUS.md`](../vcv/otislab/docs/BYTE_BUS.md). Its bus controls
+frame selection while the native stereo sample engine owns playback timing;
+selected stored frames can also be exported as original Lookup tables.
+
 Header-only, like `SampleShare.hpp`; audio-thread safe; no allocation; the
 pure functions have no Rack dependency so the portable tests can cover them.
 

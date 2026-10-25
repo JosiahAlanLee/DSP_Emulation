@@ -7,10 +7,12 @@
 #include <string>
 
 namespace otis {
-struct Wav { std::vector<int16_t> pcm; double rate=0; bool truncated=false; };
+// A stereo file keeps its channels in pcm (left) and right, each at most stereoFrames long.
+struct Wav { std::vector<int16_t> pcm,right; double rate=0; bool truncated=false; bool stereo=false; };
 inline uint16_t u16(const uint8_t* p) { return uint16_t(p[0])|(uint16_t(p[1])<<8); }
 inline uint32_t u32(const uint8_t* p) { return uint32_t(p[0])|(uint32_t(p[1])<<8)|(uint32_t(p[2])<<16)|(uint32_t(p[3])<<24); }
-inline Wav loadWav(const std::string& path) {
+// Two-channel files load as stereo unless keepStereo is false; other channel counts are averaged to mono.
+inline Wav loadWav(const std::string& path,bool keepStereo=true) {
     std::ifstream f(path,std::ios::binary);
     if(!f) throw std::runtime_error("Cannot open WAV");
     uint8_t header[12]; f.read(reinterpret_cast<char*>(header),12);
@@ -38,8 +40,10 @@ inline Wav loadWav(const std::string& path) {
     if((format!=1 && format!=3) || (format==1 && bits!=8 && bits!=16 && bits!=24 && bits!=32) || (format==3 && bits!=32 && bits!=64)) throw std::runtime_error("Use PCM 8/16/24/32 or float 32/64 WAV");
     size_t word=bits/8;
     if(align != channels*word || dataBytes%align) throw std::runtime_error("Invalid WAV frame alignment");
-    size_t allFrames=dataBytes/align, frames=std::min(allFrames,memoryWords);
-    Wav result; result.rate=rate; result.truncated=frames<allFrames; result.pcm.resize(frames);
+    bool stereo=keepStereo && channels==2;
+    size_t allFrames=dataBytes/align, frames=std::min(allFrames,stereo ? stereoFrames : memoryWords);
+    Wav result; result.rate=rate; result.truncated=frames<allFrames; result.pcm.resize(frames); result.stereo=stereo;
+    if(stereo) result.right.resize(frames);
     f.clear(); f.seekg(dataPosition); std::vector<uint8_t> frame(align);
     for(size_t i=0;i<frames;i++) {
         f.read(reinterpret_cast<char*>(frame.data()),align); if(!f) throw std::runtime_error("Truncated WAV sample data");
@@ -52,19 +56,23 @@ inline Wav loadWav(const std::string& path) {
             else if(bits==16) x=int16_t(u16(p))/32768.0;
             else if(bits==24) { int32_t v=p[0]|(uint32_t(p[1])<<8)|(uint32_t(p[2])<<16); if(v&0x800000) v-=0x1000000; x=v/8388608.0; }
             else x=int32_t(u32(p))/2147483648.0;
-            if(std::isfinite(x)) sum+=x;
+            if(stereo) (c ? result.right : result.pcm)[i]=quantize(float(std::isfinite(x) ? x : 0.0));
+            else if(std::isfinite(x)) sum+=x;
         }
-        result.pcm[i]=quantize(float(sum/channels));
+        if(!stereo) result.pcm[i]=quantize(float(sum/channels));
     }
     if(frames<2) throw std::runtime_error("WAV needs at least two samples");
     return result;
 }
-inline void writeWav(const std::string& path,const int16_t* pcm,size_t frames,double rate) {
+// right: a stereo sample's right channel (writes a two-channel file).
+inline void writeWav(const std::string& path,const int16_t* pcm,size_t frames,double rate,const int16_t* right=nullptr) {
     std::ofstream f(path,std::ios::binary); if(!f) throw std::runtime_error("Cannot write WAV");
     auto put16=[&](uint16_t n){ f.put(char(n)); f.put(char(n>>8)); };
     auto put32=[&](uint32_t n){ put16(uint16_t(n)); put16(uint16_t(n>>16)); };
-    f.write("RIFF",4); put32(uint32_t(36+frames*2)); f.write("WAVEfmt ",8); put32(16); put16(1); put16(1); put32(uint32_t(std::lround(rate))); put32(uint32_t(std::lround(rate))*2); put16(2); put16(16);
-    f.write("data",4); put32(uint32_t(frames*2)); for(size_t i=0;i<frames;i++) put16(uint16_t(pcm[i]));
+    uint16_t channels=right ? 2 : 1; uint32_t bytes=uint32_t(frames*2*channels);
+    f.write("RIFF",4); put32(36+bytes); f.write("WAVEfmt ",8); put32(16); put16(1); put16(channels); put32(uint32_t(std::lround(rate))); put32(uint32_t(std::lround(rate))*2*channels); put16(2*channels); put16(16);
+    f.write("data",4); put32(bytes);
+    for(size_t i=0;i<frames;i++) { put16(uint16_t(pcm[i])); if(right) put16(uint16_t(right[i])); }
     if(!f) throw std::runtime_error("WAV write failed");
 }
 inline std::string encodePcm(const int16_t* pcm,size_t frames) {

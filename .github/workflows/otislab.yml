@@ -1,9 +1,9 @@
 name: OtisLab native Linux
 on:
   push:
-    paths: ['vcv/otislab/**', 'vcv/shared/**', '.github/workflows/otislab.yml']
+    paths: ['vcv/otislab/**', 'vcv/shared/**', 'vcv/bytebus/**', '.github/workflows/otislab.yml']
   pull_request:
-    paths: ['vcv/otislab/**', 'vcv/shared/**', '.github/workflows/otislab.yml']
+    paths: ['vcv/otislab/**', 'vcv/shared/**', 'vcv/bytebus/**', '.github/workflows/otislab.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,8 @@ jobs:
         run: |
           make -j2 RACK_DIR=/tmp/Rack-SDK
           make -C tests test
+          make -C tests bus-check RACK_DIR=/tmp/Rack-SDK
+          make -C tests bus-sanitize RACK_DIR=/tmp/Rack-SDK
           # Newer runner kernels use more mmap randomness than GCC 11's sanitizers expect.
           sudo sysctl -w vm.mmap_rnd_bits=28
           make -C tests sanitize
@@ -42,6 +44,9 @@ jobs:
           g++ -std=c++17 -O2 -pthread -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include tests/window_plugin_test.cpp \
             -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -ldl -Wl,--allow-shlib-undefined -o tests/build/window_plugin_test
           tests/build/window_plugin_test
+          g++ -std=c++17 -O2 -I/tmp/Rack-SDK/include -I/tmp/Rack-SDK/dep/include tests/stereo_plugin_test.cpp \
+            -L/tmp/Rack-SDK -Wl,-rpath,/tmp/Rack-SDK -lRack -ldl -Wl,--allow-shlib-undefined -o tests/build/stereo_plugin_test
+          tests/build/stereo_plugin_test
           # Default host output must still match the 2.2.0 baseline byte for byte.
           curl --fail --location https://raw.githubusercontent.com/JosiahAlanLee/DSP_Emulation/c2c014014046a18f6d318c10e26cc45f4706d06b/vcv/otislab/src/engine/OtisEngine.hpp -o /tmp/otis-baseline.hpp
           g++ -std=c++17 -O2 -pthread -DOTIS_ENGINE_HEADER='"/tmp/otis-baseline.hpp"' tests/legacy_trace.cpp -o tests/build/old_trace
