@@ -1,5 +1,16 @@
 # OTIS change history
 
+## 2.6.0
+
+Added stereo samples. Each Rack voice plays a stereo sample as a linked pair of chip voices with the same registers, one per channel, so L and R stay sample-locked and each equals a mono playback of its channel. A stereo sample holds half the memory per channel and gets half the voices (8, 7 or 4 by clock mode).
+
+- **Load WAV…** keeps two-channel files stereo; **Load WAV as mono…** averages them as before.
+- A new **AUDIO R** input (appended, so existing cable ids are unchanged) makes a take stereo when patched at its start; resampling a stereo sample's own output is stereo too.
+- Export writes stereo WAVs. Patches save the right channel as `pcm16le_r`; earlier versions open them with the left channel.
+- REWORK applies the same grains and one gain to both channels.
+- Vastish receives a mono mix of a stereo sample. Spoon Bender captures remain mono.
+- The mono path is unchanged: the 2.2.0 regression trace, the ES5505 reference comparison and a 300-scenario before/after comparison are identical.
+
 ## 2.5.2
 
 Added the shared panel mark. No DSP changes.

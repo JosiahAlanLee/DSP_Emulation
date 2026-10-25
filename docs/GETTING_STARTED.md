@@ -48,7 +48,7 @@ Configure Rack's Audio module for your output device and start with its monitori
 2. Patch OTIS **L** to an Audio output channel or mixer input.
 3. Press **PLAY**. Change **PITCH**, or set **LOOP** to **FWD** for a repeating sample.
 
-OTIS's L and R outputs carry the same mono signal. A gate or trigger starts playback; the default one-shot behavior lets playback continue after the gate falls.
+OTIS plays a mono sample on both L and R, and a stereo sample (a two-channel WAV, or a take with AUDIO R patched) on L and R separately. A gate or trigger starts playback; the default one-shot behavior lets playback continue after the gate falls.
 
 ### Play Vastish
 
@@ -97,7 +97,7 @@ With follow enabled, a new capture replaces OTIS's current sample, and changes t
 | Link | Transferred | Kept at the destination |
 |---|---|---|
 | Spoon Bender → OTIS | A completed mono, 16-bit recording of Spoon Bender's post-MIX output, with its recorded sample rate. | OTIS's playback controls. The import replaces sample memory and stops its voices. |
-| OTIS → Vastish | OTIS's entire completed mono, 16-bit sample, with its sample rate. | Vastish's routing, envelopes and other synthesis settings. |
+| OTIS → Vastish | OTIS's entire completed 16-bit sample, with its sample rate; a stereo sample as a mono mix. | Vastish's routing, envelopes and other synthesis settings. |
 
 Vastish does not inherit OTIS's selected window, loop points, reverse setting, chip-clock setting or playback filters. To include those sounds, record OTIS's audible output into a new take, or process and capture it through Spoon Bender.
 

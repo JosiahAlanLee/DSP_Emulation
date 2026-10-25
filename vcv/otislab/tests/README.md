@@ -33,6 +33,14 @@ Its concurrent producer/reader checks complete generation consistency across
 All snapshot readers run off the audio thread; processing remains a single-writer
 operation. Module control/import callers retain their existing processing lock.
 
+`stereo_test` checks 2.6.0 stereo samples: in 60 random scenarios across clock modes, filters,
+loops, windows, LAB clock and interpolation, a stereo pair's L and R outputs equal two mono engines
+playing each channel, bit for bit; stereo takes equal two mono takes for every record source; voice
+limits and capacity halve; stereo, mono and three-channel WAV loading; REWORK on both channels,
+directly and through the worker. `stereo_plugin_test.cpp` (build like `plugin_test.cpp`) checks the
+compiled module: stereo patch data round trip, L/R against per-channel mono modules, old patches
+staying mono, the mono mix shared with Vastish and a stereo take from AUDIO R.
+
 `lab_test` covers the 2.2.0 LAB controls (clock, interpolation bits, resample source, per-voice START/END) and runs as part of `make -C tests test`.
 
 

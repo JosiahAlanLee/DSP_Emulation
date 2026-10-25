@@ -11,16 +11,24 @@ inline uint32_t mutationRandom(uint32_t& state) {
 }
 // Off-thread only: circular, randomized grain overlap/add, seam smoothing,
 // then a dry/processed blend. No data outside [begin,end) is changed.
+// rightOffset: a stereo sample's right channel starts there; both channels take the same grains and
+// one gain, so the stereo image is kept.
 inline bool reworkLoop(std::vector<int16_t>& pcm,size_t begin,size_t end,
                        float smoothness,float amount,uint32_t seed,
-                       const std::atomic<bool>* stop=nullptr) {
+                       const std::atomic<bool>* stop=nullptr,size_t rightOffset=0) {
     end=std::min(end,pcm.size());
     if(begin>=end || end-begin<2 || !(amount>0)) return false;
+    if(rightOffset && rightOffset+end>pcm.size()) return false;
     smoothness=std::isfinite(smoothness) ? clamp(smoothness,0.f,1.f) : .5f;
     amount=std::isfinite(amount) ? clamp(amount,0.f,1.f) : 0;
     size_t n=end-begin;
-    std::vector<float> source(n),sum(n,0),weight(n,0),result(n);
-    for(size_t i=0;i<n;++i) source[i]=pcm[begin+i];
+    const int channels=rightOffset ? 2 : 1;
+    const size_t base[2]={begin,rightOffset+begin};
+    std::vector<float> source[2],sum[2],result[2],weight(n,0);
+    for(int c=0;c<channels;++c) {
+        source[c].resize(n); sum[c].assign(n,0); result[c].resize(n);
+        for(size_t i=0;i<n;++i) source[c][i]=pcm[base[c]+i];
+    }
     size_t grain=std::min(n,size_t(std::lround(std::exp2(11-7*smoothness))));
     size_t hop=std::max(size_t(1),grain/4);
     uint32_t rng=seed ? seed : 1;
@@ -30,14 +38,18 @@ inline bool reworkLoop(std::vector<int16_t>& pcm,size_t begin,size_t end,
         for(size_t j=0;j<grain;++j) {
             float w=float(.5-.5*std::cos(2*pi*(j+.5)/grain));
             size_t k=(dest+j)%n;
-            sum[k]+=source[(origin+j)%n]*w; weight[k]+=w;
+            for(int c=0;c<channels;++c) sum[c][k]+=source[c][(origin+j)%n]*w;
+            weight[k]+=w;
         }
     }
-    for(size_t i=0;i<n;++i) result[i]=weight[i]>0 ? sum[i]/weight[i] : source[i];
     size_t seam=std::min(n/2,size_t(8+120*smoothness));
-    for(size_t i=0;i<seam;++i) {
-        float w=float(.5+.5*std::cos(pi*i/seam)), mean=(result[i]+result[n-1-i])*.5f;
-        result[i]+=(mean-result[i])*w; result[n-1-i]+=(mean-result[n-1-i])*w;
+    for(int c=0;c<channels;++c) {
+        auto& r=result[c];
+        for(size_t i=0;i<n;++i) r[i]=weight[i]>0 ? sum[c][i]/weight[i] : source[c][i];
+        for(size_t i=0;i<seam;++i) {
+            float w=float(.5+.5*std::cos(pi*i/seam)), mean=(r[i]+r[n-1-i])*.5f;
+            r[i]+=(mean-r[i])*w; r[n-1-i]+=(mean-r[n-1-i])*w;
+        }
     }
     // Only [begin,end) is rewritten, so taper the change to zero at both edges.
     // Without this the region boundaries jump by up to full scale and click
@@ -54,9 +66,9 @@ inline bool reworkLoop(std::vector<int16_t>& pcm,size_t begin,size_t end,
     // the processed blend m so that out = s + t*(g*m - s) has the source's
     // power: |(1-t)s|^2 + 2g<(1-t)s, t*m> + g^2|t*m|^2 = |s|^2.
     double P=0,A=0,B=0,C=0;
-    for(size_t i=0;i<n;++i) {
-        result[i]=source[i]+amount*(result[i]-source[i]);
-        double s=source[i], dry=(1-taper[i])*s, wet=taper[i]*result[i];
+    for(int c=0;c<channels;++c) for(size_t i=0;i<n;++i) {
+        result[c][i]=source[c][i]+amount*(result[c][i]-source[c][i]);
+        double s=source[c][i], dry=(1-taper[i])*s, wet=taper[i]*result[c][i];
         P+=s*s; A+=dry*dry; B+=dry*wet; C+=wet*wet;
     }
     float gain=1;
@@ -65,10 +77,10 @@ inline bool reworkLoop(std::vector<int16_t>& pcm,size_t begin,size_t end,
         gain=clamp(float((-B+std::sqrt(std::max(0.0,disc)))/C),.25f,4.f);
     }
     bool changed=false;
-    for(size_t i=0;i<n;++i) {
-        float processed=result[i]*gain;
-        int16_t v=int16_t(clamp<long>(std::lround(source[i]+taper[i]*(processed-source[i])),-32768,32767));
-        changed|=v!=pcm[begin+i]; pcm[begin+i]=v;
+    for(int c=0;c<channels;++c) for(size_t i=0;i<n;++i) {
+        float processed=result[c][i]*gain;
+        int16_t v=int16_t(clamp<long>(std::lround(source[c][i]+taper[i]*(processed-source[c][i])),-32768,32767));
+        changed|=v!=pcm[base[c]+i]; pcm[base[c]+i]=v;
     }
     return changed;
 }
@@ -94,12 +106,12 @@ private:
             Request job=requestData;
             state.store(Working,std::memory_order_release);
             try {
-                double rate=0; uint32_t revision=0;
-                engine.snapshot(prepared,rate,revision);
-                if(revision!=job.revision || job.end>prepared.size()) {
+                double rate=0; uint32_t revision=0; size_t frames=0; bool stereo=false;
+                engine.snapshotImage(prepared,rate,revision,frames,stereo);
+                if(revision!=job.revision || job.end>frames) {
                     outcome.store(SourceChanged,std::memory_order_relaxed); state.store(Finished,std::memory_order_release); continue;
                 }
-                bool changed=reworkLoop(prepared,job.begin,job.end,job.smoothness,job.amount,job.seed,&stopping);
+                bool changed=reworkLoop(prepared,job.begin,job.end,job.smoothness,job.amount,job.seed,&stopping,stereo ? stereoOffset : 0);
                 if(!changed) { outcome.store(NoChange,std::memory_order_relaxed); state.store(Finished,std::memory_order_release); continue; }
                 prepared.resize(memoryWords,0); // allocation/reuse occurs on the worker only
                 state.store(Ready,std::memory_order_release);
