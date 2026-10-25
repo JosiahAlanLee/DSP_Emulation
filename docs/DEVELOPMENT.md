@@ -11,7 +11,8 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/otislab | Rack sampler, playback engine, file handling and loop-rework worker. |
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
 | vcv/seance | Rack spectral core and four expanders: portable STFT engine and operations, chain link, modules. |
-| vcv/shared | Sample-file utilities, versioned sample-sharing interface and panel-glyph sources. |
+| vcv/bytebus | Clocked Register prototype, portable state machine and real Rack/Vastish feedback tests. |
+| vcv/shared | Sample-file utilities, versioned sample-sharing interface, byte-bus helpers and panel-glyph sources. |
 
 Build from a complete checkout: plugins include headers from vcv/shared outside their own directories. Generated panels are committed. Regenerating their marks additionally uses the source project described in [the glyph README](../vcv/shared/glyphs/README.md).
 
@@ -113,6 +114,22 @@ vcv/seance/tests/module_test
 ~~~
 
 The portable test checks the FFT against a direct DFT, reconstruction at every frame size, latency, the hand-off protocol under random module order and with a stalled chain, RESET continuity and the four operations. The module test wires a core and four expanders as the engine wires them and steps them in random order. Linux CI also runs both under AddressSanitizer/UndefinedBehaviorSanitizer; see [the workflow](../.github/workflows/seance.yml).
+
+### Byte bus register
+
+~~~sh
+make -C vcv/bytebus/tests test
+make -C vcv/bytebus/tests check RACK_DIR=/absolute/path/to/Rack-SDK
+make -C vcv/bytebus/tests sanitize RACK_DIR=/absolute/path/to/Rack-SDK
+make -C vcv/bytebus dist RACK_DIR=/absolute/path/to/Rack-SDK
+~~~
+
+The portable tests cover the byte carrier, conversions and clock/reset state
+machine. The Rack API test runs an actual Register → Vastish FUN XOR → Register
+loop with one-sample cable delays, random processing order and RESET replay at
+44.1/48/96 kHz. ByteBusLab is built separately and is not in the release bundles.
+See the [contract](BYTE_BUS_SPEC.md), [manual](../vcv/bytebus/docs/MANUAL.md) and
+[workflow](../.github/workflows/bytebus.yml).
 
 ## Implementation scope
 

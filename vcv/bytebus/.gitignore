@@ -1,0 +1,9 @@
+/build/
+/dist/
+/plugin.so
+/plugin.dll
+/plugin.dylib
+/tests/engine_test
+/tests/module_test
+/tests/feedback_test
+/tests/*_asan

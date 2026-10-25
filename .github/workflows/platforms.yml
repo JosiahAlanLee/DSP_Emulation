@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish, spoonbender, seance]
+        plugin: [otislab, vastish, spoonbender, seance, bytebus]
     defaults:
       run:
         shell: msys2 {0}
@@ -47,6 +47,10 @@ jobs:
         if: matrix.plugin == 'seance'
         working-directory: vcv/seance
         run: make -C tests engine_test && tests/engine_test
+      - name: Byte bus register engine tests
+        if: matrix.plugin == 'bytebus'
+        working-directory: vcv/bytebus
+        run: make -C tests test
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |
@@ -69,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish, spoonbender, seance]
+        plugin: [otislab, vastish, spoonbender, seance, bytebus]
         arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +96,10 @@ jobs:
         if: matrix.plugin == 'seance' && matrix.arch == 'arm64'
         working-directory: vcv/seance
         run: make -C tests engine_test CXX=clang++ && tests/engine_test
+      - name: Byte bus register engine tests
+        if: matrix.plugin == 'bytebus' && matrix.arch == 'arm64'
+        working-directory: vcv/bytebus
+        run: make -C tests test CXX=clang++
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |

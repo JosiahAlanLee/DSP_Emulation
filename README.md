@@ -41,6 +41,7 @@ Status: new, built and tested in CI (engine and module tests), not yet run live 
 
 ## Also in this repository
 
+- **[Clocked Register](vcv/bytebus)**, a byte-bus prototype: eight bits of held state, selectable clock source and a reset word, with a tested Vastish FUN feedback patch. Built separately; outside the release bundles.
 - **Gorgon**, the Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio, was developed here as `vcv/gorgon` and now lives in [its own repository](https://github.com/JosiahAlanLee/Gorgon) with its history, alongside the contract it implements. Its gates and pitch were built to drive OTIS and Vastish.
 - [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
 - [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
