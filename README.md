@@ -27,6 +27,18 @@ Install steps and exact file names: **[Getting started](docs/GETTING_STARTED.md)
 
 Status: Linux has been used live in Rack. Windows and macOS builds compile and pass the portable engine tests in CI but nobody has run them inside Rack yet; reports are welcome in [Issues](https://github.com/JosiahAlanLee/DSP_Emulation/issues). The modules aren't in the VCV Library yet.
 
+## Séance: a spectral frame held by a row of modules
+
+[`vcv/seance`](vcv/seance) is a spectral core with four expanders. The core takes a short-time Fourier frame of its input, hands it to whatever Séance expanders sit directly to its right, and resynthesises what comes back: one analysis, one resynthesis, any number of in-place operations between, applied left to right. Nothing spectral travels down a cable; the row holds the frame in common, the way a SuperCollider `PV_` chain or a Pd `block~` subpatch does.
+
+- **Freeze** holds the frame with its phases still turning; **Scramble** moves every partial by a seeded offset, re-pitched coherently; **Cross** lets a second input's spectrum decide the first's levels (vocoding, morphing); **Wipe** is a wall across the spectrum that sweeps under CV.
+- **SEED** and **RESET** make every texture a pure function of the seed and the frame count, so a Gorgon score replays the same frames every time.
+- Latency is the frame size plus 64 samples, fixed, with the dry path delayed to match.
+
+For example: OTIS → Séance (Freeze, Scramble) → Spoon Bender → CAPTURE → OTIS turns destructive loop reworking into resampling through the patch.
+
+Status: new, built and tested in CI (engine and module tests), not yet run live in Rack and not yet part of the release bundles. [Manual](vcv/seance/docs/MANUAL.md).
+
 ## Also in this repository
 
 - **Gorgon**, the Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio, was developed here as `vcv/gorgon` and now lives in [its own repository](https://github.com/JosiahAlanLee/Gorgon) with its history, alongside the contract it implements. Its gates and pitch were built to drive OTIS and Vastish.

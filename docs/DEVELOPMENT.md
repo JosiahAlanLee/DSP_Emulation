@@ -10,6 +10,7 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/vastish | Native C++ Rack synthesizer and portable engine. |
 | vcv/otislab | Rack sampler, playback engine, file handling and loop-rework worker. |
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
+| vcv/seance | Rack spectral core and four expanders: portable STFT engine and operations, chain link, modules. |
 | vcv/shared | Sample-file utilities, versioned sample-sharing interface and panel-glyph sources. |
 
 Build from a complete checkout: plugins include headers from vcv/shared outside their own directories. Generated panels are committed. Regenerating their marks additionally uses the source project described in [the glyph README](../vcv/shared/glyphs/README.md).
@@ -18,7 +19,7 @@ Build from a complete checkout: plugins include headers from vcv/shared outside 
 
 Download the appropriate [Rack SDK](https://vcvrack.com/downloads/) separately. Existing CI uses SDK 2.6.4. The source requires a C++17 compiler and the SDK build tools, including GNU Make, jq, zip and zstd.
 
-From the repository root, substituting otislab or spoonbender for vastish as needed:
+From the repository root, substituting otislab, spoonbender or seance for vastish as needed:
 
 ~~~sh
 make -C vcv/vastish RACK_DIR=/absolute/path/to/Rack-SDK -j2
@@ -102,6 +103,17 @@ vcv/spoonbender/tests/capture_race_test
 
 The last target uses ThreadSanitizer. Linux CI also runs AddressSanitizer/UndefinedBehaviorSanitizer builds and the compiled Spoon Bender-to-OTIS link test. See [the workflow](../.github/workflows/spoonbender.yml) for complete commands.
 
+### Séance
+
+~~~sh
+make -C vcv/seance/tests engine_test
+vcv/seance/tests/engine_test
+make -C vcv/seance/tests module_test RACK_DIR=/absolute/path/to/Rack-SDK
+vcv/seance/tests/module_test
+~~~
+
+The portable test checks the FFT against a direct DFT, reconstruction at every frame size, latency, the hand-off protocol under random module order and with a stalled chain, RESET continuity and the four operations. The module test wires a core and four expanders as the engine wires them and steps them in random order. Linux CI also runs both under AddressSanitizer/UndefinedBehaviorSanitizer; see [the workflow](../.github/workflows/seance.yml).
+
 ## Implementation scope
 
 ### OTIS
@@ -128,6 +140,12 @@ Arithmetic helpers are tested against excerpts from a pinned MAME revision. This
 
 See [SPEC.md](../vcv/spoonbender/SPEC.md) for evidence, freeze treatment and measurements.
 
+### Séance
+
+Original work, not an emulation: the early machines in this repository's remit (EPS/ASR, K2000, DSP4000) were time-domain designs. Analysis and resynthesis use periodic Hann windows on both sides at a quarter-frame hop; the output is divided by the window products actually summed at each sample, so an unmodified frame reconstructs exactly and a restarted grid or a late frame does not break the output. The frame is carried in polar form. Freeze uses the phase-vocoder frequency estimate from the two frames before the hold; Scramble relocates peaks with their lobes and phase-locks them (Laroche and Dolson), which is what keeps a moved partial at its level. Every random decision is a splitmix64 hash of (seed, frame, bin), so replay is exact.
+
+The hand-off is a single token (`FrameV1::stage`) passed with acquire/release atomics; it is correct under Rack's worker threads whatever order the modules are stepped in, and it adds at most one sample per expander, well inside the 64-sample slack that sets the latency.
+
 ## Sample sharing
 
 The [versioned interface](../vcv/shared/SampleShare.hpp) exposes completed PCM, rate, name and revision. Receivers copy on the UI thread and check provider identity and interface version. Physical adjacency is required; audio cables are independent.
@@ -135,6 +153,8 @@ The [versioned interface](../vcv/shared/SampleShare.hpp) exposes completed PCM, 
 - Spoon Bender collects a frozen capture into a shareable slot.
 - OTIS imports it, retains its playback settings and exposes its finished sample on the right.
 - Vastish adopts a copy for SAMPLE. Its handoff keeps sample allocation and disposal off the audio path.
+
+Séance uses the same fixed-pointer idiom for its frame (`vcv/seance/src/Chain.hpp`), but within one plugin binary and on the audio thread, with the frame passed by a token rather than copied. A Séance row and the sample-sharing chain can share a rack but not a position: a Séance module between Spoon Bender and OTIS breaks their adjacency.
 
 OTIS and Vastish embed audio in patches. Spoon Bender saves settings only. Capture history, collected capture slots and live effects tails are not serialized.
 
