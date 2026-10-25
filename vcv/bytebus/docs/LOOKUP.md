@@ -111,7 +111,7 @@ MHz-rate interface. Display/driver/hardware timing is outside the software tests
 
 ## Compile a Vastish table
 
-OTIS 2.7 can also [export its selected stored frame](../../otislab/docs/BYTE_BUS.md)
+OTIS 2.8 can also [export its selected stored frame](../../otislab/docs/BYTE_BUS.md)
 in the same custom-table format. Left, right or mono-mix export lets recordings
 and original REWORK results become Lookup material; load the exported JSON with
 the existing table menu. A later OTIS edit requires another export.

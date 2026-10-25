@@ -1,6 +1,6 @@
 # Validation and limits — 2026-10-14
 
-## 2.7.0 frame bus and table export
+## 2.8.0 frame bus and table export
 
 The [frame-bus contract](BYTE_BUS.md) defines this original extension.
 Portable tests check byte selection over 1–524,160 complete frames, frame tails,

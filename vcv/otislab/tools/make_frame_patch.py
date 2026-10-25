@@ -33,7 +33,7 @@ def patch():
     modules = [
         module(1, 'ByteBusLab', 'ClockedRegister', '2.1.0', [0, 0], [3, 1, 165, 0], {'word': 165}),
         module(2, 'ByteBusLab', 'Lookup', '2.1.0', [12, 0], [3, 32, 0, 0, 0, 0, 0]),
-        module(3, 'OtisLab', 'OtisSampler', '2.7.0', [28, 0],
+        module(3, 'OtisLab', 'OtisSampler', '2.8.0', [28, 0],
                [0, 0, 1, 1, 1, 1, .8, 5, 0, 0, 1, 0, 0, 9, 0, 8, 2, .5, .5, 0],
                dict(schema=1, rate=10000000/336, name='Original eight-frame stereo bank',
                     pcm16le=pcm(0), pcm16le_r=pcm(1), engineMode=0, filterMode=2,

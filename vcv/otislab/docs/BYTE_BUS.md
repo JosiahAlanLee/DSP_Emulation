@@ -1,6 +1,6 @@
 # OTIS frame bus and Lookup authoring
 
-Contract v1, OtisLab 2.7. These are original LAB extensions. The shared
+Contract v1, OtisLab 2.8. These are original LAB extensions. The shared
 [byte-bus protocol](../../../docs/BYTE_BUS_SPEC.md) defines the cable, levels
 and clock. No manufacturer waveform tables or firmware are inputs.
 
