@@ -5,13 +5,13 @@ An eight-voice synthesizer for VCV Rack 2, with six DSP routing algorithms, four
 Developed from this repository's [Pure Data Vastish](https://github.com/JosiahAlanLee/DSP_Emulation/tree/main/pd/vastish) project. Pd is not needed to run the Rack plugin. The instrument uses original programs and no Kurzweil firmware or sample ROM.
 
 - **[User manual](docs/MANUAL.md)** — first sound, controls, patching, saving and troubleshooting.
-- **[Installation and getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md)** — all three modules and their sample-sharing chain.
+- **[Installation and getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md)** — every module, and the sample-sharing chain.
 - **[Development and builds](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/DEVELOPMENT.md)** — SDK setup, tests and source layout.
 - **[Validation](docs/VALIDATION.md)** — reference comparisons and implementation limits.
 
 ## Download and install
 
-1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all three plugins.
+1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all the plugins.
 2. In Rack choose **Help → Open user folder**, then quit Rack.
 3. Copy `VastishLab-2.3.1-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other two as well to use the sample-sharing links.
 4. Start Rack.

@@ -1,8 +1,9 @@
 name: Release bundles
-# Builds OtisLab, VastishLab and SpoonBenderLab for all four platforms and packs one
-# zip per platform. A pushed tag (preview-N or vX.Y.Z), or a manual run with a release
-# name, publishes them as a GitHub pre-release (the manual run creates the tag on the
-# commit it built). A manual run without a name is a dry run: zips as artifacts only.
+# Builds the plugins in PLUGINS (OtisLab, VastishLab, SpoonBenderLab and SeanceLab) for
+# all four platforms and packs one zip per platform. A pushed tag (preview-N or vX.Y.Z),
+# or a manual run with a release name, publishes them as a GitHub pre-release (the manual
+# run creates the tag on the commit it built). A manual run without a name is a dry run:
+# zips as artifacts only.
 on:
   push:
     tags: ['preview-*', 'v*']
@@ -16,6 +17,8 @@ permissions:
   contents: read
 env:
   RACK_SDK_VERSION: 2.6.4
+  # Plugin folders under vcv/ that go into every bundle; tools/bundle.sh reads this too.
+  PLUGINS: otislab vastish spoonbender seance
   TAG: ${{ inputs.release != '' && inputs.release || (github.ref_type == 'tag' && github.ref_name || 'dev') }}
 jobs:
   linux:
@@ -30,10 +33,12 @@ jobs:
       - name: Build and bundle
         run: |
           for f in vcv/*/plugin.json; do v=$(jq -r .version "$f"); case "$v" in 2.*) ;; *) echo "::error::$f version $v must start with 2."; exit 1;; esac; done
-          # The install guide must name this release and every plugin's current version.
-          for p in otislab vastish spoonbender; do f="$(jq -r .slug vcv/$p/plugin.json)-$(jq -r .version vcv/$p/plugin.json)-lin-x64.vcvplugin"; grep -q "$f" docs/GETTING_STARTED.md || { echo "::error::docs/GETTING_STARTED.md does not list $f"; exit 1; }; done
+          # The install guide must name this release and every plugin's current version before
+          # publishing. A dry run only warns, since the guide describes the last published release.
+          for p in $PLUGINS; do f="$(jq -r .slug vcv/$p/plugin.json)-$(jq -r .version vcv/$p/plugin.json)-lin-x64.vcvplugin"; grep -q "$f" docs/GETTING_STARTED.md && continue
+            if [ "$TAG" = dev ]; then echo "::warning::docs/GETTING_STARTED.md does not list $f yet; it must before publishing"; else echo "::error::docs/GETTING_STARTED.md does not list $f"; exit 1; fi; done
           if [ "$TAG" != dev ]; then grep -q "DSP_Emulation-$TAG-Linux-x64.zip" docs/GETTING_STARTED.md || { echo "::error::docs/GETTING_STARTED.md does not name release $TAG"; exit 1; }; fi
-          for p in otislab vastish spoonbender; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
+          for p in $PLUGINS; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
           tools/bundle.sh "$TAG" lin-x64
       - uses: actions/upload-artifact@v4
         with:
@@ -61,9 +66,9 @@ jobs:
           unzip -q /tmp/rack-sdk.zip -d /tmp
       - name: Build and bundle
         run: |
-          for p in otislab vastish spoonbender; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
+          for p in $PLUGINS; do make -C vcv/$p -j2 RACK_DIR=/tmp/Rack-SDK && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK; done
           # The DLLs must not need MinGW runtime DLLs that Rack does not ship.
-          for p in otislab vastish spoonbender; do if objdump -p vcv/$p/plugin.dll | grep -Ei "DLL Name: (libstdc|libgcc|libwinpthread)"; then echo "::error::$p plugin.dll depends on a MinGW runtime DLL"; exit 1; fi; done
+          for p in $PLUGINS; do if objdump -p vcv/$p/plugin.dll | grep -Ei "DLL Name: (libstdc|libgcc|libwinpthread)"; then echo "::error::$p plugin.dll depends on a MinGW runtime DLL"; exit 1; fi; done
           tools/bundle.sh "$TAG" win-x64
       - uses: actions/upload-artifact@v4
         with:
@@ -87,7 +92,7 @@ jobs:
       - name: Build and bundle
         run: |
           if [ "${{ matrix.arch }}" = x64 ]; then CROSS="CROSS_COMPILE=x86_64-apple-darwin"; want=x86_64; else CROSS=""; want=arm64; fi
-          for p in otislab vastish spoonbender; do
+          for p in $PLUGINS; do
             make -C vcv/$p -j3 RACK_DIR=/tmp/Rack-SDK $CROSS && make -C vcv/$p dist RACK_DIR=/tmp/Rack-SDK $CROSS
             test "$(lipo -archs vcv/$p/plugin.dylib)" = "$want"
           done
@@ -115,9 +120,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          versions=$(for p in otislab vastish spoonbender; do printf -- '- %s %s\n' "$(jq -r .slug vcv/$p/plugin.json)" "$(jq -r .version vcv/$p/plugin.json)"; done)
+          versions=$(for p in $PLUGINS; do printf -- '- %s %s\n' "$(jq -r .slug vcv/$p/plugin.json)" "$(jq -r .version vcv/$p/plugin.json)"; done)
           {
-            echo "Preview build of all three modules for VCV Rack 2. Download the zip for your platform; each holds the three .vcvplugin files and an INSTALL.txt."
+            echo "Preview build of OTIS Sampler, Vastish, Spoon Bender and Séance for VCV Rack 2. Download the zip for your platform; each holds every plugin's .vcvplugin file and an INSTALL.txt."
             echo
             echo "| Platform | Download |"
             echo "|---|---|"
@@ -129,7 +134,7 @@ jobs:
             echo "Plugin versions:"
             echo "$versions"
             echo
-            echo "Linux has been used live in Rack. Windows and macOS builds compile and pass the portable engine tests in CI but have not been run inside Rack yet; reports welcome in Issues."
+            echo "OTIS, Vastish and Spoon Bender have been used live in Rack on Linux. Séance has been loaded and run headless in Rack on Linux but not yet played live. Windows and macOS builds compile and pass the portable engine tests in CI but have not been run inside Rack yet; reports welcome in Issues."
             echo
             echo "Install steps: [Getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/$TAG/docs/GETTING_STARTED.md). Manuals are linked from the [README](https://github.com/JosiahAlanLee/DSP_Emulation/blob/$TAG/README.md)."
           } > notes.md

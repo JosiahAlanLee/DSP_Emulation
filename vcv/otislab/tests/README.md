@@ -1,5 +1,23 @@
 # Test reproduction
 
+Frame-bus and Lookup authoring tests (OtisLab 2.7):
+
+```sh
+make -C tests test
+make -C tests bus-check RACK_DIR=/absolute/path/to/Rack-SDK
+make -C tests bus-sanitize RACK_DIR=/absolute/path/to/Rack-SDK
+```
+
+`frame_bus_test` exhausts the byte selector at multiple frame counts, checks
+native stereo crossfades/queued selection without allocations, and verifies
+periodic frame resampling, channel choices, quantization and rejection.
+`frame_bus_module_test` uses the actual Rack adapters: it feeds exported JSON
+through Lookup and patch saving, checks clock holds/CV precedence/short cables,
+and replays RESET through delayed Register/Lookup/OTIS cables in random process
+order at 44.1/48/96 kHz. It also loads the shipped stereo example and verifies
+nonzero, distinct L/R output and the expected frame sequence. The existing
+stereo and mono playback regressions run alongside these additions.
+
 `make -C tests test` builds/runs the portable engine tests. Run from the project
 root. `make -C tests sanitize` also builds and executes ASan/UBSan checks.
 
@@ -32,6 +50,14 @@ Its concurrent producer/reader checks complete generation consistency across
 200 takes. Run `make -C tests thread-sanitize` to exercise it under ThreadSanitizer.
 All snapshot readers run off the audio thread; processing remains a single-writer
 operation. Module control/import callers retain their existing processing lock.
+
+`stereo_test` checks 2.6.0 stereo samples: in 60 random scenarios across clock modes, filters,
+loops, windows, LAB clock and interpolation, a stereo pair's L and R outputs equal two mono engines
+playing each channel, bit for bit; stereo takes equal two mono takes for every record source; voice
+limits and capacity halve; stereo, mono and three-channel WAV loading; REWORK on both channels,
+directly and through the worker. `stereo_plugin_test.cpp` (build like `plugin_test.cpp`) checks the
+compiled module: stereo patch data round trip, L/R against per-channel mono modules, old patches
+staying mono, the mono mix shared with Vastish and a stereo take from AUDIO R.
 
 `lab_test` covers the 2.2.0 LAB controls (clock, interpolation bits, resample source, per-voice START/END) and runs as part of `make -C tests test`.
 

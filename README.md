@@ -4,7 +4,7 @@ Three modules for VCV Rack 2, built around early digital instruments and usable 
 
 | Module | What it does | Manual |
 |---|---|---|
-| **OTIS Sampler** | Records or loads a mono sample and plays it through an ES5505-derived engine, with variable chip clock, short-loop scanning and destructive loop reworking. | [OTIS manual](vcv/otislab/docs/MANUAL.md) |
+| **OTIS Sampler** | Records or loads a mono or stereo sample and plays it through an ES5505-derived engine, with variable chip clock, short-loop scanning and destructive loop reworking. | [OTIS manual](vcv/otislab/docs/MANUAL.md) |
 | **Vastish** | Eight-voice synthesizer in the style of Kurzweil VAST: three DSP blocks per voice, six routings, envelopes, LFOs, FUN processors, and sample playback from OTIS. | [Vastish manual](vcv/vastish/docs/MANUAL.md) |
 | **Spoon Bender** | Stereo echo with a frequency shifter in its feedback loop, an eight-line reverb with freeze, an optional ES5510-style fixed-point engine, and CAPTURE, which turns the last few seconds into an OTIS sample. | [Spoon Bender manual](vcv/spoonbender/docs/MANUAL.md) |
 
@@ -14,7 +14,7 @@ Placed side by side as **Spoon Bender → OTIS → Vastish**, they pass samples 
 
 ## Download
 
-**[Latest preview release](https://github.com/JosiahAlanLee/DSP_Emulation/releases)**: one zip per platform, each holding all three plugins and an INSTALL.txt.
+**[Latest preview release](https://github.com/JosiahAlanLee/DSP_Emulation/releases)**: one zip per platform, each holding all the plugins and an INSTALL.txt. preview-1 predates Séance; the next release includes it.
 
 | Platform | File |
 |---|---|
@@ -37,7 +37,7 @@ Status: Linux has been used live in Rack. Windows and macOS builds compile and p
 
 For example: OTIS → Séance (Freeze, Scramble) → Spoon Bender → CAPTURE → OTIS turns destructive loop reworking into resampling through the patch.
 
-Status: new, built and tested in CI (engine and module tests), not yet run live in Rack and not yet part of the release bundles. [Manual](vcv/seance/docs/MANUAL.md).
+Status: new, built and tested in CI (engine and module tests), and loaded and run headless in Rack on Linux, but not yet played live. Included in the release bundles from the next release; preview-1 predates it. [Manual](vcv/seance/docs/MANUAL.md).
 
 ## Also in this repository
 
