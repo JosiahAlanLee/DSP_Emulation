@@ -127,7 +127,26 @@ SIZE spans 2–65,536 samples on a logarithmic scale. Each volt at SIZE CV doubl
 
 Set LOOP to FWD or PING for a repeating window. With LOOP OFF, a gate plays the selected window once. Moving a window retains the playback offset within it; it does not restart phase.
 
-POSITION and frame changes are unsmoothed. Fast moves can click or produce zipper textures. Short windows can have a strong pitch determined by their length and playback settings.
+POSITION and POS CV frame changes are unsmoothed. Fast moves can click or produce zipper textures. Short windows can have a strong pitch determined by their length and playback settings.
+
+### Byte-driven frame selection and Lookup export
+
+In FRM mode, **FRAME BUS** replaces POSITION and POS CV with an 8-bit frame
+selector shared by all voices. 00 selects the first complete frame and FF the
+last. A ninth cable channel carries an optional clock: selection holds between
+rising edges while playback continues. The cable's bit lanes do not add voices.
+
+**Smooth FRAME BUS changes (2 ms)** in the menu defaults on. It blends between
+equal-length frames at the same playback offset, with both stereo channels
+linked. Faster requests coalesce to the latest selection until a fade finishes.
+Disable it for immediate switches. Size changes and frame seams can still click.
+
+Use **Export selected frame to Lookup → Left channel / Right channel / Mono mix**
+to save voice 1's requested frame as a 256-point byte table. Import that JSON
+with Lookup's **Load original Lookup table** menu. This snapshots stored audio,
+including completed REWORK changes; playback filters and gain are excluded.
+The [full contract and example patch](BYTE_BUS.md) describe timing, export
+quantization, stereo choices and limitations.
 
 ### Patch idea: scan a recorded texture
 
@@ -169,6 +188,7 @@ Pitch and gate channel counts establish the voice count, subject to the selected
 | CLK CV | Mono; 1 V/oct added to CLOCK. |
 | INT CV | Mono; approximately 1.1 V per interpolation bit. |
 | POS CV | Per-voice; 10 V adds 100% to POSITION. |
+| FRAME BUS | One byte, LSB first; optional clock on channel 9. Selects frames in FRM mode, overriding POSITION/POS CV. |
 | SIZE CV | Per-voice; 1 V doubles the window sample count. |
 | AMT CV | Mono; 10 V adds 100% to AMOUNT, latched on REWORK. |
 | TRIG | Mono REWORK trigger; rising at 2 V, rearmed below 0.1 V. |

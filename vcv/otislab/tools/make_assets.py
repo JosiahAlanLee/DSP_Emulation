@@ -52,6 +52,7 @@ parts.append(text('WINDOW',435,85,10,'#f1b875'))
 parts.append(text('REWORK',506,85,9,'#f1b875'))  # stays inside the display box
 parts.append(text('CLOCK',360,151,9)); parts.append(text('INTERP',360,211,9))
 parts.append(text('CLK CV',360,277,8)); parts.append(text('INT CV',360,327,8))
+parts.append(text('FRAME BUS',360,229,8,'#f1b875'))
 parts.append(text('POSITION',435,151,9)); parts.append(text('SIZE',435,211,9))
 parts.append(text('MODE',435,229,9,'#f1b875'))
 for label,y in [('FRM',238.5),('SCAN',248),('SEG',257.5)]: parts.append(text(label,446,y,6,center=False))
@@ -69,7 +70,7 @@ preview.append(text('PCM 1.40s  29.76k / CHIP 29.76k',20,83,9,'#80ddc7',False))
 for y in [125,187]:
     for x in [45,125,205,285,360,435,510]:
         preview.append(f'<circle cx="{x}" cy="{y}" r="15" fill="#111717" stroke="#81918e" stroke-width="1.4"/><path d="M{x} {y-12}V{y-4}" stroke="#d5dfde" stroke-width="2"/>')
-for y,xs in [(292,[30+45*i for i in range(7)]+[360,435,510]),(341,[27+46*i for i in range(7)]+[360,435,510])]:
+for y,xs in [(246,[360]),(292,[30+45*i for i in range(7)]+[360,435,510]),(341,[27+46*i for i in range(7)]+[360,435,510])]:
     for x in xs:
         preview.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#9ba6a1"/><circle cx="{x}" cy="{y}" r="7.5" fill="#313939"/><circle cx="{x}" cy="{y}" r="5" fill="#090e0d"/>')
 # Preview switches at Rack's real component sizes (CKSS 14x20.6, CKSSThree 13.5x28.3).

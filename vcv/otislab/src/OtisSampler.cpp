@@ -2,7 +2,9 @@
 #include "engine/OtisEngine.hpp"
 #include "engine/LoopMutator.hpp"
 #include "engine/Wav.hpp"
+#include "engine/FrameTable.hpp"
 #include "../../shared/SampleShare.hpp"
+#include "../../shared/ByteBus.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -14,7 +16,7 @@ struct OtisSampler : Module {
     // CLOCK and INTERP (LAB column) are appended so existing patches keep their parameter ids.
     enum Params { PITCH, START, END, K1, K2, RECORD_GAIN, OUTPUT_GAIN, CAPTURE_RATE, PLAY, RECORD, LOOP, REVERSE, CLOCK, INTERP, POSITION, SIZE, WINDOW_MODE, SMOOTHNESS, MUTATION_AMOUNT, MUTATE, NUM_PARAMS };
     // LEVEL_IN and AUDIO_R_IN are appended so existing patches keep their cable ids.
-    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, POSITION_IN, SIZE_IN, MUTATE_IN, MUTATION_AMOUNT_IN, AUDIO_R_IN, NUM_INPUTS };
+    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, POSITION_IN, SIZE_IN, MUTATE_IN, MUTATION_AMOUNT_IN, AUDIO_R_IN, FRAME_BUS_IN, NUM_INPUTS };
     enum Outputs { LEFT_OUT, RIGHT_OUT, EOC_OUT, POSITION_OUT, NUM_OUTPUTS };
     enum Lights { PLAY_LIGHT, RECORD_LIGHT, FULL_LIGHT, MUTATION_LIGHT, NUM_LIGHTS };
     otis::Engine engine;
@@ -24,9 +26,11 @@ struct OtisSampler : Module {
     std::array<dsp::SchmittTrigger,16> gates;
     dsp::SchmittTrigger playButton;
     dsp::SchmittTrigger recordGate,mutationGate;
+    dspemu::bus::Reader frameReader;
     bool previousRecord=false, previousReverse=false;
     std::atomic<bool> gated{false};
     std::atomic<bool> linearLevel{false}, declick{true}, varispeed{false};
+    std::atomic<bool> smoothFrameBus{true};
     std::atomic<int> recordSource{0};
     // UI-thread cache of the encoded sample, keyed by the engine's sample sequence counter.
     bool pcmCacheValid=false; uint32_t pcmCacheSequence=0; double pcmCacheRate=0; std::string pcmCacheText,pcmCacheTextR;
@@ -117,6 +121,7 @@ struct OtisSampler : Module {
         configInput(CLOCK_IN,"LAB chip clock CV, 1 V/oct added to CLOCK");
         configInput(INTERP_IN,"LAB interpolation CV, 1.1 V per bit added to INTERP");
         configInput(POSITION_IN,"LAB window position / frame selection, polyphonic (0–10 V)");
+        configInput(FRAME_BUS_IN,"Byte frame selection in FRM mode (LSB first; optional CLK on channel 9)");
         configInput(SIZE_IN,"LAB window size, polyphonic (1 V doubles sample count)");
         configInput(MUTATE_IN,"Rework selected voice-1 window on rising gate (2 V)");
         configInput(MUTATION_AMOUNT_IN,"Rework amount CV (0–10 V), latched on trigger");
@@ -212,6 +217,51 @@ struct OtisSampler : Module {
         uint32_t seq=0;
         return engine.snapshotStereo(pcm,right,rate,seq);
     }
+    // UI only. Capture a small selection under engineMutex, then copy PCM using
+    // the separate finished-sample lock so file export never pins the audio thread.
+    json_t* frameTableJson(otis::frame_table::Channel channel) {
+        otis::Engine::Window window; uint32_t expected=0; std::string name;
+        {
+            std::lock_guard<std::mutex> guard(engineMutex);
+            if(engine.controls.windowMode!=2) throw std::runtime_error("Select FRM mode before exporting a Lookup table");
+            if(engine.recording || engine.capturePending) throw std::runtime_error("Finish recording before exporting a frame");
+            window=engine.windowFor(0); expected=engine.sequence();
+            std::lock_guard<std::mutex> names(nameMutex); name=liveSample.load() ? "LIVE RECORDING" : sampleName;
+        }
+        std::vector<int16_t> left,right; double rate=0; uint32_t revision=0;
+        engine.snapshotStereo(left,right,rate,revision);
+        if(revision!=expected || (revision&1)) throw std::runtime_error("Sample changed during frame export; retry when ready");
+        auto values=otis::frame_table::resample(left,right,window.begin,window.end,channel);
+        const char* side=channel==otis::frame_table::Channel::Left ? "left" : channel==otis::frame_table::Channel::Right ? "right" : "mix";
+        json_t* root=json_object();
+        json_object_set_new(root,"format",json_string("ByteBusLab.LookupTable"));
+        json_object_set_new(root,"version",json_integer(1));
+        json_object_set_new(root,"name",json_string(string::f("OTIS %s frame at %zu",side,window.begin).c_str()));
+        json_object_set_new(root,"hash",json_string(otis::frame_table::fingerprint(values).c_str()));
+        json_t* bytes=json_array(); for(uint8_t v:values) json_array_append_new(bytes,json_integer(v));
+        json_object_set_new(root,"values",bytes);
+        json_t* source=json_object();
+        json_object_set_new(source,"kind",json_string("OTIS.frame"));
+        json_object_set_new(source,"exporter",json_string("OtisLab.FrameTable/1"));
+        json_object_set_new(source,"sample_name",json_string(name.c_str()));
+        json_object_set_new(source,"sample_revision",json_integer(revision));
+        json_object_set_new(source,"sample_rate",json_real(rate));
+        json_object_set_new(source,"begin",json_integer(window.begin));
+        json_object_set_new(source,"length",json_integer(window.end-window.begin));
+        json_object_set_new(source,"channel",json_string(side));
+        json_object_set_new(source,"resampling",json_string("periodic-linear-256"));
+        json_object_set_new(source,"quantization",json_string("offset-binary-round-half-up-8-bit"));
+        json_object_set_new(root,"source",source);
+        return root;
+    }
+    void saveFrameTable(const std::string& path,otis::frame_table::Channel channel) {
+        try {
+            json_t* root=frameTableJson(channel);
+            int result=json_dump_file(root,path.c_str(),JSON_INDENT(2) | JSON_SORT_KEYS); json_decref(root);
+            if(result) throw std::runtime_error("Cannot write Lookup table JSON");
+            std::lock_guard<std::mutex> names(nameMutex); lastError.clear();
+        } catch(const std::exception& e) { std::lock_guard<std::mutex> names(nameMutex); lastError=e.what(); }
+    }
     void process(const ProcessArgs& args) override {
         // Never wait on UI/file operations from the audio thread. Rare contention outputs silence.
         std::unique_lock<std::mutex> guard(engineMutex,std::try_to_lock);
@@ -225,6 +275,9 @@ struct OtisSampler : Module {
             c.sizeOctaves[i]=otis::clamp(params[SIZE].getValue()+inputs[SIZE_IN].getPolyVoltage(i),1.f,16.f);
         }
         c.windowMode=int(params[WINDOW_MODE].getValue());
+        auto frame=frameReader.process(inputs[FRAME_BUS_IN]);
+        c.frameBus=frame.connected; c.frameWord=frame.word;
+        c.frameCrossfade=smoothFrameBus.load(std::memory_order_relaxed);
         c.start=c.startv[0]; c.end=c.endv[0];
         // LAB: a tiny dead band keeps a re-centred knob on the authentic clock path.
         float clock=params[CLOCK].getValue()+inputs[CLOCK_IN].getVoltage();
@@ -289,6 +342,7 @@ struct OtisSampler : Module {
         if(engine.recording && engine.recordFrames>=2) liveSample=true;
         engine.stopRecord();
         engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; varispeed=false; recordSource=0; previousRecord=false; previousReverse=false;
+        smoothFrameBus=true; frameReader.reset();
         for(auto& gate:gates) gate.reset();
         recordGate.reset(); mutationGate.reset(); playButton.reset(); refreshDisplay();
     }
@@ -316,6 +370,7 @@ struct OtisSampler : Module {
         json_object_set_new(root,"varispeed",json_boolean(varispeed.load())); json_object_set_new(root,"recordSource",json_integer(recordSource.load()));
         json_object_set_new(root,"followFx",json_boolean(followFx));
         json_object_set_new(root,"fxMono",json_boolean(fxMono.load()));
+        json_object_set_new(root,"smoothFrameBus",json_boolean(smoothFrameBus.load()));
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -330,6 +385,8 @@ struct OtisSampler : Module {
             followFx=json_is_true(json_object_get(root,"followFx")); fxSeen=false;
             fxMono=json_is_true(json_object_get(root,"fxMono"));
             auto dc=json_object_get(root,"declick"); declick=dc ? json_is_true(dc) : true;
+            auto smooth=json_object_get(root,"smoothFrameBus"); smoothFrameBus=smooth ? json_is_true(smooth) : true;
+            frameReader.reset();
             auto text=json_string_value(json_object_get(root,"pcm16le"));
             if(text && *text) {
                 auto pcm=otis::decodePcm(text); double rate=json_number_value(json_object_get(root,"rate"));
@@ -409,6 +466,7 @@ struct OtisSamplerWidget : ModuleWidget {
         if(module) module->getParamQuantity(OtisSampler::INTERP)->snapEnabled=true;
         addInput(createInputCentered<PJ301MPort>(Vec(360,292),module,OtisSampler::CLOCK_IN));
         addInput(createInputCentered<PJ301MPort>(Vec(360,341),module,OtisSampler::INTERP_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(360,246),module,OtisSampler::FRAME_BUS_IN));
         addParam(createParamCentered<RoundBlackKnob>(Vec(435,125),module,OtisSampler::POSITION));
         addParam(createParamCentered<RoundBlackKnob>(Vec(435,187),module,OtisSampler::SIZE));
         addParam(createParamCentered<CKSSThree>(Vec(435,246),module,OtisSampler::WINDOW_MODE));
@@ -468,12 +526,21 @@ struct OtisSamplerWidget : ModuleWidget {
             auto filters=osdialog_filters_parse("WAV:wav"); char* path=osdialog_file(OSDIALOG_SAVE,nullptr,"otis-sample.wav",filters); osdialog_filters_free(filters);
             if(path) { m->save(path); std::free(path); }
         }));
+        menu->addChild(createSubmenuItem("Export selected frame to Lookup","",[m](Menu* child) {
+            const char* labels[]={"Left channel…","Right channel…","Mono mix…"};
+            for(int i=0;i<3;++i) child->addChild(createMenuItem(labels[i],"",[m,i] {
+                auto* filters=osdialog_filters_parse("Lookup table:json");
+                char* path=osdialog_file(OSDIALOG_SAVE,nullptr,"otis-frame.lookup.json",filters); osdialog_filters_free(filters);
+                if(path) { m->saveFrameTable(path,otis::frame_table::Channel(i)); std::free(path); }
+            },i==1 && !m->displayedStereo.load()));
+        }));
         menu->addChild(createMenuItem("Stop all voices","",[m]() { std::lock_guard<std::mutex> g(m->engineMutex); m->engine.stopAll(); }));
         menu->addChild(new MenuSeparator);
         menu->addChild(createBoolMenuItem("Gate release stops playback (default: one-shot)","",[m](){return m->gated.load();},[m](bool b){m->gated=b;}));
         menu->addChild(createBoolMenuItem("Declick release/retrigger (1.5 ms fades)","",[m](){return m->declick.load();},[m](bool b){m->declick=b;}));
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("LAB (not EPS behaviour)"));
+        menu->addChild(createBoolMenuItem("Smooth FRAME BUS changes (2 ms)","",[m]{return m->smoothFrameBus.load();},[m](bool on){m->smoothFrameBus=on;}));
         menu->addChild(createSubmenuItem("CLOCK knob moves","",[m](Menu* child) {
             child->addChild(createCheckMenuItem("Resolution only (pitch held)","",[m](){return !m->varispeed.load();},[m](){m->varispeed=false;}));
             child->addChild(createCheckMenuItem("Varispeed (pitch follows clock)","",[m](){return m->varispeed.load();},[m](){m->varispeed=true;}));

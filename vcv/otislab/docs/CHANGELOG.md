@@ -1,5 +1,16 @@
 # OTIS change history
 
+## 2.8.0
+
+- FRAME BUS selects complete frames from a byte, optionally clocked, without
+  changing native stereo playback or the original parameter/cable IDs.
+- Optional 2 ms stereo-linked frame crossfades retain playback offset and
+  coalesce rapid requests. Hard switching remains available.
+- Export the selected voice-1 frame as a verified Lookup JSON table, choosing
+  left, right or mono mix. The patch saves the smoothing setting.
+- Included a self-contained Register/Lookup/OTIS stereo frame example and
+  portable/native/sanitized tests of the complete connection.
+
 ## 2.7.0
 
 Stereo sample links. Captures from Spoon Bender 2.2.0+ import as stereo samples, and Vastish 2.4.0+ follows stereo samples in stereo, through a stereo extension placed after the existing share (older readers still see the mono mix). **Import Spoon Bender captures as mono (twice as long)**, saved with the patch, imports the mix instead. A capture longer than stereo memory is truncated and marked.

@@ -1,5 +1,27 @@
 # Validation and limits — 2026-10-14
 
+## 2.8.0 frame bus and table export
+
+The [frame-bus contract](BYTE_BUS.md) defines this original extension.
+Portable tests check byte selection over 1–524,160 complete frames, frame tails,
+per-voice regions, playback-offset preservation, stereo-linked frame fades,
+latest-request coalescing and cancellation. Frame switching allocates no memory
+on the tested tick path. Numeric export checks cover periodic interpolation,
+all 256 identity values, left/right/mix, full-scale saturation and invalid bounds.
+
+The real Rack API integration test connects Register, Lookup and OTIS through
+one-sample delayed cables in randomized process order, including RESET replay
+at 44.1/48/96 kHz. It verifies optional-clock holds, POSITION precedence,
+short-cable thresholds, all 256 frame selectors, direct OTIS JSON to Lookup
+import, embedded custom-table provenance and stereo patch restoration. The
+included example's own saved parameters and PCM are exercised as well.
+
+Bus selection changes the window, not the sample engine's clock or pitch.
+Crossfades deliberately coalesce rapid selection requests and do not guarantee
+continuous seams or band-limited output. Exports are 8-bit snapshots of stored
+PCM, with no listening or physical-hardware fidelity claim. Live mouse and
+audio-device checks remain separate from the native API tests.
+
 ## 2.3.0 window and rework checks
 
 - Built Linux x86-64 with Rack SDK 2.6.4 / GCC 13.3. Both compiled-plugin
@@ -33,7 +55,8 @@ to the source (±12 dB limit). Before 2.3.1 each generation of the audition lost
 about 4.5 dB (−10.0 to −28.5 dBFS over four generations); with matching it holds
 at −9.9 to −10.0 dBFS, and `window_test` asserts eight generations stay within
 ±1 dB at AMOUNT 25/65/100%. Spectral darkening across generations remains. No Ensoniq Synthesized Loop algorithm
-or ESP program is included. Frame changes have no crossfade; reworked PCM uses
+or ESP program is included. POSITION/CV frame changes have no crossfade; FRAME
+BUS can use its optional 2 ms frame fade, and reworked PCM uses
 a 5 ms source crossfade before the chip filters. Samples are shared by the voices
 (stereo samples since 2.6.0). There is no rolling live delay buffer. Rack GUI interaction,
 listening comparison and physical ADAT/CV operation remain untested here.

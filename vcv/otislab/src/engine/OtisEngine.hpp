@@ -83,6 +83,9 @@ struct Voice {
     bool restartAfterFade=false;
     int filterMode=2, loop=0;
     bool window=false; // LAB windows use half-open [start,end) sample frames.
+    // Original LAB frame switching. The old equal-length frame shares the current offset.
+    uint32_t frameFadeStart=0;
+    int frameFadeRemaining=0, frameFadeTotal=0;
     // Lab: fraction bits used for interpolation. All bits = chip behaviour (the chip's increments
     // are multiples of 4, so 9 effective bits); 0 = drop-sample, no interpolation.
     uint32_t interpMask=fracOne-1;
@@ -125,11 +128,21 @@ struct Voice {
         if(window && nextAddress >= (end>>fracBits))
             nextAddress=loop==1 ? start>>fracBits : (end>>fracBits)-1;
         auto interpolate=[&](const std::vector<int16_t>* old, size_t channel) {
-            auto at=[&](uint32_t a) -> int32_t {
-                if(a<baseAddress || a-baseAddress>=frames) return 0;
+            auto at=[&](int64_t a) -> int32_t {
+                if(a<baseAddress || uint64_t(a-baseAddress)>=frames) return 0;
                 return old ? (*old)[channel+(a-baseAddress)] : s.pcm[channel+(a-baseAddress)];
             };
-            return shiftFloor(int64_t(at(address))*(fracOne-f)+int64_t(at(nextAddress))*f,fracBits);
+            auto pair=[&](int64_t a,int64_t b) {
+                return shiftFloor(int64_t(at(a))*(fracOne-f)+int64_t(at(b))*f,fracBits);
+            };
+            int32_t value=pair(address,nextAddress);
+            if(frameFadeRemaining>0) {
+                int64_t offset=(int64_t(frameFadeStart)-start)/fracOne;
+                int32_t previous=pair(int64_t(address)+offset,int64_t(nextAddress)+offset);
+                double blend=double(frameFadeTotal-frameFadeRemaining)/frameFadeTotal;
+                value=int32_t(std::lround(previous+(value-previous)*blend));
+            }
+            return value;
         };
         int32_t x=interpolate(nullptr,0);
         if(oldPcm) { int32_t old=interpolate(oldPcm,0); x=int32_t(std::lround(old+(x-old)*double(blend))); }
@@ -139,6 +152,7 @@ struct Voice {
             if(oldPcm) { int32_t old=interpolate(oldPcm,stereoOffset); r=int32_t(std::lround(old+(r-old)*double(blend))); }
             *right=filter(r,poleR);
         }
+        if(frameFadeRemaining>0) --frameFadeRemaining;
         if(window) {
             int64_t next=int64_t(accumulator)+(reverse ? -int64_t(frequency) : frequency);
             int64_t span=int64_t(end)-start;
@@ -289,6 +303,8 @@ struct Controls {
     int recordSource=0;     // 0 input, 1 own output (resample), 2 input + own output
     bool recordStereo=false; // read when a take starts: record both inputs into a stereo sample
     int windowMode=0;       // 0 legacy segment, 1 fixed-size scan, 2 whole-frame steps
+    bool frameBus=false, frameCrossfade=false;
+    uint8_t frameWord=0; // One shared word; each voice maps it over its own complete frames.
     std::array<float,16> position{}, sizeOctaves{}; // position 0..1, log2(sample count)
     Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); sizeOctaves.fill(8); }
 };
@@ -341,8 +357,10 @@ struct Engine {
         double oct=std::isfinite(controls.sizeOctaves[i]) ? clamp(double(controls.sizeOctaves[i]),1.0,16.0) : 8;
         size_t n=std::min(size_t(std::llround(std::exp2(oct))),b-a+1);
         double pos=std::isfinite(controls.position[i]) ? clamp(double(controls.position[i]),0.0,1.0) : 0;
+        size_t count=(b-a+1)/n;
         size_t offset=mode==1 ? size_t(std::llround(pos*(b-a+1-n))) :
-            size_t(std::llround(pos*((b-a+1)/n-1)))*n;
+            (controls.frameBus ? size_t((uint64_t(controls.frameWord)*(count-1)+127)/255) :
+             size_t(std::llround(pos*(count-1))))*n;
         return {a+offset,a+offset+n,true};
     }
     // Only finished-sample metadata/buffers use this lock. Snapshot readers may wait;
@@ -485,6 +503,15 @@ struct Engine {
         Window w=windowFor(i);
         uint32_t start=uint32_t(baseAddress+w.begin)<<fracBits;
         uint32_t end=uint32_t(baseAddress+w.end-(w.active ? 0 : 1))<<fracBits;
+        bool smooth=controls.windowMode==2 && controls.frameBus && controls.frameCrossfade &&
+            w.active && v.window && v.running && v.end>v.start && end-start==v.end-v.start;
+        if(!smooth) v.frameFadeRemaining=0;
+        // Finish a fade before adopting another request. Controls retain the latest target.
+        if(smooth && v.frameFadeRemaining>0) return;
+        if(smooth && start!=v.start) {
+            v.frameFadeStart=v.start;
+            v.frameFadeRemaining=v.frameFadeTotal=std::max(1,int(std::lround(currentRate*.002)));
+        }
         if(w.active && v.window && v.end>v.start && (start!=v.start || end!=v.end)) {
             int64_t span=int64_t(end)-start;
             int64_t phase=(int64_t(v.accumulator)-v.start)%span; if(phase<0) phase+=span;
