@@ -1,6 +1,6 @@
 # Séance
 
-**Spectral frame core and expanders · SeanceLab · 10 HP core, 4 HP expanders**
+**Spectral frame core and expanders · SeanceLab · 10 HP core, 4 HP effects, 8 HP Bridge**
 
 Séance holds one short-time Fourier frame in common with the modules to its right. The core analyses its input, hands the frame down the row, each expander changes it in place, and the core resynthesises what comes back. One analysis, one resynthesis, any number of operations between; the operations apply left to right.
 
@@ -84,6 +84,8 @@ With A noise or a rich synth and B a voice or a drum loop, MULT gives A the spec
 | SOFT | 0–100%: widens the edge from a brick wall to two octaves. |
 
 ## Patch starting points
+
+- **Spectral byte feedback.** Bridge measures activity in eight bands before applying its incoming bit mask. Feed its BUS OUT through Register and Lookup, then return the transformed word to Bridge and OTIS FRAME BUS. [Controls, timing, bands and self-contained example](BYTE_BUS.md). Bridge fits anywhere in the row; it hears the preceding expanders and masks the frame before the following ones.
 
 - **Resampling through the row.** OTIS → Séance (with Freeze and Scramble) → Spoon Bender → CAPTURE → OTIS. Destructive reworking becomes resampling through the patch: each pass through CAPTURE is a new OTIS sample with the row's changes baked in.
 - **Gorgon as the hand on the seed.** Gorgon's RESET into Séance's RESET and an automation lane into SEED CV: every row of the score replays its texture exactly, and a different lane value gives a different scatter.

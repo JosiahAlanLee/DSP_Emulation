@@ -1,6 +1,6 @@
 RACK_DIR ?= ../../../deps/Rack-SDK
-SOURCES += src/plugin.cpp src/Seance.cpp src/Expanders.cpp
-DISTRIBUTABLES += res README.md LICENSE docs
+SOURCES += src/plugin.cpp src/Seance.cpp src/Expanders.cpp src/Bridge.cpp
+DISTRIBUTABLES += res README.md LICENSE docs examples
 EXTRA_CXXFLAGS += -std=c++17
 # Reconstruction and the seeded textures rely on IEEE semantics.
 EXTRA_FLAGS += -fno-unsafe-math-optimizations

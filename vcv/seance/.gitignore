@@ -5,3 +5,7 @@
 /plugin.dll
 /tests/engine_test
 /tests/module_test
+/tests/bridge_test
+/tests/bridge_module_test
+/tests/bridge_asan
+/tests/bridge_module_asan

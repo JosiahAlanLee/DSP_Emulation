@@ -46,7 +46,7 @@ jobs:
       - name: Séance engine tests
         if: matrix.plugin == 'seance'
         working-directory: vcv/seance
-        run: make -C tests engine_test && tests/engine_test
+        run: make -C tests engine_test bridge_test && tests/engine_test && tests/bridge_test
       - name: Byte bus register engine tests
         if: matrix.plugin == 'bytebus'
         working-directory: vcv/bytebus
@@ -95,7 +95,7 @@ jobs:
       - name: Séance engine tests
         if: matrix.plugin == 'seance' && matrix.arch == 'arm64'
         working-directory: vcv/seance
-        run: make -C tests engine_test CXX=clang++ && tests/engine_test
+        run: make -C tests engine_test bridge_test CXX=clang++ && tests/engine_test && tests/bridge_test
       - name: Byte bus register engine tests
         if: matrix.plugin == 'bytebus' && matrix.arch == 'arm64'
         working-directory: vcv/bytebus

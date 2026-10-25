@@ -250,10 +250,12 @@ Each module's manual states:
 | Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
 | Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**, new build; partly Merge/Split plus a poly switch today |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
+| Spectral activity and band mask (original extension) | frame-clocked sender + held mask input | **Séance Bridge**: eight bands, pre-mask detection, hysteresis and gain slew; [contract](../vcv/seance/docs/BYTE_BUS.md) |
 
 Implemented prototypes: `ByteBus.hpp`, Clocked Register, Lookup, Converter,
 Vastish bus I/O with optional normalized FUNs, OTIS frame control/export and
-the memoryless Vastish table compiler. Remaining order: Pipeline → Counter → Switch.
+the memoryless Vastish table compiler, and Séance Bridge spectral activity/masking.
+Remaining order: Pipeline → Counter → Switch.
 
 ## 11. Decisions to ratify
 

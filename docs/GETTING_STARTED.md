@@ -1,6 +1,6 @@
 # OTIS, Vastish, Spoon Bender and Séance
 
-Four plugins for VCV Rack 2. The first three are instruments, usable separately or as a sample-based sound-design system; Séance is a spectral effect built from a core and four expanders.
+Four plugins for VCV Rack 2. The first three are instruments, usable separately or as a sample-based sound-design system; Séance is a spectral effect built from a core and five expanders.
 
 | Module | Use it for | Manual |
 |---|---|---|
@@ -28,7 +28,7 @@ Files in the current preview release, **preview-1**:
 | macOS Apple Silicon | `DSP_Emulation-preview-1-macOS-AppleSilicon.zip` | `OtisLab-2.5.2-mac-arm64.vcvplugin`<br>`VastishLab-2.3.1-mac-arm64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-arm64.vcvplugin` | `plugins-mac-arm64` |
 | macOS Intel | `DSP_Emulation-preview-1-macOS-Intel.zip` | `OtisLab-2.5.2-mac-x64.vcvplugin`<br>`VastishLab-2.3.1-mac-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-x64.vcvplugin` | `plugins-mac-x64` |
 
-preview-1 predates Séance. The next release adds `SeanceLab-2.0.0-<platform>.vcvplugin` to each zip.
+preview-1 predates Séance. Current source builds `SeanceLab-2.1.0-<platform>.vcvplugin`, including Bridge.
 
 Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple Silicon; "Processor: Intel…" is Intel.
 
@@ -75,6 +75,11 @@ Leaving IN R unpatched sends IN L to both processing channels. Spoon Bender's CL
 3. Press **FREEZE** on Freeze to hold the sound's current spectrum, or turn **WIPE** on Wipe to sweep a wall across it.
 
 Expanders act only in an unbroken row to the right of the core, applied left to right. Séance's output is delayed by its frame size minus one plus 64 samples, about 44 ms at the default size and 48 kHz; **MIX** blends in the dry signal, delayed to match. Séance is not part of the sample-sharing chain below.
+
+**Séance Bridge** adds a byte-bus connection: eight incoming bits open eight
+frequency bands, while BUS OUT reports activity before that mask. Its
+[OTIS feedback example and controls](../vcv/seance/docs/BYTE_BUS.md) need
+ByteBusLab 2.2.0, OTIS 2.8.0 and SeanceLab 2.1.0.
 
 ## Connect the sample-sharing chain
 

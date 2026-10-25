@@ -10,7 +10,7 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/vastish | Native C++ Rack synthesizer and portable engine. |
 | vcv/otislab | Rack sampler, playback engine, file handling and loop-rework worker. |
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
-| vcv/seance | Rack spectral core and four expanders: portable STFT engine and operations, chain link, modules. |
+| vcv/seance | Rack spectral core and five expanders: portable STFT engine and operations, chain link, modules. |
 | vcv/bytebus | Clocked Register and Lookup; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
 | vcv/shared | Sample-file utilities, versioned sample-sharing interface, byte-bus helpers and panel-glyph sources. |
 
@@ -111,9 +111,19 @@ make -C vcv/seance/tests engine_test
 vcv/seance/tests/engine_test
 make -C vcv/seance/tests module_test RACK_DIR=/absolute/path/to/Rack-SDK
 vcv/seance/tests/module_test
+make -C vcv/seance/tests bridge-check RACK_DIR=/absolute/path/to/Rack-SDK
+make -C vcv/seance/tests bridge-sanitize RACK_DIR=/absolute/path/to/Rack-SDK
+python3 vcv/seance/tools/make_bus_patch.py
 ~~~
 
 The portable test checks the FFT against a direct DFT, reconstruction at every frame size, latency, the hand-off protocol under random module order and with a stalled chain, RESET continuity and the four operations. The module test wires a core and four expanders as the engine wires them and steps them in random order. Linux CI also runs both under AddressSanitizer/UndefinedBehaviorSanitizer; see [the workflow](../.github/workflows/seance.yml).
+
+Bridge adds all-mask and measured-RMS portable checks, real Rack carrier/lifecycle
+checks and the saved OTIS/Register/Lookup spectral feedback example with delayed
+cables and randomized processing order. An open Bridge preserves the row's
+audio exactly at every FFT size and 44.1/48/96 kHz. Its detector clock marks frame
+processing, ahead of the corresponding delayed audio; see the
+[contract](../vcv/seance/docs/BYTE_BUS.md).
 
 ### Byte bus register
 

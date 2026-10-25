@@ -29,11 +29,12 @@ Status: Linux has been used live in Rack. Windows and macOS builds compile and p
 
 ## Séance: a spectral frame held by a row of modules
 
-[`vcv/seance`](vcv/seance) is a spectral core with four expanders. The core takes a short-time Fourier frame of its input, hands it to whatever Séance expanders sit directly to its right, and resynthesises what comes back: one analysis, one resynthesis, any number of in-place operations between, applied left to right. Nothing spectral travels down a cable; the row holds the frame in common, the way a SuperCollider `PV_` chain or a Pd `block~` subpatch does.
+[`vcv/seance`](vcv/seance) is a spectral core with five expanders. The core takes a short-time Fourier frame of its input, hands it to whatever Séance expanders sit directly to its right, and resynthesises what comes back: one analysis, one resynthesis, any number of in-place operations between, applied left to right. The row holds the full spectral frame in common, the way a SuperCollider `PV_` chain or a Pd `block~` subpatch does.
 
 - **Freeze** holds the frame with its phases still turning; **Scramble** moves every partial by a seeded offset, re-pitched coherently; **Cross** lets a second input's spectrum decide the first's levels (vocoding, morphing); **Wipe** is a wall across the spectrum that sweeps under CV.
+- **Bridge** reports eight bands of spectral activity as a byte bus and applies incoming bits as a smoothed band mask; [OTIS feedback example](vcv/seance/docs/BYTE_BUS.md).
 - **SEED** and **RESET** make every texture a pure function of the seed and the frame count, so a Gorgon score replays the same frames every time.
-- Latency is the frame size plus 64 samples, fixed, with the dry path delayed to match.
+- Latency is the frame size minus one plus 64 samples, fixed, with the dry path delayed to match.
 
 For example: OTIS → Séance (Freeze, Scramble) → Spoon Bender → CAPTURE → OTIS turns destructive loop reworking into resampling through the patch.
 
