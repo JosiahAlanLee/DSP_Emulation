@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#pragma once
+#include "../../../shared/ByteBus.hpp"
+#include "LibraryIdentity.hpp"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
+#include <stdexcept>
+#include <string>
+
+namespace dspemu::lookup {
+constexpr int FAMILIES = 6, SHAPES = 64, POINTS = 256;
+enum Family { Harmonic, Formant, Fold, Curve, Walsh, Rhythm, Custom };
+enum class Mode { Map, TrackRising, TrackFalling };
+inline uint64_t hash(const uint8_t* bytes, size_t size) {
+    uint64_t h = 14695981039346656037ull;
+    for (size_t i = 0; i < size; ++i) { h ^= bytes[i]; h *= 1099511628211ull; }
+    return h;
+}
+inline uint32_t mix(uint32_t v) {
+    v ^= v >> 16; v *= 0x7feb352du; v ^= v >> 15; v *= 0x846ca68bu;
+    return v ^ (v >> 16);
+}
+inline double wrap(double v, double range) { return v - range * std::floor(v / range); }
+inline uint8_t rounded(double v) { return uint8_t(std::max(0., std::min(255., std::floor(v + .5)))); }
+using Table = std::array<uint8_t, POINTS>;
+struct Library {
+    std::array<uint8_t, FAMILIES * SHAPES * POINTS> data{};
+    bool ready = false;
+    static Library load(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        std::array<char, 12> header{}; Library library;
+        if (!file.read(header.data(), header.size()) || std::string(header.data(), 8) != "BBLOOK01" ||
+            uint8_t(header[8]) != FAMILIES || uint8_t(header[9]) != SHAPES || header[10] != 0 || header[11] != 1)
+            throw std::runtime_error("Missing or unsupported Lookup v1 library");
+        if (!file.read(reinterpret_cast<char*>(library.data.data()), library.data.size()) || file.peek() != EOF ||
+            hash(library.data.data(), library.data.size()) != LIBRARY_HASH)
+            throw std::runtime_error("Lookup v1 library fingerprint mismatch");
+        library.ready = true; return library;
+    }
+    const uint8_t* table(int family, int shape) const {
+        return data.data() + (family * SHAPES + shape) * POINTS;
+    }
+};
+
+// Explicit ramp follower. Three wraps establish two consistent periods; unrelated
+// backwards motion prevents lock. Mapping remains available while unlocked.
+struct Follower {
+    double time = 0, lastWrap = 0, candidate = 0, period = 0;
+    int previous = 0, forward = 0;
+    bool seen = false, haveWrap = false, dirty = false, validPeriod = false, locked = false;
+    void reset() { *this = Follower{}; }
+    double tick(uint8_t word, bool observed, bool falling, double sampleRate) {
+        double sr = std::isfinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000.;
+        time += 1 / sr;
+        int value = falling ? 255 - int(word) : int(word);
+        if (observed) {
+            if (seen) {
+                int difference = value - previous;
+                if (difference < -64) {
+                    double elapsed = time - lastWrap;
+                    bool valid = haveWrap && !dirty && forward >= 2 && elapsed >= 4 / sr && elapsed <= 120.;
+                    if (valid) {
+                        locked = validPeriod && std::abs(elapsed - candidate) <= .25 * std::max(elapsed, candidate);
+                        period = locked ? (elapsed + candidate) * .5 : elapsed;
+                        candidate = elapsed; validPeriod = true;
+                    } else { locked = false; validPeriod = false; }
+                    lastWrap = time; haveWrap = true; dirty = false; forward = 0;
+                } else if (difference < -4 || difference > 64) dirty = true;
+                else if (difference > 0) ++forward;
+            }
+            previous = value; seen = true;
+        }
+        if (locked && time - lastWrap > 2.5 * period) {
+            locked = false; validPeriod = false; haveWrap = false;
+        }
+        return locked ? wrap((time - lastWrap) / period, 1.) * 256 : word;
+    }
+};
+
+struct Selector {
+    int selected = 0; bool initialized = false;
+    int choose(double shape) {
+        shape = wrap(shape, 64.);
+        double distance = wrap(shape - selected + 32., 64.) - 32.;
+        if (!initialized || std::abs(distance) > .55) {
+            selected = int(std::floor(shape + .5)) & 63; initialized = true;
+        }
+        return selected;
+    }
+};
+struct Parameters {
+    int family = Harmonic;
+    double shape = 0, phase = 0; // shape 0..64 circular; phase in cycles
+    uint8_t seed = 0; // Pattern seed: Walsh polarity permutation / rhythm ghosts.
+    Mode mode = Mode::Map;
+    bool engineClock = false;
+};
+struct Output {
+    uint8_t word = 128, address = 128;
+    bool clocked = false, clk = false, locked = false;
+};
+inline double point(const uint8_t* table, double address) {
+    int a = int(std::floor(address)) & 255;
+    double f = address - std::floor(address);
+    return table[a] * (1 - f) + table[(a + 1) & 255] * f;
+}
+inline uint8_t evaluate(const Library& library, const Parameters& p, double address, int selected, const Table* custom = nullptr) {
+    address = wrap(address, 256.);
+    if (p.family == Custom) {
+        double identity = address <= 255 ? address : 255 * (256 - address);
+        double value = custom ? point(custom->data(), address) : identity;
+        double amount = .5 - .5 * std::cos(2 * 3.14159265358979323846 * wrap(p.shape, 64.) / 64.);
+        return rounded((1 - amount) * identity + amount * value);
+    }
+    if (!library.ready) return 128;
+    if (p.family == Walsh) return library.table(Walsh, selected)[int(address) ^ p.seed];
+    if (p.family == Rhythm) {
+        int a = int(address), step = a / 8;
+        if (a % 8 >= 4) return 0; // A low half-step separates adjacent triggers.
+        uint8_t word = library.table(Rhythm, selected)[a];
+        if (p.seed) for (int lane = 2; lane < 8; ++lane)
+            if (int(mix(uint32_t(p.seed) * 257u + selected * 17u + lane * 65537u) & 31u) == step)
+                word ^= uint8_t(1u << lane);
+        return word;
+    }
+    double shape = wrap(p.shape, 64.); int a = int(shape), b = (a + 1) & 63;
+    double mixAmount = shape - a;
+    return rounded((1 - mixAmount) * point(library.table(p.family, a), address) +
+                   mixAmount * point(library.table(p.family, b), address));
+}
+
+struct Engine {
+    Follower follower; Selector selector;
+    uint8_t held = 128; int lastFamily = -1; Mode lastMode = Mode::Map;
+    void reset() { follower.reset(); selector = {}; held = 128; lastFamily = -1; }
+    Output tick(const Library& library, Parameters p, const bus::Sample& input, double sampleRate, bool resetFollower = false, const Table* custom = nullptr) {
+        p.family = std::max(0, std::min(int(Custom), p.family));
+        if (!std::isfinite(p.shape)) p.shape = 0;
+        if (!std::isfinite(p.phase)) p.phase = 0;
+        bool tracking = p.mode != Mode::Map;
+        if (p.mode != lastMode || resetFollower) follower.reset();
+        lastMode = p.mode;
+        Output out;
+        out.clocked = input.clocked && !tracking && !p.engineClock;
+        out.clk = out.clocked && input.clk;
+        if (!input.connected) { follower.reset(); held = 128; return out; }
+        double address = input.rawWord;
+        if (tracking) address = follower.tick(input.word, input.updated, p.mode == Mode::TrackFalling, sampleRate);
+        out.locked = follower.locked;
+        if (out.clocked && !input.rising) { out.word = held; return out; }
+        if (p.family != lastFamily) { selector = {}; lastFamily = p.family; }
+        address = wrap(address + wrap(p.phase, 1.) * 256., 256.);
+        int selected = selector.choose(p.shape);
+        held = evaluate(library, p, address, selected, custom);
+        out.word = held; out.address = uint8_t(address);
+        return out;
+    }
+};
+} // namespace dspemu::lookup

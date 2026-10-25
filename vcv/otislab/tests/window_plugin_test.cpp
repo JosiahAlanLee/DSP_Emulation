@@ -3,6 +3,7 @@
 #include <plugin.hpp>
 #include <context.hpp>
 #include "../src/engine/Wav.hpp"
+#include "../../shared/ByteBus.hpp"
 #include <dlfcn.h>
 #include <cassert>
 #include <chrono>
@@ -16,7 +17,7 @@ int main() {
     auto init=reinterpret_cast<void(*)(Plugin*)>(dlsym(handle,"init")); assert(init);
     Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.3.0"; init(&plugin); rack::plugin::plugins.push_back(&plugin);
     auto model=plugin.models.front(); auto m=std::unique_ptr<engine::Module>(model->createModule()); m->model=model;
-    assert(m->params.size()==20 && m->inputs.size()==16 && m->outputs.size()==4); // AUDIO R appended in 2.6.0
+    assert(m->params.size()==20 && m->inputs.size()==17 && m->outputs.size()==4); // FRAME BUS appended after AUDIO R
     for(auto& o:m->outputs) o.channels=1;
     std::vector<int16_t> pcm(1024);
     for(size_t i=0;i<pcm.size();++i) pcm[i]=int16_t((i/256+1)*4096);
@@ -33,6 +34,20 @@ int main() {
     // Frames 0 and 3 contain constants 4096 and 16384, summed at DSP * 5 V.
     assert(std::abs(m->outputs[0].getVoltage()-3.125)<.003);
     m->inputs[11].setVoltage(5,0); // round(0.5 * 3) selects frame 2
+    for(int i=0;i<4800;++i) m->process(args);
+    assert(std::abs(m->outputs[0].getVoltage()-4.375)<.003);
+    // The packaged binary's appended bus overrides both voice CVs and holds between edges.
+    m->inputs[16].channels=9;
+    dspemu::bus::Writer{}.write(m->inputs[16],0,true,true);
+    for(int i=0;i<4800;++i) m->process(args);
+    assert(std::abs(m->outputs[0].getVoltage()-1.25)<.003);
+    dspemu::bus::Writer{}.write(m->inputs[16],255,true,false);
+    for(int i=0;i<4800;++i) m->process(args);
+    assert(std::abs(m->outputs[0].getVoltage()-1.25)<.003);
+    dspemu::bus::Writer{}.write(m->inputs[16],255,true,true);
+    for(int i=0;i<4800;++i) m->process(args);
+    assert(std::abs(m->outputs[0].getVoltage()-5)<.003);
+    m->inputs[16].channels=0;
     for(int i=0;i<4800;++i) m->process(args);
     assert(std::abs(m->outputs[0].getVoltage()-4.375)<.003);
     // Rework a nonconstant capture and wait for worker + publication without blocking processing.

@@ -1,5 +1,23 @@
 # Test reproduction
 
+Frame-bus and Lookup authoring tests (OtisLab 2.7):
+
+```sh
+make -C tests test
+make -C tests bus-check RACK_DIR=/absolute/path/to/Rack-SDK
+make -C tests bus-sanitize RACK_DIR=/absolute/path/to/Rack-SDK
+```
+
+`frame_bus_test` exhausts the byte selector at multiple frame counts, checks
+native stereo crossfades/queued selection without allocations, and verifies
+periodic frame resampling, channel choices, quantization and rejection.
+`frame_bus_module_test` uses the actual Rack adapters: it feeds exported JSON
+through Lookup and patch saving, checks clock holds/CV precedence/short cables,
+and replays RESET through delayed Register/Lookup/OTIS cables in random process
+order at 44.1/48/96 kHz. It also loads the shipped stereo example and verifies
+nonzero, distinct L/R output and the expected frame sequence. The existing
+stereo and mono playback regressions run alongside these additions.
+
 `make -C tests test` builds/runs the portable engine tests. Run from the project
 root. `make -C tests sanitize` also builds and executes ASan/UBSan checks.
 

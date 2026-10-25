@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="380" viewBox="0 0 240 380">
+ <rect width="240" height="380" fill="#d9d8ce"/><rect x="8" y="8" width="224" height="364" rx="5" fill="none" stroke="#343d3d"/>
+ <g fill="#273638" font-family="DejaVu Sans,sans-serif" text-anchor="middle">
+  <text x="120" y="28" font-size="19" font-weight="bold">LOOKUP</text><text x="120" y="42" font-size="9" letter-spacing="2">BYTE BUS</text>
+  <g font-size="7"><text x="32" y="70">7</text><text x="57" y="70">6</text><text x="82" y="70">5</text><text x="107" y="70">4</text><text x="132" y="70">3</text><text x="157" y="70">2</text><text x="182" y="70">1</text><text x="207" y="70">0</text></g>
+  <g font-size="10" font-weight="bold"><text x="55" y="82">FAMILY</text><text x="185" y="82">SHAPE</text><text x="55" y="150">PHASE</text><text x="185" y="150">PATTERN SEED</text><text x="55" y="218">MODE</text><text x="185" y="218">RESET TRACK</text></g>
+  <g font-size="8"><text x="55" y="130">WAVE / CV / BITS</text><text x="185" y="130">0–64 · CIRCULAR</text><text x="55" y="195">±1 CYCLE</text><text x="185" y="195">WALSH / RHYTHM</text><text x="55" y="262">MAP / RISE / FALL</text><text x="120" y="216">OUT HEX</text><text x="185" y="270">LOCK</text></g>
+  <g font-size="8" font-weight="bold"><text x="35" y="280">FAM CV</text><text x="90" y="280">SHAPE CV</text><text x="145" y="280">PHASE CV</text><text x="200" y="280">SIGNAL</text></g>
+  <g font-size="9" font-weight="bold"><text x="35" y="330">BUS IN</text><text x="90" y="330">BUS OUT</text><text x="145" y="330">AUDIO</text><text x="200" y="330">RESET</text></g>
+  <text x="120" y="367" font-size="7">ORIGINAL TABLES · EXACT BYTE OUTPUT</text>
+ </g>
+ <path d="M20 315H220" fill="none" stroke="#586361"/>
+</svg>
