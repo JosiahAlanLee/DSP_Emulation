@@ -56,6 +56,11 @@ struct Machinemodule : Module {
     }
     void restart(double rate) {
         ++generation;worker.generation(generation);frame=0;missedBlock=-1;previousRate=rate;
+        // Reloads, rate changes and dropped input jobs may skip whole gate
+        // pulses. Reconnect by seeding current levels, never replay a held high.
+        link=md_rack::LinkState();external=false;
+        for(auto& edge:gates)edge.high=false;
+        reset.high=inputs[RESET].getVoltage()>.1f;
         block=md_rack::InputBlock();block.generation=generation;block.rate=rate;
         // The first sample starts a new epoch and cuts the previous voices.
         md_rack::Event event;event.panic=true;block.append(event);

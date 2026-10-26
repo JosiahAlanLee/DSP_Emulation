@@ -46,6 +46,11 @@ int main(){
         m.inputs[Machinemodule::TRIG].channels=4;m.inputs[Machinemodule::P1_CV].channels=1;m.inputs[Machinemodule::P1_CV].setVoltage(1);
         for(int f=1600;f<2112;++f){args.frame=f;for(int i=0;i<4;++i)m.inputs[Machinemodule::TRIG].setVoltage((f==1610||f==1740)?10:0,i);m.process(args);if(f%128==127)drain();}
         drain();{std::lock_guard<std::mutex> guard(trace.mutex);assert(trace.hits.size()==10);for(size_t i=2;i<trace.hits.size();++i)assert(trace.hits[i].resolved[0]==24);}
+        // A new timeline while an external gate is high must not replay it.
+        for(int i=0;i<4;++i)m.inputs[Machinemodule::TRIG].setVoltage(10,i);
+        m.restart(44100);
+        for(int i=0;i<256;++i){++args.frame;m.process(args);if(i%128==127)drain();}
+        drain();{std::lock_guard<std::mutex> guard(trace.mutex);assert(trace.hits.size()==10);}
         // Switching host rate starts a new epoch, clears old output and preserves finite voltages.
         args.sampleRate=96000;args.sampleTime=1.f/96000;for(int i=0;i<256;++i){++args.frame;m.process(args);if(i%128==127)drain();}
     }
