@@ -8,8 +8,8 @@ int main(int argc,char** argv){
     using namespace md_rack;
     auto fw=md::fw::loadFirmware(argv[1]);auto c=md::fw::parseContainer(md::fw::parseSysex(md::fw::readFile(argv[1])));
     md::engine::Engine direct(fw,std::move(c.sections.at(0).data));
-    md::engine::Engine::Output raw;for(int i=0;i<40;++i)assert(direct.render(raw));
-    for(int t=0;t<16;++t){direct.host().setLevel(t,100);direct.host().setParam(t,17,100);direct.host().setRouting(t,6);}
+    md::engine::Engine::Output raw;for(int i=0;i<40;++i)assert(direct.render(raw));mm::prewarmMachines(direct,false,false);
+    for(int t=0;t<16;++t){direct.host().setLevel(t,100);direct.host().setRouting(t,6);for(int p=8;p<24;++p)direct.host().setParam(t,p,Machinedrum::kitDefaults[p]);}
     Machinedrum adapter(argv[1]);Hit hit;hit.machine=16;hit.mask=3;hit.values[0]=70;hit.values[1]=100;hit.velocity=100;
     auto values=resolve(hit,direct.os().machine(16)->defaults);
     direct.host().setTempo(120);direct.host().setMachine(0,16);for(int i=0;i<8;++i)direct.host().setParam(0,i,values[i]);direct.host().trigger(0,100);
