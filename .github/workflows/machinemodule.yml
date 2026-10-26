@@ -1,4 +1,4 @@
-name: Machinemodule Rack prototype
+name: Machinemodule Rack platforms
 on:
   push:
     paths: ['vcv/machinemodule/**', 'vcv/shared/GorgonSound.hpp', '.github/workflows/machinemodule.yml']
@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  RACK_SDK_VERSION: 2.6.4
 jobs:
   linux:
     runs-on: ubuntu-22.04
@@ -16,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: JosiahAlanLee/Gorgon
-          ref: 5857490d30d3e12fbce1dd18ad9f5f0b00dabbc3
+          ref: 2ad926e92ef2b8958e0ff0ff7ee40582b884c60e
           path: gorgon-reference
       - name: Install native build and Rack runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build libjack-jackd2-0 libpulse0 zstd
@@ -28,14 +30,14 @@ jobs:
       - name: Build adapter, real Rack interop and optional firmware-test executable
         run: |
           cmake -S vcv/machinemodule -B vcv/machinemodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
-          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test firmware_test -j2
+          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test -j2
           cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
           ctest --test-dir vcv/machinemodule/build --output-on-failure
       - name: Sanitize adapter and worker without any firmware
         run: |
           cmake -S vcv/machinemodule -B vcv/machinemodule/build-sanitize -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMD_RACK_SANITIZE=ON
           cmake --build vcv/machinemodule/build-sanitize --target control_test renderer_test worker_test -j2
-          ASAN_OPTIONS=detect_leaks=0 ctest --test-dir vcv/machinemodule/build-sanitize --output-on-failure
+          ASAN_OPTIONS=detect_leaks=0 ctest --test-dir vcv/machinemodule/build-sanitize --output-on-failure -R '^(control|renderer|worker)$'
       - name: Package binary with corresponding source; exclude all OS/sample data
         run: |
           python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
@@ -53,6 +55,119 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: MachinemoduleRack-linux-prototype-and-source
+          path: |
+            vcv/machinemodule/dist/*.vcvplugin
+            vcv/machinemodule/dist/*-source.tar.gz
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JosiahAlanLee/Gorgon
+          ref: 2ad926e92ef2b8958e0ff0ff7ee40582b884c60e
+          path: gorgon-reference
+      - name: Extract the matching Rack runtime for real module tests
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'RackFree.exe'
+          $runtime = Join-Path $env:RUNNER_TEMP 'Rack-runtime'
+          Invoke-WebRequest "https://vcvrack.com/downloads/RackFree-$env:RACK_SDK_VERSION-win-x64.exe" -OutFile $installer
+          & 'C:\Program Files\7-Zip\7z.exe' x $installer "-o$runtime" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Rack runtime extraction failed' }
+          $dll = Get-ChildItem $runtime -Recurse -Filter libRack.dll | Select-Object -First 1
+          if (-not $dll) { throw 'Rack installer did not contain libRack.dll' }
+          $dll.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: >-
+            git unzip
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja mingw-w64-x86_64-python
+            mingw-w64-x86_64-zstd
+      - name: Fetch Rack SDK and pinned core
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-win-x64.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+          vcv/machinemodule/tools/fetch-core.sh
+      - name: Build and run native adapter, DSP JIT and Gorgon interop tests
+        run: |
+          cmake -S vcv/machinemodule -B vcv/machinemodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
+          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test -j2
+          cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
+          ctest --test-dir vcv/machinemodule/build --output-on-failure
+      - name: Verify DLL imports and package with corresponding source
+        run: |
+          objdump -p vcv/machinemodule/plugin.dll | grep 'DLL Name:'
+          if objdump -p vcv/machinemodule/plugin.dll | grep -Ei 'DLL Name: (libstdc|libgcc|libwinpthread)'; then
+            echo '::error::plugin.dll depends on a MinGW runtime DLL'
+            exit 1
+          fi
+          python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
+          python3 vcv/machinemodule/tools/package.py
+          test -f vcv/machinemodule/dist/MachinemoduleRack-2.0.0-win-x64.vcvplugin
+          vcv/machinemodule/build/plugin_load_test.exe vcv/machinemodule/dist/MachinemoduleRack/plugin.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MachinemoduleRack-win-x64-and-source
+          path: |
+            vcv/machinemodule/dist/*.vcvplugin
+            vcv/machinemodule/dist/*-source.tar.gz
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, cpu: arm64, arch: mac-arm64 }
+          - { runner: macos-15-intel, cpu: x86_64, arch: mac-x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JosiahAlanLee/Gorgon
+          ref: 2ad926e92ef2b8958e0ff0ff7ee40582b884c60e
+          path: gorgon-reference
+      - name: Install build and packaging tools
+        run: brew install ninja zstd
+      - name: Fetch matching Rack SDK and pinned core
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+          vcv/machinemodule/tools/fetch-core.sh
+      - name: Build and run native adapter, DSP JIT and Gorgon interop tests
+        env:
+          DYLD_LIBRARY_PATH: /tmp/Rack-SDK
+        run: |
+          cmake -S vcv/machinemodule -B vcv/machinemodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cpu }} -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
+          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test -j3
+          cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
+          ctest --test-dir vcv/machinemodule/build --output-on-failure
+          test "$(lipo -archs vcv/machinemodule/plugin.dylib)" = '${{ matrix.cpu }}'
+      - name: Package and verify the signed plugin with corresponding source
+        env:
+          DYLD_LIBRARY_PATH: /tmp/Rack-SDK
+        run: |
+          python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
+          python3 vcv/machinemodule/tools/package.py
+          test -f vcv/machinemodule/dist/MachinemoduleRack-2.0.0-${{ matrix.arch }}.vcvplugin
+          otool -L vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib
+          otool -L vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib | grep '/tmp/Rack2/libRack.dylib'
+          codesign --verify --strict vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib
+          vcv/machinemodule/build/plugin_load_test vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MachinemoduleRack-${{ matrix.arch }}-and-source
           path: |
             vcv/machinemodule/dist/*.vcvplugin
             vcv/machinemodule/dist/*-source.tar.gz

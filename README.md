@@ -58,3 +58,5 @@ separate AGPL plugin with Gorgon sound locks, eight polyphonic parameter CV inpu
 and optional MDS1 ROM sample memory. A user-supplied OS is required. The original
 DrumLab synth and other plugins retain their existing licenses. See the adapter
 README for timing, validation and current sampling limits.
+Its dedicated CI builds Windows x64, Linux x64 and both Mac architectures;
+live Machinedrum OS testing has been performed on Linux.
