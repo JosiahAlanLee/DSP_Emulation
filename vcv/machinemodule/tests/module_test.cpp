@@ -56,7 +56,11 @@ int main(){
     }
 #ifdef GORGON_SOURCE
     modelGorgon->plugin=&providerPlugin;
+#ifdef _WIN32
+    _putenv_s("HYDRAPY_STUDIO_FILE","C:/nonexistent/machinemodule-interop-test");
+#else
     setenv("HYDRAPY_STUDIO_FILE","/nonexistent/machinemodule-interop-test",1);
+#endif
     for(bool reverse:{false,true}){
         Trace trace;Machinemodule receiver(factory(trace));receiver.model=modelMachinemodule;ready(receiver);
         Gorgon sender;sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;

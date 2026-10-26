@@ -94,8 +94,12 @@ A backend fault stops the engine and reports an error in the menu.
 
 ## Build and check
 
-Tested locally on Linux x64, Rack SDK 2.6.4. CMake 3.22+, a C++17 compiler,
-Git, Python 3 and zstd are needed. Other platforms remain unvalidated.
+CMake 3.22+, a C++17 compiler, Git, Python 3 and zstd are needed. The dedicated
+[platform workflow](../../.github/workflows/machinemodule.yml) builds Linux x64,
+Windows x64, macOS Intel and macOS Apple Silicon packages with Rack SDK 2.6.4.
+It runs the firmware-free tests on each native architecture. Live firmware audio
+and performance measurements below are from Linux only; CI does not have an OS
+image or a ROM bank.
 
 ```sh
 make RACK_DIR=/absolute/path/to/Rack-SDK
@@ -113,11 +117,31 @@ For the real Gorgon/Rack interop test, configure CMake with
 `-DMD_RACK_SANITIZE=ON` instruments the adapter/control/worker tests with
 AddressSanitizer and UndefinedBehaviorSanitizer.
 
+On Windows, use the **MSYS2 MINGW64** shell and its GCC, CMake, Ninja, Python,
+Git and zstd packages. MSVC is not compatible with Rack's C++ plugin ABI. The
+adapter builds a private MinGW-compatible copy of the pinned emulator in the
+build directory; the upstream checkout, voice DSP and firmware are unchanged.
+The SDK supplies only Rack's import library: running the real module/load tests
+also needs the installed Rack 2 directory containing `libRack.dll` on `PATH`.
+The Windows CI extracts the matching official Rack runtime for these tests.
+
+On macOS, build natively for Intel or Apple Silicon. For an explicit target,
+pass `CMAKE_ARGS=-DCMAKE_OSX_ARCHITECTURES=x86_64` or
+`CMAKE_ARGS=-DCMAKE_OSX_ARCHITECTURES=arm64` to Make and use the matching SDK.
+For module tests, set `DYLD_LIBRARY_PATH` to the SDK directory. Packaging fixes
+the Rack library install name and applies and verifies an ad-hoc signature.
+Package names include `mac-x64` or `mac-arm64`, read from the compiled binary.
+If a checkout contains binaries from several targets, select one explicitly
+with `python3 tools/package.py --binary /path/to/plugin.dll` (or `.so`/`.dylib`).
+
 Portable tests cover control precedence, restoration, malformed MDS1 input,
 100,000 threaded event tuples, rate conversion at 8/22.05/44.1/48/96/192 kHz
 and a fractional rate, anti-alias rejection, generations and load recovery.
 The real Rack test uses a deterministic backend to check packet flips, both
 Gorgon processing orders, CV, trigger precedence and sample-rate changes.
+The DSP JIT test executes an original short DSP program on a worker and checks
+it against the interpreter, without firmware. The load test opens the compiled
+plugin through the OS loader and calls its exported Rack registration entry.
 These checks do **not** establish firmware audio fidelity or emulator real-time
 performance. The optional `firmware_test` compares the adapter with a separately
 driven original core, sample for sample, and checks that the hit is audible.
