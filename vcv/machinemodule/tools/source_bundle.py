@@ -25,6 +25,10 @@ def add_tree(tar, source, target):
 with tarfile.open(name, 'w:gz') as tar:
     add_tree(tar, ROOT, Path('MachinemoduleRack/vcv/machinemodule'))
     tar.add(ROOT.parent/'shared/GorgonSound.hpp', arcname='MachinemoduleRack/vcv/shared/GorgonSound.hpp')
+    # Panel sources use the same palette, outline writer and twelve marks as the
+    # other modules. Include them so the source archive can regenerate artwork.
+    for part in ['panels', 'glyphs']:
+        add_tree(tar, ROOT.parent/'shared'/part, Path('MachinemoduleRack/vcv/shared')/part)
     # Only the core build's source dependencies; omit JUCE/MPC wrapper/graphics.
     for part in ['CMakeLists.txt', 'LICENSE', 'README.md', 'cmake', 'engine', 'tools', 'desktop/src/core',
                  'libs/dsp56300/LICENSE.md', 'libs/dsp56300/source',

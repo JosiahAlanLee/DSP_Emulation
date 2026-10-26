@@ -1,9 +1,9 @@
 name: DrumLab native Linux
 on:
   push:
-    paths: ['vcv/drumlab/**', '.github/workflows/drumlab.yml']
+    paths: ['vcv/drumlab/**', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/drumlab.yml']
   pull_request:
-    paths: ['vcv/drumlab/**', '.github/workflows/drumlab.yml']
+    paths: ['vcv/drumlab/**', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/drumlab.yml']
   workflow_dispatch:
 permissions:
   contents: read

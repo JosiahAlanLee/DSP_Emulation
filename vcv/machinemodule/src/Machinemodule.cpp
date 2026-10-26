@@ -2,6 +2,7 @@
 #include "plugin.hpp"
 #include "engine/Worker.hpp"
 #include "engine/Machinedrum.hpp"
+#include "Layout.hpp"
 #include <osdialog.h>
 #include <cstdlib>
 
@@ -135,17 +136,63 @@ struct Machinemodule : Module {
     }
 };
 
+// UI thread only. Refresh the name list when the worker publishes a loaded OS,
+// rather than copying the firmware's machine metadata on every draw.
+struct MachineNameDisplay : widget::Widget {
+    Machinemodule* module = nullptr;
+    uint64_t loaded = ~uint64_t(0);
+    std::vector<md_rack::Machine> machines;
+    void step() override {
+        if (module) {
+            uint64_t current = module->worker.loaded.load(std::memory_order_acquire);
+            if (current != loaded) { machines = module->worker.machines(); loaded = current; }
+        }
+        Widget::step();
+    }
+    void draw(const DrawArgs& args) override {
+        nvgBeginPath(args.vg); nvgRoundedRect(args.vg,0,0,box.size.x,box.size.y,3);
+        nvgFillColor(args.vg,nvgRGB(14,20,23)); nvgFill(args.vg);
+        auto font = APP->window->uiFont; if (!font) return;
+        int selected = module ? int(std::lround(md_rack::finite(module->params[Machinemodule::MACHINE].getValue(),0,191,16))) : 16;
+        std::string name = "LOAD OS FROM MENU";
+        if (module && module->worker.ready.load(std::memory_order_acquire)) {
+            name = "UNAVAILABLE ID";
+            for (const auto& machine : machines) if (machine.id == selected) { name = machine.name; break; }
+        }
+        std::string label = string::f("LOCAL %03d / ",selected)+name;
+        nvgSave(args.vg); nvgScissor(args.vg,4,0,box.size.x-8,box.size.y);
+        nvgFontFaceId(args.vg,font->handle); nvgFontSize(args.vg,9);
+        nvgTextAlign(args.vg,NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgFillColor(args.vg,nvgRGB(143,220,196));
+        nvgText(args.vg,box.size.x/2,box.size.y/2,label.c_str(),nullptr);
+        nvgRestore(args.vg);
+    }
+};
+
 struct MachinemoduleWidget:ModuleWidget {
     explicit MachinemoduleWidget(Machinemodule* module) {
+        using namespace machinemodule_layout::voice;
+#define POS(N) Vec(N##_X, N##_Y)
         setModule(module);setPanel(createPanel(asset::plugin(pluginInstance,"res/Machinemodule.svg")));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(17,19)),module,Machinemodule::MACHINE));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(45,19)),module,Machinemodule::TEMPO));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(73,19)),module,Machinemodule::GAIN));
-        for(int i=0;i<4;++i)addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12+20*i,36)),module,Machinemodule::TRIG+i));
-        for(int i=0;i<8;++i){int row=i/2,col=i%2;float x=col?53:13,y=53+17*row;addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(x,y)),module,Machinemodule::P1+i));addInput(createInputCentered<PJ301MPort>(mm2px(Vec(x+19,y)),module,Machinemodule::P1_CV+i));}
-        for(int i=0;i<3;++i)addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(15+30*i,121)),module,Machinemodule::LEFT+i));
-        addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(6,6)),module,Machinemodule::READY));
-        addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(85,6)),module,Machinemodule::LINK));
+        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(machinemodule_layout::voice::WIDTH-15,365)));
+        addParam(createParamCentered<RoundBlackSnapKnob>(POS(MACHINE),module,Machinemodule::MACHINE));
+        addParam(createParamCentered<RoundBlackKnob>(POS(TEMPO),module,Machinemodule::TEMPO));
+        addParam(createParamCentered<RoundBlackKnob>(POS(GAIN),module,Machinemodule::GAIN));
+        auto* name = createWidget<MachineNameDisplay>(POS(MACHINE_NAME));
+        name->box.size = Vec(MACHINE_NAME_W,MACHINE_NAME_H); name->module = module; addChild(name);
+        const Vec ins[] = {POS(TRIG),POS(VELOCITY),POS(MACHINE_CV),POS(RESET)};
+        const Vec knobs[] = {POS(P1),POS(P2),POS(P3),POS(P4),POS(P5),POS(P6),POS(P7),POS(P8)};
+        const Vec cvs[] = {POS(P1_CV),POS(P2_CV),POS(P3_CV),POS(P4_CV),POS(P5_CV),POS(P6_CV),POS(P7_CV),POS(P8_CV)};
+        const Vec outs[] = {POS(LEFT),POS(RIGHT),POS(TRACKS)};
+        for(int i=0;i<4;++i)addInput(createInputCentered<PJ301MPort>(ins[i],module,Machinemodule::TRIG+i));
+        for(int i=0;i<8;++i){
+            addParam(createParamCentered<RoundSmallBlackKnob>(knobs[i],module,Machinemodule::P1+i));
+            addInput(createInputCentered<PJ301MPort>(cvs[i],module,Machinemodule::P1_CV+i));
+        }
+        for(int i=0;i<3;++i)addOutput(createOutputCentered<DarkPJ301MPort>(outs[i],module,Machinemodule::LEFT+i));
+        addChild(createLightCentered<SmallLight<GreenLight>>(POS(READY),module,Machinemodule::READY));
+        addChild(createLightCentered<SmallLight<BlueLight>>(POS(LINK),module,Machinemodule::LINK));
+#undef POS
     }
     void appendContextMenu(Menu* menu) override {
         auto* module=dynamic_cast<Machinemodule*>(this->module);if(!module)return;

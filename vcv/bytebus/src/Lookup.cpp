@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "plugin.hpp"
 #include "engine/Lookup.hpp"
+#include "Layout.hpp"
+#include "../../shared/PanelWidgets.hpp"
 #include <osdialog.h>
 #include <atomic>
 #include <iomanip>
@@ -169,35 +171,43 @@ struct LookupDisplay : widget::Widget {
     ByteLookup* module = nullptr;
     void draw(const DrawArgs& args) override {
         nvgBeginPath(args.vg); nvgRoundedRect(args.vg,0,0,box.size.x,box.size.y,3);
-        nvgFillColor(args.vg,nvgRGB(15,25,27)); nvgFill(args.vg);
+        nvgFillColor(args.vg,nvgRGB(14,20,23)); nvgFill(args.vg);
         auto font = APP->window->uiFont; if (!font) return;
         nvgFontFaceId(args.vg,font->handle); nvgFontSize(args.vg,16); nvgTextAlign(args.vg,NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgFillColor(args.vg,nvgRGB(143,226,193));
+        nvgFillColor(args.vg,nvgRGB(143,220,196));
         unsigned value = module ? module->displayedWord.load(std::memory_order_relaxed) : 128;
         nvgText(args.vg,box.size.x/2,box.size.y/2,string::f("%02X",value).c_str(),nullptr);
     }
 };
 struct ByteLookupWidget : ModuleWidget {
     ByteLookupWidget(ByteLookup* module) {
+        using namespace bytebus_layout::lookup;
+#define POS(N) Vec(N##_X, N##_Y)
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance,"res/Lookup.svg")));
-        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(225,365)));
-        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(55,98),module,ByteLookup::FAMILY));
-        addParam(createParamCentered<RoundBlackKnob>(Vec(185,98),module,ByteLookup::SHAPE));
-        addParam(createParamCentered<RoundBlackKnob>(Vec(55,166),module,ByteLookup::PHASE));
-        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(185,166),module,ByteLookup::SEED));
-        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(55,234),module,ByteLookup::MODE));
-        addParam(createParamCentered<VCVButton>(Vec(185,234),module,ByteLookup::RESET_BUTTON));
-        for (int k = 0; k < 8; ++k) addChild(createLightCentered<SmallLight<GreenLight>>(Vec(32+25*(7-k),56),module,ByteLookup::BIT0_LIGHT+k));
-        auto* display = createWidget<LookupDisplay>(Vec(95,222)); display->box.size = Vec(50,24); display->module = module; addChild(display);
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(185,256),module,ByteLookup::LOCK_LIGHT));
-        addInput(createInputCentered<PJ301MPort>(Vec(35,296),module,ByteLookup::FAMILY_CV));
-        addInput(createInputCentered<PJ301MPort>(Vec(90,296),module,ByteLookup::SHAPE_CV));
-        addInput(createInputCentered<PJ301MPort>(Vec(145,296),module,ByteLookup::PHASE_CV));
-        addInput(createInputCentered<PJ301MPort>(Vec(200,296),module,ByteLookup::SIGNAL_IN));
-        addInput(createInputCentered<PJ301MPort>(Vec(35,346),module,ByteLookup::BUS_IN));
-        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(90,346),module,ByteLookup::BUS_OUT));
-        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(145,346),module,ByteLookup::AUDIO_OUT));
-        addInput(createInputCentered<PJ301MPort>(Vec(200,346),module,ByteLookup::RESET_IN));
+        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::lookup::WIDTH-15,365)));
+        auto* family = createParam<dspemu::panel::Choice>(POS(FAMILY),module,ByteLookup::FAMILY);
+        family->box.size = Vec(FAMILY_W,FAMILY_H);
+        family->labels = {"HARMONIC","FORMANT","FOLD","CURVE","WALSH","RHYTHM","CUSTOM"}; addParam(family);
+        addParam(createParamCentered<RoundBlackKnob>(POS(SHAPE),module,ByteLookup::SHAPE));
+        addParam(createParamCentered<RoundBlackKnob>(POS(PHASE),module,ByteLookup::PHASE));
+        addParam(createParamCentered<RoundBlackSnapKnob>(POS(SEED),module,ByteLookup::SEED));
+        auto* mode = createParam<dspemu::panel::Choice>(POS(MODE),module,ByteLookup::MODE);
+        mode->box.size = Vec(MODE_W,MODE_H);
+        mode->labels = {"MAP","RISE","FALL"}; addParam(mode);
+        addParam(createParamCentered<VCVButton>(POS(RESET),module,ByteLookup::RESET_BUTTON));
+        const Vec bits[] = {POS(BIT0),POS(BIT1),POS(BIT2),POS(BIT3),POS(BIT4),POS(BIT5),POS(BIT6),POS(BIT7)};
+        for (int k = 0; k < 8; ++k) addChild(createLightCentered<SmallLight<GreenLight>>(bits[k],module,ByteLookup::BIT0_LIGHT+k));
+        auto* display = createWidget<LookupDisplay>(POS(WORD)); display->box.size = Vec(WORD_W,WORD_H); display->module = module; addChild(display);
+        addChild(createLightCentered<SmallLight<GreenLight>>(POS(LOCK),module,ByteLookup::LOCK_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(POS(FAMILY_CV),module,ByteLookup::FAMILY_CV));
+        addInput(createInputCentered<PJ301MPort>(POS(SHAPE_CV),module,ByteLookup::SHAPE_CV));
+        addInput(createInputCentered<PJ301MPort>(POS(PHASE_CV),module,ByteLookup::PHASE_CV));
+        addInput(createInputCentered<PJ301MPort>(POS(SIGNAL_IN),module,ByteLookup::SIGNAL_IN));
+        addInput(createInputCentered<PJ301MPort>(POS(BUS_IN),module,ByteLookup::BUS_IN));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(BUS_OUT),module,ByteLookup::BUS_OUT));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(AUDIO_OUT),module,ByteLookup::AUDIO_OUT));
+        addInput(createInputCentered<PJ301MPort>(POS(RESET_IN),module,ByteLookup::RESET_IN));
+#undef POS
     }
     void step() override {
         if (auto* m = dynamic_cast<ByteLookup*>(module)) m->collect();

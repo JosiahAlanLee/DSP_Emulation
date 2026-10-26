@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "plugin.hpp"
 #include "engine/Converter.hpp"
+#include "Layout.hpp"
 #include <atomic>
 
 struct ByteConverter : Module {
@@ -47,30 +48,36 @@ struct ConverterDisplay : widget::Widget {
     ByteConverter* module=nullptr;
     void draw(const DrawArgs& args) override {
         nvgBeginPath(args.vg); nvgRoundedRect(args.vg,0,0,box.size.x,box.size.y,3);
-        nvgFillColor(args.vg,nvgRGB(15,25,27)); nvgFill(args.vg);
+        nvgFillColor(args.vg,nvgRGB(14,20,23)); nvgFill(args.vg);
         auto font=APP->window->uiFont; if(!font) return;
         nvgFontFaceId(args.vg,font->handle); nvgFontSize(args.vg,16); nvgTextAlign(args.vg,NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgFillColor(args.vg,nvgRGB(143,226,193));
-        nvgText(args.vg,30,box.size.y/2,string::f("%02X",module ? module->displayedAdc.load() : 128).c_str(),nullptr);
-        nvgText(args.vg,140,box.size.y/2,string::f("%02X",module ? module->displayedDac.load() : 128).c_str(),nullptr);
+        nvgFillColor(args.vg,nvgRGB(143,220,196));
+        using namespace bytebus_layout::converter;
+        nvgText(args.vg,ADC_GAIN_X-WORD_X,box.size.y/2,string::f("%02X",module ? module->displayedAdc.load() : 128).c_str(),nullptr);
+        nvgText(args.vg,DAC_GAIN_X-WORD_X,box.size.y/2,string::f("%02X",module ? module->displayedDac.load() : 128).c_str(),nullptr);
     }
 };
 struct ByteConverterWidget : ModuleWidget {
     ByteConverterWidget(ByteConverter* module) {
+        using namespace bytebus_layout::converter;
+#define POS(N) Vec(N##_X, N##_Y)
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance,"res/Converter.svg")));
-        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(195,365)));
-        auto* display=createWidget<ConverterDisplay>(Vec(20,52)); display->box.size=Vec(170,25); display->module=module; addChild(display);
+        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::converter::WIDTH-15,365)));
+        auto* display=createWidget<ConverterDisplay>(POS(WORD)); display->box.size=Vec(WORD_W,WORD_H); display->module=module; addChild(display);
+        const Vec gains[] = {POS(ADC_GAIN),POS(DAC_GAIN)}, offsets[] = {POS(ADC_OFFSET),POS(DAC_OFFSET)}, ranges[] = {POS(ADC_RANGE),POS(DAC_RANGE)};
         for(int side=0;side<2;++side) {
-            float x=side ? 160 : 50; int base=side ? ByteConverter::DAC_GAIN : ByteConverter::ADC_GAIN;
-            addParam(createParamCentered<RoundBlackKnob>(Vec(x,108),module,base));
-            addParam(createParamCentered<RoundBlackKnob>(Vec(x,168),module,base+1));
-            addParam(createParamCentered<CKSS>(Vec(x,224),module,base+2));
+            int base=side ? ByteConverter::DAC_GAIN : ByteConverter::ADC_GAIN;
+            addParam(createParamCentered<RoundBlackKnob>(gains[side],module,base));
+            addParam(createParamCentered<RoundBlackKnob>(offsets[side],module,base+1));
+            addParam(createParamCentered<CKSS>(ranges[side],module,base+2));
         }
-        addChild(createLightCentered<SmallLight<RedLight>>(Vec(105,224),module,ByteConverter::CLIP_LIGHT));
+        addChild(createLightCentered<SmallLight<RedLight>>(POS(CLIP),module,ByteConverter::CLIP_LIGHT));
+        const Vec ins[] = {POS(SIGNAL_IN),POS(CLOCK_IN),POS(BUS_IN)}, outs[] = {POS(BUS_OUT),POS(CLOCK_OUT),POS(SIGNAL_OUT)};
         for(int i=0;i<3;++i) {
-            addInput(createInputCentered<PJ301MPort>(Vec(42+63*i,284),module,i));
-            addOutput(createOutputCentered<DarkPJ301MPort>(Vec(42+63*i,340),module,i));
+            addInput(createInputCentered<PJ301MPort>(ins[i],module,i));
+            addOutput(createOutputCentered<DarkPJ301MPort>(outs[i],module,i));
         }
+#undef POS
     }
     void appendContextMenu(Menu* menu) override {
         auto* m=getModule<ByteConverter>(); if(!m) return;

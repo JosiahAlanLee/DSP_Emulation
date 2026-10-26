@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "plugin.hpp"
 #include "engine/Percussion.hpp"
+#include "Layout.hpp"
+#include "../../shared/PanelWidgets.hpp"
 #include <atomic>
 
 struct Percussion : Module {
@@ -118,22 +120,31 @@ struct Percussion : Module {
 
 struct PercussionWidget : ModuleWidget {
     explicit PercussionWidget(Percussion* m) {
+        using namespace drumlab_layout::percussion;
+#define POS(N) Vec(N##_X, N##_Y)
         setModule(m); setPanel(createPanel(asset::plugin(pluginInstance, "res/Percussion.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(285, 365)));
-        constexpr float x[4] = {35, 112, 188, 265};
-        for (int k = 0; k < 8; ++k) {
-            Vec p(x[k % 4], k < 4 ? 85 : 155);
-            if (k == Percussion::MACHINE || k == Percussion::BITS)
+        addChild(createWidget<ScrewSilver>(Vec(drumlab_layout::percussion::WIDTH-15, 365)));
+        auto* machine = createParam<dspemu::panel::Choice>(POS(MACHINE), m, Percussion::MACHINE);
+        machine->box.size = Vec(MACHINE_W,MACHINE_H); machine->previewIndex = 6;
+        machine->labels = {"KICK","SNARE","HAT","FM","MEMBRANE","CLAP","4-LANE KIT"}; addParam(machine);
+        const Vec knobs[] = {POS(MACHINE),POS(TUNE),POS(DECAY),POS(COLOR),POS(CONTOUR),POS(DRIVE),POS(BITS),POS(RATE)};
+        for (int k = 1; k < 8; ++k) {
+            Vec p = knobs[k];
+            if (k == Percussion::BITS)
                 addParam(createParamCentered<RoundBlackSnapKnob>(p, m, k));
             else addParam(createParamCentered<RoundBlackKnob>(p, m, k));
         }
-        addParam(createParamCentered<VCVButton>(Vec(269, 38), m, Percussion::TAP));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(238, 38), m, Percussion::HIT_LIGHT));
+        addParam(createParamCentered<VCVButton>(POS(TAP), m, Percussion::TAP));
+        addChild(createLightCentered<SmallLight<GreenLight>>(POS(HIT), m, Percussion::HIT_LIGHT));
+        const Vec ins[] = {POS(TRIG),POS(PITCH),POS(VEL),POS(MACHINE_CV),POS(DECAY_CV),POS(COLOR_CV),
+                           POS(CONTOUR_CV),POS(DRIVE_CV),POS(BITS_CV),POS(RATE_CV),POS(CHOKE),POS(RESET)};
+        const Vec outs[] = {POS(POLY),POS(LEFT),POS(RIGHT)};
         for (int k = 0; k < Percussion::NUM_INPUTS; ++k)
-            addInput(createInputCentered<PJ301MPort>(Vec(x[k % 4], 226 + 44 * (k / 4)), m, k));
+            addInput(createInputCentered<PJ301MPort>(ins[k], m, k));
         for (int k = 0; k < 3; ++k)
-            addOutput(createOutputCentered<DarkPJ301MPort>(Vec(70 + 80 * k, 357), m, k));
+            addOutput(createOutputCentered<DarkPJ301MPort>(outs[k], m, k));
+#undef POS
     }
     void appendContextMenu(Menu* menu) override {
         auto* m = dynamic_cast<Percussion*>(module);

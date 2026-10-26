@@ -10,7 +10,7 @@ bridge_test: bridge_test.cpp ../src/engine/*.hpp
 	$(CXX) $(CXXFLAGS) -Wno-mismatched-new-delete $< -o $@
 module_test: module_test.cpp ../src/Seance.cpp ../src/Expanders.cpp ../src/Bridge.cpp ../src/Chain.hpp ../src/engine/*.hpp ../src/Layout.hpp ../../shared/ByteBus.hpp
 	$(CXX) $(CXXFLAGS) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include $< -L$(RACK_DIR) -Wl,-rpath,$(abspath $(RACK_DIR)) -lRack $(RACK_TEST_LDFLAGS) -o $@
-bridge_module_test: bridge_module_test.cpp ../src/Seance.cpp ../src/Expanders.cpp ../src/Bridge.cpp ../src/Chain.hpp ../src/engine/*.hpp ../src/Layout.hpp ../../shared/*.hpp ../../bytebus/src/Register.cpp ../../bytebus/src/Lookup.cpp ../../bytebus/src/engine/*.hpp ../../otislab/src/OtisSampler.cpp ../../otislab/src/engine/*.hpp
+bridge_module_test: bridge_module_test.cpp ../src/Seance.cpp ../src/Expanders.cpp ../src/Bridge.cpp ../src/Chain.hpp ../src/engine/*.hpp ../src/Layout.hpp ../../shared/*.hpp ../../bytebus/src/Register.cpp ../../bytebus/src/Lookup.cpp ../../bytebus/src/Layout.hpp ../../bytebus/src/engine/*.hpp ../../otislab/src/OtisSampler.cpp ../../otislab/src/engine/*.hpp
 	$(CXX) $(CXXFLAGS) -pthread $< $(SDK_FLAGS) -o $@
 bridge-check: bridge_test bridge_module_test
 	./bridge_test
