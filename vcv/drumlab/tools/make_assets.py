@@ -4,50 +4,42 @@ NanoSVG does not render text. All panel labels are emitted as font outlines.
 """
 from pathlib import Path
 import argparse
-from fontTools.ttLib import TTFont
-from fontTools.pens.svgPathPen import SVGPathPen
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT.parent / 'shared' / 'panels'))
+from panel import Panel, DEFAULT_FONT, ACCENT, DIM, write_layout
 
 
 def panel(font_path):
-    font = TTFont(font_path)
-    glyphs = font.getGlyphSet()
-    cmap = font.getBestCmap()
-    em = font['head'].unitsPerEm
-    parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="300" height="380" viewBox="0 0 300 380">',
-             '<rect width="300" height="380" fill="#e8e2d2"/>',
-             '<rect x="9" y="10" width="282" height="360" rx="5" fill="none" stroke="#4f6f7a" stroke-width="1"/>']
-
-    def text(value, x, y, size=8, fill='#161918'):
-        scale = size / em
-        width = sum(glyphs[cmap[ord(c)]].width for c in value) * scale
-        cursor = x - width / 2
-        for c in value:
-            glyph = glyphs[cmap[ord(c)]]
-            pen = SVGPathPen(glyphs)
-            glyph.draw(pen)
-            parts.append(f'<path fill="{fill}" transform="translate({cursor:.4f} {y}) scale({scale:.8f} {-scale:.8f})" d="{pen.getCommands()}"/>')
-            cursor += glyph.width * scale
-
-    text('PERCUSSION', 150, 24, 14)
-    text('DRUMLAB', 150, 40, 8, '#4f6f7a')
-    text('HIT', 268, 23, 6)
+    p = Panel(300, font_path)
+    p.title('DrumLab', 'PERCUSSION / 16 VOICES', 10, 20, mark_x=212)
+    p.component('TAP', 'button', 272, 24)
+    p.component('HIT', 'light', 244, 24)
+    p.text('TAP', 272, 43, 6, DIM)
+    p.text('HIT', 244, 43, 6, DIM)
+    p.component('MACHINE', 'selector', 16, 74, 106, 24, '4-LANE KIT')
+    p.text('MACHINE', 69, 116)
+    for name, x in [('TUNE', 171), ('DECAY', 256)]:
+        p.component(name, 'knob', x, 86)
+        p.text(name, x, 116)
+    for name, x in [('COLOR', 35), ('CONTOUR', 92), ('DRIVE', 150), ('BITS', 208), ('RATE', 265)]:
+        p.component(name, 'knob', x, 156)
+        p.text(name, x, 186, 7.5)
+    p.rule(196)
+    p.text('HIT CV', 18, 210, 7, ACCENT, 'start')
+    p.text('CAPTURED AT EACH TRIGGER', 282, 210, 6, DIM, 'end')
     x = [35, 112, 188, 265]
-    labels = ['MACHINE', 'TUNE', 'DECAY', 'COLOR', 'CONTOUR', 'DRIVE', 'BITS', 'RATE']
-    for i, label in enumerate(labels):
-        cy = 85 if i < 4 else 155
-        text(label, x[i % 4], cy - 23, 8)
-        parts.append(f'<circle cx="{x[i % 4]}" cy="{cy}" r="20" fill="none" stroke="#4f6f7a" stroke-width=".6"/>')
-    text('SOUND CONTROLS ARE CAPTURED AT EACH HIT', 150, 192, 6.5, '#a32b24')
-    inputs = ['TRIG', 'V/OCT', 'VEL', 'MACHINE', 'DECAY', 'COLOR', 'CONTOUR', 'DRIVE', 'BITS', 'RATE', 'CHOKE', 'RESET']
-    for i, label in enumerate(inputs):
-        text(label, x[i % 4], 207 + 44 * (i // 4), 7.5)
-    parts.append('<path d="M24 332H276" stroke="#4f6f7a" stroke-width=".7"/>')
+    inputs = ['TRIG', 'PITCH', 'VEL', 'MACHINE_CV', 'DECAY_CV', 'COLOR_CV', 'CONTOUR_CV',
+              'DRIVE_CV', 'BITS_CV', 'RATE_CV', 'CHOKE', 'RESET']
+    labels = ['TRIG', 'V/OCT', 'VEL', 'MACHINE', 'DECAY', 'COLOR', 'CONTOUR', 'DRIVE', 'BITS', 'RATE', 'CHOKE', 'RESET']
+    for i, (name, label) in enumerate(zip(inputs, labels)):
+        p.jack(name, x[i % 4], 239 + 40*(i//4), label)
+    p.rule(334)
+    p.block(46, 338, 208, 36)
     for i, label in enumerate(['POLY', 'LEFT', 'RIGHT']):
-        text(label, 70 + 80 * i, 342, 7.5, '#a32b24')
-    parts.append('</svg>')
-    return '\n'.join(parts) + '\n'
+        p.jack(label, 70 + 80*i, 360, label, True)
+    return p
 
 
 def example():
@@ -70,9 +62,11 @@ def example():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+    parser.add_argument('--font', default=DEFAULT_FONT)
     args = parser.parse_args()
     (ROOT / 'res').mkdir(exist_ok=True)
     (ROOT / 'examples').mkdir(exist_ok=True)
-    (ROOT / 'res/Percussion.svg').write_text(panel(args.font))
+    p = panel(args.font)
+    p.write(ROOT, 'Percussion')
+    write_layout(ROOT / 'src/Layout.hpp', 'drumlab_layout', {'percussion': p})
     (ROOT / 'examples/Gorgon-percussion.vcv').write_text(example())

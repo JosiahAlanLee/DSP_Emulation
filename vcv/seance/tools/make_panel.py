@@ -116,7 +116,7 @@ expander('SeanceScramble', 'scramble', 'SCRAMBLE', 12, 'XII Learned invariant: h
 expander('SeanceCross', 'cross', 'CROSS', 4, 'IV Centre of decision: authority, contestable',
          knobs={'DEPTH': (30, 112, 'DEPTH'), 'SMOOTH': (30, 180, 'SMOOTH')}, switches={'MODE': (30, 248)}, latches={},
          jacks={'DEPTH_CV': (30, 318, 'DEPTH')},
-         legends=(('MORPH', 39, 243, 5.5, LABEL, 'start'), ('MULT', 39, 257, 5.5, LABEL, 'start')))
+         legends=(('MORPH', 36, 243, 5.5, LABEL, 'start'), ('MULT', 36, 257, 5.5, LABEL, 'start')))
 # V Bottleneck (fails the bypass test): bins past the edge do not get through.
 expander('SeanceWipe', 'wipe', 'WIPE', 5, 'V Bottleneck: fails the bypass test',
          knobs={'WIPE': (30, 112, 'WIPE'), 'SOFT': (30, 180, 'SOFT')}, switches={}, latches={},

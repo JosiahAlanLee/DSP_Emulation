@@ -17,6 +17,12 @@ drawn by that project's generator with the seal ornament left off.
 | Séance Scramble | XII Learned invariant | hard walls, one door (one seed opens onto one scatter) |
 | Séance Cross | IV Centre of decision | authority, contestable (B decides A's levels; DEPTH contests) |
 | Séance Wipe | V Bottleneck | fails the bypass test (bins past the edge do not get through) |
+| Séance Bridge | III Boundary | the mask and activity buses cross the spectral frame boundary |
+| Clocked Register | VI Regulation | reset returns the held word and internal clock to their set point |
+| Lookup | IX Substitutive change | a table substitutes a new word for the incoming address |
+| Converter | III Boundary | voltage and byte words cross between representations |
+| DrumLab Percussion | X Generative substrate | six synthesis models supply the material for each hit |
+| Machinemodule | X Generative substrate | the drum engine supplies the material for each track |
 
 They identify the modules at a glance; per the source text, a mark's meaning is
 stated wherever it is used, which is this table.

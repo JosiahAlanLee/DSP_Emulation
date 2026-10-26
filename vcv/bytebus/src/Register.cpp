@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "plugin.hpp"
 #include "engine/Register.hpp"
+#include "Layout.hpp"
+#include "../../shared/PanelWidgets.hpp"
 #include <atomic>
 
 struct ClockedRegister : Module {
@@ -68,36 +70,42 @@ struct WordDisplay : widget::Widget {
     ClockedRegister* module = nullptr;
     void draw(const DrawArgs& args) override {
         nvgBeginPath(args.vg); nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
-        nvgFillColor(args.vg, nvgRGB(15, 25, 27)); nvgFill(args.vg);
+        nvgFillColor(args.vg, nvgRGB(14, 20, 23)); nvgFill(args.vg);
         auto font = APP->window->uiFont;
         if (!font) return;
         nvgFontFaceId(args.vg, font->handle); nvgFontSize(args.vg, 16);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgFillColor(args.vg, nvgRGB(143, 226, 193));
+        nvgFillColor(args.vg, nvgRGB(143, 220, 196));
         unsigned word = module ? module->displayedWord.load(std::memory_order_relaxed) : 0;
         nvgText(args.vg, box.size.x / 2, box.size.y / 2, string::f("%02X", word).c_str(), nullptr);
     }
 };
 struct ClockedRegisterWidget : ModuleWidget {
     ClockedRegisterWidget(ClockedRegister* module) {
+        using namespace bytebus_layout::reg;
+#define POS(N) Vec(N##_X, N##_Y)
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance, "res/Register.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(165, 365)));
-        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(50, 111), module, ClockedRegister::CLOCK_MODE));
-        addParam(createParamCentered<RoundBlackKnob>(Vec(130, 111), module, ClockedRegister::RATE));
-        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(50, 180), module, ClockedRegister::RESET_WORD));
-        addParam(createParamCentered<VCVButton>(Vec(130, 180), module, ClockedRegister::RESET_BUTTON));
+        addChild(createWidget<ScrewSilver>(Vec(WIDTH-15, 365)));
+        auto* source = createParam<dspemu::panel::Choice>(POS(SOURCE), module, ClockedRegister::CLOCK_MODE);
+        source->box.size = Vec(SOURCE_W, SOURCE_H);
+        source->labels = {"AUTO", "JACK", "BUS", "INTERNAL", "ENGINE"}; addParam(source);
+        addParam(createParamCentered<RoundBlackKnob>(POS(RATE), module, ClockedRegister::RATE));
+        addParam(createParamCentered<RoundBlackSnapKnob>(POS(RESET_WORD), module, ClockedRegister::RESET_WORD));
+        addParam(createParamCentered<VCVButton>(POS(LOAD), module, ClockedRegister::RESET_BUTTON));
+        const Vec bits[] = {POS(BIT0), POS(BIT1), POS(BIT2), POS(BIT3), POS(BIT4), POS(BIT5), POS(BIT6), POS(BIT7)};
         for (int k = 0; k < 8; ++k)
-            addChild(createLightCentered<SmallLight<GreenLight>>(Vec(27 + 18 * (7 - k), 64), module, ClockedRegister::BIT0_LIGHT + k));
-        auto* display = createWidget<WordDisplay>(Vec(60, 208));
-        display->box.size = Vec(60, 24); display->module = module; addChild(display);
-        addInput(createInputCentered<PJ301MPort>(Vec(50, 266), module, ClockedRegister::BUS_IN));
-        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(130, 266), module, ClockedRegister::BUS_OUT));
-        addInput(createInputCentered<PJ301MPort>(Vec(35, 326), module, ClockedRegister::CLOCK_IN));
-        addInput(createInputCentered<PJ301MPort>(Vec(90, 326), module, ClockedRegister::RESET_IN));
-        addOutput(createOutputCentered<DarkPJ301MPort>(Vec(145, 326), module, ClockedRegister::CLOCK_OUT));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(145, 350), module, ClockedRegister::CLOCK_LIGHT));
-        addChild(createLightCentered<SmallLight<YellowLight>>(Vec(130, 202), module, ClockedRegister::RESET_LIGHT));
+            addChild(createLightCentered<SmallLight<GreenLight>>(bits[k], module, ClockedRegister::BIT0_LIGHT + k));
+        auto* display = createWidget<WordDisplay>(POS(WORD));
+        display->box.size = Vec(WORD_W, WORD_H); display->module = module; addChild(display);
+        addInput(createInputCentered<PJ301MPort>(POS(BUS_IN), module, ClockedRegister::BUS_IN));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(BUS_OUT), module, ClockedRegister::BUS_OUT));
+        addInput(createInputCentered<PJ301MPort>(POS(CLOCK_IN), module, ClockedRegister::CLOCK_IN));
+        addInput(createInputCentered<PJ301MPort>(POS(RESET_IN), module, ClockedRegister::RESET_IN));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(CLOCK_OUT), module, ClockedRegister::CLOCK_OUT));
+        addChild(createLightCentered<SmallLight<GreenLight>>(POS(CLOCK_LIGHT), module, ClockedRegister::CLOCK_LIGHT));
+        addChild(createLightCentered<SmallLight<YellowLight>>(POS(RESET_LIGHT), module, ClockedRegister::RESET_LIGHT));
+#undef POS
     }
 };
 Model* modelClockedRegister = createModel<ClockedRegister, ClockedRegisterWidget>("ClockedRegister");

@@ -3,15 +3,16 @@ CXXFLAGS = -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -fno-unsafe-math-o
 RACK_DIR ?= ../../../../deps/Rack-SDK
 SDK_FLAGS = -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include -L$(RACK_DIR) -Wl,-rpath,$(abspath $(RACK_DIR)) -lRack -Wl,--allow-shlib-undefined
 HEADERS = ../src/engine/Percussion.hpp
+UI_HEADERS = ../src/Layout.hpp ../../shared/PanelWidgets.hpp
 GORGON_DIR ?= ../../../../Gorgon
 all: engine_test module_test render
 engine_test: engine_test.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) -Wno-mismatched-new-delete $< -o $@
-module_test: module_test.cpp ../src/Percussion.cpp $(HEADERS)
+module_test: module_test.cpp ../src/Percussion.cpp $(HEADERS) $(UI_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(SDK_FLAGS) -o $@
 render: render.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) $< -o $@
-gorgon_test: gorgon_test.cpp ../src/Percussion.cpp $(HEADERS) $(GORGON_DIR)/rack/src/engine/GorgonEngine.hpp
+gorgon_test: gorgon_test.cpp ../src/Percussion.cpp $(HEADERS) $(GORGON_DIR)/rack/src/engine/GorgonEngine.hpp $(UI_HEADERS)
 	$(CXX) $(CXXFLAGS) -I$(GORGON_DIR)/rack/src/engine $< $(SDK_FLAGS) -o $@
 gorgon-check: gorgon_test
 	./gorgon_test

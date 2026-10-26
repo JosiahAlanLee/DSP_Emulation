@@ -4,18 +4,19 @@ RACK_DIR ?= ../../../../deps/Rack-SDK
 SDK_FLAGS = -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include -L$(RACK_DIR) -Wl,-rpath,$(abspath $(RACK_DIR)) -lRack -Wl,--allow-shlib-undefined
 HEADERS = ../src/engine/Register.hpp ../../shared/ByteBus.hpp
 LOOKUP_HEADERS = ../src/engine/Lookup.hpp ../src/engine/LibraryIdentity.hpp ../src/engine/CompileVastish.hpp
+UI_HEADERS = ../src/Layout.hpp ../../shared/PanelWidgets.hpp
 all: engine_test module_test lookup_test lookup_module_test io_test io_module_test
-io_module_test: io_module_test.cpp ../src/Converter.cpp ../src/engine/Converter.hpp ../src/Register.cpp ../src/Lookup.cpp ../../vastish/src/Vastish.cpp ../../vastish/src/engine/*.hpp ../../otislab/src/OtisSampler.cpp ../../otislab/src/engine/*.hpp ../../shared/*.hpp
+io_module_test: io_module_test.cpp ../src/Converter.cpp ../src/engine/Converter.hpp ../src/Register.cpp ../src/Lookup.cpp ../../vastish/src/Vastish.cpp ../../vastish/src/engine/*.hpp ../../otislab/src/OtisSampler.cpp ../../otislab/src/engine/*.hpp ../../shared/*.hpp $(UI_HEADERS)
 	$(CXX) $(CXXFLAGS) -pthread $< $(SDK_FLAGS) -o $@
 io_test: io_test.cpp ../src/engine/Converter.hpp ../../vastish/src/engine/*.hpp ../../shared/ByteBus.hpp
 	$(CXX) $(CXXFLAGS) -Wno-mismatched-new-delete $< -o $@
 engine_test: engine_test.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) $< -o $@
-module_test: module_test.cpp ../src/Register.cpp $(HEADERS) ../../vastish/src/Vastish.cpp ../../vastish/src/engine/*.hpp
+module_test: module_test.cpp ../src/Register.cpp $(HEADERS) ../../vastish/src/Vastish.cpp ../../vastish/src/engine/*.hpp $(UI_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(SDK_FLAGS) -o $@
 lookup_test: lookup_test.cpp $(LOOKUP_HEADERS) ../../vastish/src/engine/*.hpp
 	$(CXX) $(CXXFLAGS) -Wno-mismatched-new-delete $< -o $@
-lookup_module_test: lookup_module_test.cpp ../src/Register.cpp ../src/Lookup.cpp $(HEADERS) $(LOOKUP_HEADERS)
+lookup_module_test: lookup_module_test.cpp ../src/Register.cpp ../src/Lookup.cpp $(HEADERS) $(LOOKUP_HEADERS) $(UI_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(SDK_FLAGS) -o $@
 test: engine_test lookup_test io_test
 	./engine_test
