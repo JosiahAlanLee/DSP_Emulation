@@ -26,6 +26,9 @@ sample data is distributed.
 4. For CV alone: patch a trigger cable, up to 16 channels. Track 1 is channel 1.
    A mono parameter CV broadcasts; shorter poly cables supply zero offsets to
    absent channels. A TRIG cable takes priority over all Gorgon link events.
+   For a [byte bus](../../docs/BYTE_BUS_SPEC.md), such as Counter → Lookup Rhythm,
+   choose **TRIG reads → Bus** in the menu: on each bus CLK, bits 0–7 that are
+   high hit tracks 1–8, held bits included ([bus TRIG mode](docs/BUS_TRIG.md)).
 5. Patch **LEFT/RIGHT** to your mixer or audio interface. **TRACKS** carries
    16 individual audio channels after track effects, before pan/level mixing.
 
@@ -171,6 +174,8 @@ a private JACK server at 48 kHz):
   AGPL-3.0, compiled directly from the pinned checkout.
 - `../shared/GorgonSound.hpp`: BSD-3-Clause public message ABI, matching Gorgon's
   `spec/sound-link.hpp`; notice in `docs/GORGON-SOUND-LICENSE.txt`.
+- `../shared/ByteBus.hpp`: BSD-3-Clause byte-bus decoder from DSP_Emulation, used
+  by bus TRIG mode; notice in `docs/BYTEBUS-LICENSE.txt`.
 - Panel labels are DejaVu Sans outlines; notice in `docs/DEJAVU-LICENSE.txt`.
 
 `make dist` creates a `.vcvplugin` and a separate corresponding-source archive

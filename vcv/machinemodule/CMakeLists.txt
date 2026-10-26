@@ -108,6 +108,13 @@ if(RACK_DIR)
     if(GORGON_DIR)
         target_compile_definitions(module_test PRIVATE GORGON_SOURCE="${GORGON_DIR}/rack/src/Gorgon.cpp")
     endif()
+    # Counter -> Lookup -> Machinemodule (docs/BUS_TRIG.md) when ByteBusLab's sources sit beside
+    # this directory, as in the repository; the standalone source archive builds without it.
+    get_filename_component(BYTEBUS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../bytebus" ABSOLUTE)
+    if(EXISTS "${BYTEBUS_DIR}/src/Counter.cpp")
+        target_compile_definitions(module_test PRIVATE BYTEBUS_COUNTER="${BYTEBUS_DIR}/src/Counter.cpp"
+            BYTEBUS_LOOKUP="${BYTEBUS_DIR}/src/Lookup.cpp" BYTEBUS_LIBRARY="${BYTEBUS_DIR}/res/lookup-v1.bin")
+    endif()
     add_test(NAME rack_module COMMAND module_test)
     # Match the SDK's x64 baseline. This also prevents SIMD emulation aliases
     # from colliding with Windows intrinsics in the real Gorgon producer.

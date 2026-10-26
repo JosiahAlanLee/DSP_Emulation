@@ -3,6 +3,7 @@
 #include "engine/Worker.hpp"
 #include "engine/Machinedrum.hpp"
 #include "Layout.hpp"
+#include "../../shared/ByteBus.hpp"
 #include <osdialog.h>
 #include <cstdlib>
 
@@ -11,12 +12,18 @@ struct Machinemodule : Module {
     enum Inputs { TRIG, VELOCITY, MACHINE_CV, RESET, P1_CV, NUM_INPUTS=P1_CV+8 };
     enum Outputs { LEFT, RIGHT, TRACKS, NUM_OUTPUTS };
     enum Lights { READY, LINK, NUM_LIGHTS };
+    // What TRIG reads: one track per channel, or a byte bus (docs/BUS_TRIG.md).
+    enum TrigMode { TRIG_TRACKS, TRIG_BUS };
     md_rack::Worker worker;
     gorgon_sound::Packet messages[2];
     md_rack::InputBlock block;
     md_rack::LinkState link;
     std::array<md_rack::Edge,16> gates;
     md_rack::Edge reset;
+    std::atomic<int> trigMode{TRIG_TRACKS};
+    int lastTrigMode=TRIG_TRACKS;
+    dspemu::bus::Reader busReader;
+    bool busClocked=false,busArmed=false;
     uint64_t generation=0,lastLoaded=0;
     int64_t frame=0,missedBlock=-1;
     double previousRate=0;
@@ -30,7 +37,7 @@ struct Machinemodule : Module {
         configParam(MACHINE,0,191,16,"Machine ID (unavailable IDs are silent)");getParamQuantity(MACHINE)->snapEnabled=true;
         configParam(TEMPO,30,300,120,"Engine tempo for synced retrigs/LFOs"," BPM");
         configParam(GAIN,0,2,1,"Output gain","%",0,100);
-        configInput(TRIG,"Triggers · 16 polyphonic tracks · cable overrides Gorgon link");
+        configInput(TRIG,"Triggers · 16 polyphonic tracks, or a byte bus (menu) · cable overrides Gorgon link");
         configInput(VELOCITY,"Velocity · 0–10 V · unpatched = 127");
         configInput(MACHINE_CV,"Absolute machine · 0–10 V = IDs 0–191 · overrides local selector");
         configInput(RESET,"Panic · rising edge silences voices before simultaneous hits");
@@ -49,10 +56,12 @@ struct Machinemodule : Module {
     }
     json_t* dataToJson() override {
         auto* root=json_object();std::lock_guard<std::mutex> guard(pathMutex);
-        json_object_set_new(root,"firmwarePath",json_string(firmwarePath.c_str()));json_object_set_new(root,"samplePath",json_string(samplePath.c_str()));return root;
+        json_object_set_new(root,"firmwarePath",json_string(firmwarePath.c_str()));json_object_set_new(root,"samplePath",json_string(samplePath.c_str()));
+        json_object_set_new(root,"trigMode",json_string(trigMode.load()==TRIG_BUS?"bus":"tracks"));return root;
     }
     void dataFromJson(json_t* root) override {
         if(const char* samples=json_string_value(json_object_get(root,"samplePath")))samplePath=samples;
+        const char* mode=json_string_value(json_object_get(root,"trigMode"));trigMode=mode&&std::string(mode)=="bus"?TRIG_BUS:TRIG_TRACKS;
         if(const char* path=json_string_value(json_object_get(root,"firmwarePath")))loadFirmware(path);
     }
     void restart(double rate) {
@@ -103,12 +112,30 @@ struct Machinemodule : Module {
         if(linked.panic)appendPanic(offset);
         bool resetHit=reset.process(inputs[RESET].getVoltage());if(resetHit)appendPanic(offset);
         if(patched){
-            int n=std::min(inputs[TRIG].getChannels(),16);
-            // Seed edges on a source switch to prevent a cable hot-plug from replaying a high gate.
-            if(!external)for(int i=0;i<16;++i)gates[i].high=i<n&&inputs[TRIG].getVoltage(i)>.1f;
-            for(int i=0;i<16;++i){
-                bool edge=gates[i].process(i<n?inputs[TRIG].getVoltage(i):0.f);
-                if(edge){gorgon_sound::Sound sound;appendHit(i,inputs[VELOCITY].isConnected()?std::clamp(cv(VELOCITY,i)/10.f,0.f,1.f):1.f,sound,offset);}
+            int mode=trigMode.load(std::memory_order_relaxed);
+            // A source switch, a TRIG mode switch or a restart starts over, so a cable hot-plug
+            // never replays a high gate.
+            bool seed=!external||mode!=lastTrigMode;lastTrigMode=mode;
+            auto velocity=[&](int lane){return inputs[VELOCITY].isConnected()?std::clamp(cv(VELOCITY,lane)/10.f,0.f,1.f):1.f;};
+            gorgon_sound::Sound sound;
+            if(seed)busReader.reset();
+            auto data=mode==TRIG_BUS?busReader.process(inputs[TRIG]):dspemu::bus::Sample{};
+            bool clocked=mode==TRIG_BUS&&data.clocked;
+            bool fresh=seed||clocked!=busClocked;busClocked=clocked;
+            if(clocked){
+                // On each CLK rising edge, track k+1 hits iff bit k is high on that sample. The
+                // first edge after a fresh start only arms, since a reader counts a CLK that is
+                // already high as an edge.
+                if(fresh)busArmed=false;
+                if(data.rising){
+                    if(busArmed)for(int k=0;k<8;++k)if(data.rawWord>>k&1)appendHit(k,velocity(k),sound,offset);
+                    busArmed=true;
+                }
+            }else{
+                // Tracks; an unclocked bus is the same on its eight bit lines.
+                int n=std::min(inputs[TRIG].getChannels(),mode==TRIG_BUS?8:16);
+                if(fresh)for(int i=0;i<16;++i)gates[i].high=i<n&&inputs[TRIG].getVoltage(i)>.1f;
+                for(int i=0;i<16;++i)if(gates[i].process(i<n?inputs[TRIG].getVoltage(i):0.f))appendHit(i,velocity(i),sound,offset);
             }
         }else if(packet){for(int i=0;i<4;++i)if(linked.hits[i])appendHit(i,packet->lanes[i].velocity,packet->lanes[i].sound,offset);}
         external=patched;
@@ -208,6 +235,11 @@ struct MachinemoduleWidget:ModuleWidget {
             if(path){module->loadFirmware(path,true);std::free(path);}
         }));
         menu->addChild(createMenuItem("Clear ROM sample bank","",[module]{std::lock_guard<std::mutex> guard(module->pathMutex);module->samplePath.clear();module->worker.load(module->firmwarePath);}));
+        menu->addChild(createSubmenuItem("TRIG reads","",[module](Menu* submenu){
+            for(int mode:{Machinemodule::TRIG_TRACKS,Machinemodule::TRIG_BUS})
+                submenu->addChild(createCheckMenuItem(mode==Machinemodule::TRIG_BUS?"Bus: bits 0–7 hit tracks 1–8 on each CLK":"Tracks: channel = track","",
+                    [module,mode]{return module->trigMode.load()==mode;},[module,mode]{module->trigMode=mode;}));
+        }));
         menu->addChild(createSubmenuItem("Select machine from loaded OS","",[module](Menu* submenu){
             for(const auto& machine:module->worker.machines())submenu->addChild(createMenuItem(std::to_string(machine.id)+" · "+machine.name,"",[module,machine]{module->params[Machinemodule::MACHINE].setValue(float(machine.id));}));
         }));

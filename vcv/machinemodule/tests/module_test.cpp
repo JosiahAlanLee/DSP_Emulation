@@ -8,6 +8,11 @@
 #ifdef GORGON_SOURCE
 #include GORGON_SOURCE
 #endif
+#ifdef BYTEBUS_COUNTER
+#include BYTEBUS_COUNTER
+#include BYTEBUS_LOOKUP
+#endif
+#include <random>
 #include <cassert>
 #include <iostream>
 Plugin* pluginInstance=nullptr;
@@ -16,6 +21,113 @@ static void ready(Machinemodule& m){m.worker.load("fake");auto end=std::chrono::
 static void flip(Module& receiver){auto& e=receiver.leftExpander;if(e.messageFlipRequested){std::swap(e.producerMessage,e.consumerMessage);e.messageFlipRequested=false;}}
 static auto factory(Trace& trace){return [&trace](const std::string&,const std::string&){return std::make_unique<Fake>(&trace);};}
 static void drain(){std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+// Bus TRIG mode (docs/BUS_TRIG.md). Each run plays `frames` samples through one module, then
+// three blocks holding the last inputs, since hits render once the engine's native clock reaches them.
+template<class Drive> static void play(Machinemodule& m,Module::ProcessArgs& args,int frames,Drive drive){
+    for(int f=0;f<frames+384;++f){drive(std::min(f,frames-1));m.process(args);++args.frame;if(args.frame%128==0)drain();}
+    drain();
+}
+static std::vector<int> hitTracks(Trace& trace){std::lock_guard<std::mutex> guard(trace.mutex);std::vector<int> t;for(auto& h:trace.hits)t.push_back(h.hit.track);return t;}
+static void setBus(Input& in,int channels,unsigned bits,bool clk){in.channels=channels;for(int k=0;k<16;++k)in.setVoltage(k<8&&(bits>>k&1)?10.f:(k==8&&clk?10.f:0.f),k);}
+static void busTrig(){
+    Module::ProcessArgs args{};args.sampleRate=48000;args.sampleTime=1.f/48000;
+    auto make=[](Trace& trace){auto m=std::make_unique<Machinemodule>(factory(trace));m->model=modelMachinemodule;ready(*m);for(auto& o:m->outputs)o.channels=1;return m;};
+    auto repeat=[](std::vector<int> group,int times){std::vector<int> all;for(int i=0;i<times;++i)all.insert(all.end(),group.begin(),group.end());return all;};
+    // Nine channels, bits 0, 2, 5, 7 held high, a one-sample CLK every 64 samples: tracks 1, 3, 6, 8
+    // hit on every pulse after the first (which arms), and channel 9 never hits track 9.
+    {
+        Trace trace;auto m=make(trace);m->trigMode=Machinemodule::TRIG_BUS;
+        play(*m,args,64*20,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0xa5,f%64==10);});
+        assert(hitTracks(trace)==repeat({0,2,5,7},19));
+        // Tracks mode on the same cable: channel 9 is track 9 again and the held bits never retrigger.
+        m->trigMode=Machinemodule::TRIG_TRACKS;
+        play(*m,args,64*5,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0xa5,f%64==10);});
+        auto all=hitTracks(trace);assert(all.size()==19*4+5);for(size_t i=19*4;i<all.size();++i)assert(all[i]==8);
+    }
+    // Eight channels (no CLK): per-bit rising edges only, as Tracks mode on eight channels.
+    {
+        Trace trace;auto m=make(trace);m->trigMode=Machinemodule::TRIG_BUS;
+        unsigned words[]={0,0x03,0x07,0x06,0x07,0x80};
+        play(*m,args,128*6,[&](int f){setBus(m->inputs[Machinemodule::TRIG],8,words[f/128],false);});
+        assert((hitTracks(trace)==std::vector<int>{0,1,2,0,7}));
+    }
+    // A hot-plug or a mode switch with CLK already high: no hit until the second edge. A bus
+    // that arrives with CLK low arms on its first real edge instead.
+    for(bool modeSwitch:{false,true})for(bool clkHigh:{true,false}){
+        Trace trace;auto m=make(trace);
+        if(modeSwitch)play(*m,args,256,[&](int){setBus(m->inputs[Machinemodule::TRIG],9,0x81,clkHigh);});
+        else play(*m,args,256,[&](int){m->inputs[Machinemodule::TRIG].channels=0;});
+        m->trigMode=Machinemodule::TRIG_BUS;
+        play(*m,args,256,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0x81,clkHigh&&f<100);});
+        assert(hitTracks(trace).empty());
+        play(*m,args,256,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0x81,f==50||f==150);});
+        auto hits=hitTracks(trace);
+        if(clkHigh)assert((hits==std::vector<int>{0,7,0,7}));  // the high CLK armed; both later edges hit
+        else assert((hits==std::vector<int>{0,7}));            // the first real edge armed
+    }
+    // VELOCITY: per channel from a poly cable, broadcast from a mono one, 127 unpatched.
+    {
+        Trace trace;auto m=make(trace);m->trigMode=Machinemodule::TRIG_BUS;
+        auto& vel=m->inputs[Machinemodule::VELOCITY];vel.channels=8;for(int k=0;k<8;++k)vel.setVoltage(1.f+k,k);
+        play(*m,args,256,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0xff,f%128==10);});
+        vel.channels=1;vel.setVoltage(5.f);
+        play(*m,args,128,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0xff,f==10);});
+        vel.channels=0;
+        play(*m,args,128,[&](int f){setBus(m->inputs[Machinemodule::TRIG],9,0x01,f==10);});
+        std::lock_guard<std::mutex> guard(trace.mutex);assert(trace.hits.size()==17);
+        for(int k=0;k<8;++k)assert(trace.hits[k].hit.track==k&&trace.hits[k].hit.velocity==std::lround((1.f+k)/10*127));
+        for(int k=8;k<16;++k)assert(trace.hits[k].hit.velocity==64);
+        assert(trace.hits[16].hit.velocity==127);
+    }
+    // The mode is saved with the patch; a patch without it reads TRIG as tracks.
+    {
+        Trace trace;Machinemodule m(factory(trace));m.trigMode=Machinemodule::TRIG_BUS;
+        json_t* saved=m.dataToJson();assert(std::string(json_string_value(json_object_get(saved,"trigMode")))=="bus");
+        Machinemodule r(factory(trace));r.dataFromJson(saved);assert(r.trigMode==Machinemodule::TRIG_BUS);
+        json_object_del(saved,"trigMode");r.dataFromJson(saved);json_decref(saved);assert(r.trigMode==Machinemodule::TRIG_TRACKS);
+    }
+#ifdef BYTEBUS_COUNTER
+    // Counter -> Lookup (Rhythm) -> Machinemodule through one-sample cables, in random process
+    // order, plays the hit list the chain gives evaluated directly: one cable hop changes when,
+    // never what. The Counter's seed publication only arms. Before that, for one sample, Lookup
+    // passes on Rack's one-channel 0 V placeholder as an unclocked word 00, so the unclocked path
+    // plays Lookup's word for address 00 once (docs/BUS_TRIG.md, "Starting a chain").
+    auto library=std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load(BYTEBUS_LIBRARY));
+    std::vector<int> expected;
+    {
+        namespace lu=dspemu::lookup;lu::Engine direct;lu::Parameters p;p.family=lu::Rhythm;p.seed=0x33;
+        for(int count=0;count<=300;++count){
+            dspemu::bus::Sample s;s.connected=s.clocked=s.rising=s.clk=s.updated=true;s.rawWord=s.word=uint8_t(count*3%256);
+            if(count==0)s.clocked=s.rising=s.clk=false;
+            uint8_t word=direct.tick(*library,p,s,48000).word;for(int k=0;k<8;++k)if(word>>k&1)expected.push_back(k);
+        }
+    }
+    for(unsigned seed:{1u,2u,3u}){
+        Trace trace;auto m=make(trace);m->trigMode=Machinemodule::TRIG_BUS;
+        ByteCounter counter;ByteLookup lookup(library);
+        // As in Rack: connecting a cable gives its output one channel at 0 V until the module writes.
+        for(auto* module:std::initializer_list<Module*>{&counter,&lookup})for(auto& o:module->outputs)o.channels=1;
+        counter.params[ByteCounter::CLOCK_MODE].setValue(1);counter.params[ByteCounter::INC].setValue(3);
+        counter.inputs[ByteCounter::CLOCK_IN].channels=1;
+        lookup.params[ByteLookup::FAMILY].setValue(dspemu::lookup::Rhythm);lookup.params[ByteLookup::SEED].setValue(0x33);
+        auto copy=[](Output& from,Input& to){to.channels=from.getChannels();for(int k=0;k<16;++k)to.setVoltage(k<to.channels?from.getVoltage(k):0.f,k);};
+        std::mt19937 order(seed);
+        // 300 clock pulses, then enough samples to finish the engine's last 128-sample block.
+        for(int f=0;f<64*300+512;++f){
+            counter.inputs[ByteCounter::CLOCK_IN].setVoltage(f<64*300&&f%64==20?10.f:0.f);
+            copy(counter.outputs[ByteCounter::BUS_OUT],lookup.inputs[ByteLookup::BUS_IN]);
+            copy(lookup.outputs[ByteLookup::BUS_OUT],m->inputs[Machinemodule::TRIG]);
+            Module* modules[]={&counter,&lookup,m.get()};std::shuffle(std::begin(modules),std::end(modules),order);
+            for(auto* module:modules)module->process(args);
+            ++args.frame;if(args.frame%128==0)drain();
+        }
+        drain();
+        auto hits=hitTracks(trace);
+        assert(hits==expected&&hits.size()>40);
+        std::lock_guard<std::mutex> guard(trace.mutex);for(auto& h:trace.hits)assert(h.hit.velocity==127);
+    }
+#endif
+}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
     Plugin receiverPlugin;receiverPlugin.slug="MachinemoduleRack";receiverPlugin.version="2.0.0";modelMachinemodule->plugin=&receiverPlugin;
@@ -54,6 +166,11 @@ int main(){
         // Switching host rate starts a new epoch, clears old output and preserves finite voltages.
         args.sampleRate=96000;args.sampleTime=1.f/96000;for(int i=0;i<256;++i){++args.frame;m.process(args);if(i%128==127)drain();}
     }
+    busTrig();std::cout<<"Bus TRIG mode: clocked bits, per-bit fallback, arming, velocity, saved mode"
+#ifdef BYTEBUS_COUNTER
+        <<", Counter -> Lookup -> Machinemodule in random order"
+#endif
+        <<" passed\n";
 #ifdef GORGON_SOURCE
     modelGorgon->plugin=&providerPlugin;
 #ifdef _WIN32
