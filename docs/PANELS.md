@@ -17,7 +17,6 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 | Lookup | 16 HP | Named family and Map/Rise/Fall selectors, output hex display, grouped bus/audio outputs | [Lookup](../vcv/bytebus/docs/Lookup-preview.svg) |
 | Counter | 12 HP | Named clock source selector, INC/MOD/SEED knobs, count hex display, grouped bus, clock and carry outputs | [Counter](../vcv/bytebus/docs/Counter-preview.svg) |
 | Converter | 14 HP | Independent ADC/DAC readouts, gain/offset/range controls, grouped outputs | [Converter](../vcv/bytebus/docs/Converter-preview.svg) |
-| DrumLab Percussion | 20 HP | Named machine selector, TAP audition, separate sound controls, hit CV and audio rows | [Percussion](../vcv/drumlab/docs/Percussion-preview.svg) |
 | Machinemodule | 18 HP | Local machine ID/name readout, labelled Ready/Link indicators, eight offset/CV pairs, grouped outputs | [Machinemodule](../vcv/machinemodule/docs/Machinemodule-preview.svg) |
 
 The machine readout describes the local selector. A patched machine CV or an
@@ -40,7 +39,6 @@ From the repository root:
 
 ```sh
 python vcv/bytebus/tools/make_panels.py
-python vcv/drumlab/tools/make_assets.py
 python vcv/machinemodule/tools/make_panel.py
 python vcv/seance/tools/make_panel.py
 ```
