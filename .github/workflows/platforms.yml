@@ -4,6 +4,7 @@ name: Windows and macOS builds
 # here but not run inside Rack, so treat them as untested until someone reports.
 on:
   push:
+    branches: [main]
     paths: ['vcv/**', '.github/workflows/platforms.yml']
   pull_request:
     paths: ['vcv/**', '.github/workflows/platforms.yml']
