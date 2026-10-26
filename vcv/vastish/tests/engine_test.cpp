@@ -92,5 +92,73 @@ int main() {
             float y=f.tick(type,x,i%2?135:-20,i%3?40:-.98f,rate); assert(std::isfinite(y));
         }
     }
-    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, FUN 3/4 and per-voice AUX, all function endpoints, zero steady-state allocations\n";
+    // AUDIO wave (Live Mode): AUDIO IN replaces the oscillator. Through NONE blocks,
+    // algorithm 1, 0 dB AMP and PAN hard left, the left output is the input exactly.
+    {
+        auto p=programs()[0]; p[ALG]=1; p[PITCH_WAVE]=AUDIO_WAVE; p[MASTER]=0;
+        p[F1_TYPE]=p[F2_TYPE]=p[F3_TYPE]=0; p[AMP_ADJ]=0; p[PAN_ADJ]=-1;
+        for(float rate:{44100.f,48000.f,96000.f}) {
+            Voice v; v.prepare(rate); VoiceInput in; in.audioConnected=true; // GATE unpatched
+            for(int n=0;n<int(rate);++n) {
+                in.audio=n==7 ? 1.f : n<100 ? 0.f : float(std::sin(6.283185307179586*100*n/rate)); // impulse, then 100 Hz
+                auto y=v.tick(p,in,rate); assert(y[0]==in.audio);
+            }
+            // Through the engine the DC blocker is the only difference, once MASTER's 50 ms ramp has settled.
+            Engine eng; eng.prepare(rate); std::array<VoiceInput,8> inputs{}; inputs[0].audioConnected=true;
+            for(int n=0;n<int(rate*.1f);++n) eng.tick(p,inputs,1);
+            Highpass dc; double peak=0;
+            for(int n=0;n<int(rate);++n) {
+                inputs[0].audio=float(std::sin(6.283185307179586*100*n/rate));
+                auto y=eng.tick(p,inputs,1); assert(y[0]==dc.tick(inputs[0].audio,5,rate));
+                if(n>rate/2) peak=std::max(peak,double(std::abs(y[0])));
+            }
+            assert(std::abs(peak-1)<.002); // a 5 Hz one-pole high-pass passes 100 Hz at -0.011 dB
+        }
+        // Gate-free is unity; a patched gate brings back the amp envelope.
+        p[AMP_A]=10; p[AMP_D]=0; p[AMP_S]=1;
+        Voice freeVoice,gated; freeVoice.prepare(48000); gated.prepare(48000);
+        VoiceInput in; in.audioConnected=true; in.audio=.5f;
+        assert(freeVoice.tick(p,in,48000)[0]==.5f);
+        in.gateConnected=true; assert(gated.tick(p,in,48000)[0]==0);      // patched, low: silent
+        in.gate=true; float first=gated.tick(p,in,48000)[0];
+        for(int n=0;n<1000;++n) gated.tick(p,in,48000);
+        float held=gated.tick(p,in,48000)[0];
+        assert(first>0 && first<.01f && std::abs(held-.5f)<1e-6f);         // attack, then sustain at 1
+        // AUDIO with nothing patched to AUDIO IN is a silent input under the usual envelope.
+        Voice idle; idle.prepare(48000); VoiceInput none; none.audio=.5f;
+        for(int n=0;n<100;++n) assert(idle.tick(p,none,48000)[0]==0);
+        // Non-finite input reads 0; out-of-range input clamps to ±1.
+        for(float bad:{std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}) {
+            Voice v; v.prepare(48000); VoiceInput b; b.audioConnected=true; b.audio=bad;
+            assert(v.tick(p,b,48000)[0]==0);
+        }
+        { Voice v; v.prepare(48000); VoiceInput b; b.audioConnected=true; b.audio=3; assert(v.tick(p,b,48000)[0]==1); }
+    }
+    // A key-tracked F block follows the voice's note: a 1 kHz sine through LOWPASS with
+    // ADJUST 60 and KEY 1 is much brighter at note 96 than at note 36.
+    {
+        auto p=programs()[0]; p[ALG]=1; p[PITCH_WAVE]=AUDIO_WAVE; p[AMP_ADJ]=0; p[PAN_ADJ]=-1;
+        p[F1_TYPE]=1; p[F1_ADJ]=60; p[F1_KT]=1; p[F2_TYPE]=p[F3_TYPE]=0;
+        auto rms=[&](float note) {
+            Voice v; v.prepare(48000); VoiceInput in; in.audioConnected=true; in.note=note; double sum=0;
+            for(int n=0;n<48000;++n) { in.audio=float(std::sin(6.283185307179586*1000*n/48000)); float y=v.tick(p,in,48000)[0]; if(n>=24000) sum+=y*y; }
+            return std::sqrt(sum/24000);
+        };
+        double low=rms(36), high=rms(96);
+        assert(high>5*low && high>.4);
+    }
+    // Every block type processes full-scale external audio without faults at each rate.
+    for(float rate:{44100.f,48000.f,96000.f}) for(int type=0;type<=14;++type) {
+        auto p=programs()[0]; p[PITCH_WAVE]=AUDIO_WAVE; p[F1_TYPE]=p[F2_TYPE]=p[F3_TYPE]=type;
+        p[F1_B]=p[F2_B]=p[F3_B]=type==14 ? .95f : 4;
+        for(int alg=1;alg<=6;++alg) {
+            p[ALG]=alg; Engine eng; eng.prepare(rate); std::array<VoiceInput,8> inputs{}; inputs[0].audioConnected=true;
+            for(int n=0;n<int(rate*.25f);++n) {
+                inputs[0].audio=float(std::sin(6.283185307179586*220*n/rate))+((n*7919)%13==0 ? .9f : 0.f);
+                auto y=eng.tick(p,inputs,1); assert(std::isfinite(y[0]) && std::isfinite(y[1]));
+            }
+            assert(eng.faults==0);
+        }
+    }
+    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, FUN 3/4 and per-voice AUX, all function endpoints, zero steady-state allocations, AUDIO wave unity and gating, key tracking and every block type\n";
 }

@@ -49,7 +49,8 @@ static void converter() {
 }
 static void testVastish() {
     Vastish v; v.model=modelVastish; init(v); auto a=args();
-    assert(v.params.size()==86 && v.inputs.size()==10 && v.outputs.size()==12);
+    assert(v.params.size()==86 && v.inputs.size()==11 && v.outputs.size()==12); // Vastish 2.6 appends AUDIO IN (10)
+    static_assert(Vastish::BUS_A_IN==8 && Vastish::BUS_B_IN==9 && Vastish::AUDIO_IN==10);
     for(int n=0;n<256;++n) {
         set(v.inputs[Vastish::BUS_A_IN],n); v.process(a);
         assert(word(v.outputs[Vastish::BUS_OUT])==n && v.outputs[Vastish::FUN4_OUT].getChannels()==8);

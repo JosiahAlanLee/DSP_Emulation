@@ -18,8 +18,8 @@ struct SampleSlot {
 };
 using namespace vastish;
 struct Vastish : Module {
-    // AUX and FUN3/4 are appended so existing patches keep their cable ids.
-    enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, AUX1_IN, AUX2_IN, AUX3_IN, AUX4_IN, BUS_A_IN, BUS_B_IN, INPUTS };
+    // AUX, BUS and AUDIO inputs and FUN3/4 are appended so existing patches keep their cable ids.
+    enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, AUX1_IN, AUX2_IN, AUX3_IN, AUX4_IN, BUS_A_IN, BUS_B_IN, AUDIO_IN, INPUTS };
     enum { LEFT_OUT, RIGHT_OUT, AMP_OUT, ENV2_OUT, ENV3_OUT, LFO1_OUT, LFO2_OUT, FUN1_OUT, FUN2_OUT, FUN3_OUT, FUN4_OUT, BUS_OUT, OUTPUTS };
     enum { GATE_LIGHT, FAULT_LIGHT, LIGHTS };
     vastish::Engine engine;
@@ -29,6 +29,8 @@ struct Vastish : Module {
     uint8_t heldBusWord=128;
     std::atomic<int> requestedProgram{-1}, displayedProgram{1};
     std::atomic<bool> requestedPanic{false};
+    // AUDIO IN full scale: ±5 V (default, matching the L/R output scaling) or ±10 V.
+    std::atomic<bool> audioIn10V{false};
     // Sample handoff (SAMPLE pitch wave). The UI thread publishes into pendingSample;
     // the audio thread adopts it only when retiredSample is empty, moving its old
     // sample there; the UI thread deletes retired samples. The audio thread never
@@ -131,6 +133,7 @@ struct Vastish : Module {
         for(int k=0;k<4;++k) configInput(AUX1_IN+k,string::f("AUX %d, ±10 V = ±1 source, one value per voice",k+1));
         configInput(BUS_A_IN,"Byte bus A; optional CLK on channel 9 (primary clock)");
         configInput(BUS_B_IN,"Byte bus B; optional CLK on channel 9");
+        configInput(AUDIO_IN,"Audio in: replaces the oscillator when PITCH is AUDIO (±5 V full scale; ±10 V in the menu)");
         const char* outNames[]={"Left audio","Right audio","Amp envelope","Envelope 2","Envelope 3","LFO 1","LFO 2","FUN 1","FUN 2","FUN 3","FUN 4"};
         for(int i=0;i<=FUN4_OUT;++i) configOutput(i,outNames[i]);
         configOutput(BUS_OUT,"Selected word or eight logical lanes; primary bus clock forwarded");
@@ -138,7 +141,7 @@ struct Vastish : Module {
     void onSampleRateChange(const SampleRateChangeEvent& e) override { engine.prepare(e.sampleRate); }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e); engine.panic(); for(auto& t:triggers) t.reset(); in={}; displayedProgram=1;
-        busA.reset(); busB.reset(); heldBusWord=128;
+        busA.reset(); busB.reset(); heldBusWord=128; audioIn10V=false;
     }
     void process(const ProcessArgs& args) override {
         if(requestedPanic.exchange(false)) {
@@ -157,6 +160,11 @@ struct Vastish : Module {
             float x=params[i].getValue(); p[i]=std::isfinite(x)?vastish::clamp(x,metadata()[i].lo,metadata()[i].hi):programs()[0][i];
         }
         int channels=std::min(8,std::max(inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels()));
+        // AUDIO wave: AUDIO IN channel 1 feeds voice 1; the other voices read silence.
+        const bool audioWave=choice(p[PITCH_WAVE],AUDIO_WAVE)==AUDIO_WAVE;
+        const bool audioPatched=inputs[AUDIO_IN].isConnected(), gatePatched=inputs[GATE_IN].isConnected();
+        float audio=inputs[AUDIO_IN].getVoltage(0)*(audioIn10V.load(std::memory_order_relaxed) ? .1f : .2f);
+        if(!std::isfinite(audio)) audio=0;
         auto a=busA.process(inputs[BUS_A_IN]), b=busB.process(inputs[BUS_B_IN]);
         bool lanes=choice(p[BUS_OUT_MODE],2)==2;
         bool controlAll=a.connected || b.connected || lanes;
@@ -168,9 +176,13 @@ struct Vastish : Module {
             bool was=triggers[i].isHigh();
             triggers[i].process(i<channels?voltage(GATE_IN):0.f);
             bool rise=!was && triggers[i].isHigh();
+            in[i].audioConnected=audioPatched && i==0; in[i].audio=i==0 ? audio : 0.f;
+            in[i].gateConnected=gatePatched;
             if(i<channels) {
-                // Pitch is held after note-off, matching the Pd voice's stored MIDI key.
-                if(triggers[i].isHigh()) in[i].note=vastish::clamp(60+12*voltage(PITCH_IN),-20,135);
+                // Pitch is held after note-off, matching the Pd voice's stored MIDI key. A gate-free
+                // AUDIO voice has no notes, so it follows PITCH continuously for key tracking.
+                if(triggers[i].isHigh() || (audioWave && in[i].audioConnected && !gatePatched))
+                    in[i].note=vastish::clamp(60+12*voltage(PITCH_IN),-20,135);
                 if(rise) { in[i].velocity=inputs[VEL_IN].isConnected()?vastish::clamp(voltage(VEL_IN)*.1f,0,1):1; in[i].gate=true; }
                 in[i].modwheel=vastish::clamp(voltage(MOD_IN)*.1f,0,1);
             }
@@ -222,6 +234,7 @@ struct Vastish : Module {
         json_t* j=json_object(); json_object_set_new(j,"program",json_integer(displayedProgram.load()));
         json_object_set_new(j,"sampleLoop",json_boolean(sampleLoop.load()));
         json_object_set_new(j,"followOtis",json_boolean(followOtis));
+        json_object_set_new(j,"audioInRange",json_integer(audioIn10V ? 10 : 5));
         collectSamples();
         if(uiSample && uiSample->view.valid()) {
             // Rack autosaves often; encode each sample once.
@@ -245,6 +258,7 @@ struct Vastish : Module {
         json_t* v=json_object_get(j,"program"); if(json_is_integer(v)) displayedProgram=int(vastish::clamp(float(json_integer_value(v)),0,5));
         sampleLoop=json_is_true(json_object_get(j,"sampleLoop"));
         setFollowOtis(json_is_true(json_object_get(j,"followOtis")));
+        json_t* range=json_object_get(j,"audioInRange"); audioIn10V=json_is_integer(range) && json_integer_value(range)==10;
         json_t* s=json_object_get(j,"sample");
         // A full restore defines the sample too: no saved sample means none, not
         // "keep whatever this instance had".
@@ -277,7 +291,7 @@ struct Selector : app::ParamWidget {
         // The SAMPLE wave shows which sample is loaded: a short name, marked with an
         // arrow when it comes from OTIS on the left, truncated rather than shrunk.
         bool sampleName=false;
-        if(q && q->paramId==PITCH_WAVE && choice(q->getValue(),BUS_WAVE)==SAMPLE_WAVE)
+        if(q && q->paramId==PITCH_WAVE && choice(q->getValue(),AUDIO_WAVE)==SAMPLE_WAVE)
             if(auto* v=dynamic_cast<Vastish*>(module)) { value=v->sampleShortLabel(); sampleName=true; }
         if(sampleName) {
             nvgFontSize(args.vg,9);
@@ -354,6 +368,7 @@ struct VastishWidget : ModuleWidget {
         for(int i=0;i<=Vastish::FUN4_OUT;++i) addOutput(createOutputCentered<PJ301MPort>(Vec(245+i*40,348),m,i));
         addInput(createInputCentered<PJ301MPort>(Vec(705,348),m,Vastish::BUS_A_IN));
         addInput(createInputCentered<PJ301MPort>(Vec(755,348),m,Vastish::BUS_B_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(210,348),m,Vastish::AUDIO_IN));
         addOutput(createOutputCentered<DarkPJ301MPort>(Vec(805,348),m,Vastish::BUS_OUT));
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(180,14),m,Vastish::GATE_LIGHT));
         addChild(createLightCentered<SmallLight<RedLight>>(Vec(180,27),m,Vastish::FAULT_LIGHT));
@@ -383,6 +398,10 @@ struct VastishWidget : ModuleWidget {
             for(size_t k=0;k<info.options.size();++k) child->addChild(createCheckMenuItem(info.options[k],"",
                 [m,param,k]{return choice(m->params[param].getValue(),int(metadata()[param].hi))==int(k);},
                 [m,param,k]{m->params[param].setValue(float(k));}));
+        }));
+        menu->addChild(createSubmenuItem("AUDIO IN range","",[m](Menu* child) {
+            for(bool ten:{false,true}) child->addChild(createCheckMenuItem(ten ? "±10 V" : "±5 V (L/R output level)","",
+                [m,ten]{return m->audioIn10V.load()==ten;},[m,ten]{m->audioIn10V=ten;}));
         }));
         for(int f=0;f<FUN_COUNT;++f) menu->addChild(createCheckMenuItem(string::f("FUN %d BIT normalization",f+1),"",
             [m,f]{return m->params[FUN1_BIT+f].getValue()>=.5f;},

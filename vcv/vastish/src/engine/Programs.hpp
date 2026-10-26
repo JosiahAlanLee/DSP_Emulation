@@ -98,7 +98,7 @@ inline const std::array<ParamInfo, PARAM_COUNT>& metadata() {
     static const std::array<ParamInfo, PARAM_COUNT> table{{
         {"alg", 1, 6, {"P > F1 > F2 > F3","(P>F1 + P>F2) > F3","P > F1 > (F2 + F3)","(P>F1 x P>F2) > F3  [ring]","P>F1 + P>F2 + P>F3","P>F1>F2 + P>F3"}},
         {"master", -60, 24, {}},
-        {"pitch-wave", 0, 6, {"SAW","PULSE","TRI","COSINE","NOISE","SAMPLE","BUS"}},
+        {"pitch-wave", 0, 7, {"SAW","PULSE","TRI","COSINE","NOISE","SAMPLE","BUS","AUDIO"}},
         {"pitch-pw", 0.01, 0.99, {}},
         {"pitch-adj", -128, 135, {}},
         {"pitch-kt", -4, 4, {}},

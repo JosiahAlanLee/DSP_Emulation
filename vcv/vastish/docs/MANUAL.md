@@ -2,7 +2,7 @@
 
 **Eight-voice synthesizer and modulation source · VastishLab · 56 HP**
 
-Vastish puts a waveform or sample through three selectable DSP blocks, followed by amplitude and pan. Six routing algorithms change how the blocks connect. Three envelopes, two LFOs and four mathematical function processors (FUNs) provide per-voice modulation, with outputs for use elsewhere in Rack.
+Vastish puts a waveform, sample or external audio through three selectable DSP blocks, followed by amplitude and pan. Six routing algorithms change how the blocks connect. Three envelopes, two LFOs and four mathematical function processors (FUNs) provide per-voice modulation, with outputs for use elsewhere in Rack.
 
 It is an independent interpretation of a VAST-style workflow, developed from the Pure Data Vastish project. It includes six original starting programs. It uses no Kurzweil firmware or sample ROMs.
 
@@ -21,7 +21,7 @@ For a simple editing starting point, choose INIT: a saw waveform with the DSP bl
 
 ## Routing and DSP blocks
 
-The PITCH column supplies SAW, PULSE, TRI, COSINE, NOISE, SAMPLE or BUS. **PW** changes the pulse width when PULSE is selected. BUS reads BUS A and uses PITCH as phase rotation, described below.
+The PITCH column supplies SAW, PULSE, TRI, COSINE, NOISE, SAMPLE, BUS or AUDIO. **PW** changes the pulse width when PULSE is selected. BUS reads BUS A and uses PITCH as phase rotation; AUDIO processes AUDIO IN instead of an oscillator. Both are described below.
 
 The algorithm selector above F1–F3 controls their connections. P means the source waveform. These are signal paths; internal mixes use fixed level factors rather than always summing at unity.
 
@@ -129,6 +129,7 @@ When sending polyphonic FUN output to a monophonic destination, select or combin
 | MOD | 0–10 V, clamped; feeds MWHEEL. |
 | AUX 1–4 | Bipolar per-voice control sources. ±10 V gives ±1; mono cables broadcast. |
 | BUS A, BUS B | One byte each, LSB first, optional clock on channel 9; each input holds its own clocked word. |
+| AUDIO IN | External audio for the AUDIO wave, into voice 1. ±5 V is full scale; ±10 V in the menu. See [Live processing](#live-processing) and the [contract](AUDIO_IN.md). |
 
 Pitch and gate channel counts determine the number of voices, up to eight. A mono input broadcasts across the other cable's polyphony. VEL, MOD and AUX do not establish additional voices on their own. Pitch updates while the gate is high and holds its last value during release.
 
@@ -173,6 +174,27 @@ For byte-wide XOR, select FUN1 A=LANE A, B=LANE B, EQ=ABS(A−B), then BUS OUT
 LANES/FUN1. Both bit inputs now work without an eight-channel pitch cable or
 any gates. For ordinary audio/CV, use ByteBusLab's Converter on either side.
 
+## Live processing
+
+Choose **AUDIO** in the PITCH selector and patch audio to **AUDIO IN**.
+Vastish runs it through F1–F3, AMP and PAN in place of an oscillator, as the
+K2500's Live Mode does. With GATE unpatched the audio passes continuously at
+unity amp: the envelopes stay closed, LFOs and FUNs run, and V/OCT still
+key-tracks each column's ADJUST. Patch GATE to bring the amp envelope back; it
+then works as a VCA after the chain.
+
+For unity level, start from INIT and set the AMP column's ADJUST and MASTER to
+0 dB; INIT itself is 6 dB quieter. With PAN centred each side is 3 dB down, as
+for every wave. ±5 V at AUDIO IN is full scale, the same as the L/R outputs;
+choose **AUDIO IN range → ±10 V** in the context menu for hotter sources.
+Input beyond full scale clips before the chain. Some oscillators overshoot
+±5 V: Fundamental VCO's saw reaches −6.6 V, so ±10 V keeps its edges intact.
+
+In 2.6 only voice 1 reads AUDIO IN, from channel 1 of a polyphonic cable.
+Patching L or R back into AUDIO IN makes an ordinary one-sample feedback loop.
+ByteBusLab cannot compile an AUDIO program into a Lookup table, since its input
+is live audio rather than a byte.
+
 ## Use a sample
 
 Choose **Load sample WAV…** from the right-click menu. Loading succeeds before the PITCH selector switches to SAMPLE.
@@ -198,11 +220,12 @@ The Rack UI must be running to copy updates. If OTIS is moved away, Vastish reta
 
 ## Saving and troubleshooting
 
-Rack patches save parameter edits, the loaded sample (both channels of a stereo sample; Vastish before 2.4 opens it with the left channel only), loop setting and follow setting. The sample is embedded, so the original WAV path is not needed. Export audio from OTIS if you also want a separate WAV.
+Rack patches save parameter edits, the loaded sample (both channels of a stereo sample; Vastish before 2.4 opens it with the left channel only), loop setting, follow setting and AUDIO IN range. Vastish 2.5 opens a patch that uses the AUDIO wave with BUS selected, which is silent without a bus. The sample is embedded, so the original WAV path is not needed. Export audio from OTIS if you also want a separate WAV.
 
 | Symptom | Action |
 |---|---|
 | No sound | Check GATE, MASTER, the AMP envelope and column gain, and whether SAMPLE has valid audio. |
+| AUDIO is silent | Patch AUDIO IN. A patched GATE keeps the amp envelope closed until it goes high; unpatch it for continuous processing. |
 | A new gate does not retrigger | Let the gate fall before raising it again. After Panic, held gates must also fall first. |
 | Unexpectedly large modulation | Check depth units and FUN equations; FUN sums are not confined to ±1. |
 | Changing OTIS POSITION does not change Vastish | The link shares sample memory, not OTIS playback settings. |

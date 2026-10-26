@@ -150,5 +150,72 @@ int main() {
         v.setFollowOtis(false); fake.rev=14; v.followShare(&share); assert(v.linkState==Vastish::LINK_OFF && v.sampleLabel()=="NO SAMPLE");
         v.collectSamples(); r.collectSamples();
     }
-    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link\n";
+    // AUDIO IN is appended as input 10; every earlier input and output keeps its ID.
+    static_assert(Vastish::PITCH_IN==0 && Vastish::BUS_A_IN==8 && Vastish::BUS_B_IN==9 && Vastish::AUDIO_IN==10 && Vastish::INPUTS==11);
+    static_assert(Vastish::LEFT_OUT==0 && Vastish::BUS_OUT==11 && Vastish::OUTPUTS==12);
+    {
+        auto live=[&](Vastish& v) {
+            for(int i=0;i<PARAM_COUNT;++i) v.params[i].setValue(programs()[0][i]);
+            v.params[PITCH_WAVE].setValue(AUDIO_WAVE); v.params[MASTER].setValue(0);
+            v.params[AMP_ADJ].setValue(0); v.params[PAN_ADJ].setValue(-1);
+            for(auto& o:v.outputs) o.channels=1;
+            v.inputs[Vastish::AUDIO_IN].channels=1;
+            for(int i=0;i<4800;++i) v.process(args); // MASTER's 50 ms ramp
+        };
+        // A ±5 V saw into AUDIO IN with GATE unpatched leaves L at the same level; the
+        // engine's 5 Hz DC blocker is the only difference. The ±10 V range halves it.
+        for(bool ten:{false,true}) {
+            Vastish v; v.audioIn10V=ten; live(v); Highpass dc;
+            for(int n=0;n<48000;++n) {
+                float saw=5*(2*std::fmod(n*110.f/48000,1.f)-1); v.inputs[Vastish::AUDIO_IN].setVoltage(saw); v.process(args);
+                assert(v.outputs[Vastish::LEFT_OUT].getVoltage()==dc.tick(saw*(ten ? .1f : .2f),5,48000)*5);
+            }
+        }
+        // Patching GATE brings back the amp envelope: silent while low, sounding while high.
+        Vastish g; live(g); g.inputs[Vastish::GATE_IN].channels=1; g.inputs[Vastish::AUDIO_IN].setVoltage(5);
+        for(int i=0;i<480;++i) { g.process(args); assert(g.outputs[Vastish::LEFT_OUT].getVoltage()==0); }
+        g.inputs[Vastish::GATE_IN].setVoltage(10); double sounded=0;
+        for(int i=0;i<4800;++i) { g.process(args); sounded+=std::abs(g.outputs[Vastish::LEFT_OUT].getVoltage()); }
+        assert(sounded>100);
+        // Without a gate, the AUDIO voice follows PITCH continuously so F blocks key-track.
+        Vastish k; live(k); k.inputs[Vastish::PITCH_IN].channels=1;
+        k.inputs[Vastish::PITCH_IN].setVoltage(1); k.process(args); assert(k.in[0].note==72);
+        k.inputs[Vastish::PITCH_IN].setVoltage(-2); k.process(args); assert(k.in[0].note==36);
+        // With GATE patched, pitch is again held between notes, as for every wave.
+        k.inputs[Vastish::GATE_IN].channels=1; k.inputs[Vastish::PITCH_IN].setVoltage(2); k.process(args); assert(k.in[0].note==36);
+        // Other waves never follow PITCH without a gate.
+        k.inputs[Vastish::GATE_IN].channels=0; k.params[PITCH_WAVE].setValue(0); k.process(args); assert(k.in[0].note==36);
+        // Unpatched, AUDIO IN reads nothing: silence with the gate-free amp off.
+        Vastish u; live(u); u.inputs[Vastish::AUDIO_IN].channels=0; u.inputs[Vastish::AUDIO_IN].setVoltage(5);
+        for(int i=0;i<480;++i) { u.process(args); assert(u.outputs[Vastish::LEFT_OUT].getVoltage()==0); }
+        // Non-finite input is silence, not a fault.
+        Vastish bad; live(bad); bad.inputs[Vastish::AUDIO_IN].setVoltage(NAN);
+        for(int i=0;i<480;++i) { bad.process(args); assert(bad.outputs[Vastish::LEFT_OUT].getVoltage()==0); }
+        assert(bad.engine.faults==0);
+    }
+    // The range is saved in the patch. A 2.5 patch, which has no range, opens at ±5 V,
+    // and a full restore sets it even on an instance that was at ±10 V.
+    {
+        Vastish v; json_t* saved=v.dataToJson();
+        assert(json_integer_value(json_object_get(saved,"audioInRange"))==5); json_decref(saved);
+        v.audioIn10V=true; saved=v.dataToJson(); assert(json_integer_value(json_object_get(saved,"audioInRange"))==10);
+        Vastish r; r.dataFromJson(saved); assert(r.audioIn10V);
+        json_object_del(saved,"audioInRange"); r.dataFromJson(saved); json_decref(saved); assert(!r.audioIn10V);
+    }
+    // Feedback: L back into AUDIO IN through a one-sample cable delay. Loop gain above
+    // unity limits at the blocks' own nonlinearities or AUDIO IN's ±1 clamp; nothing faults.
+    for(int type:{6,8,11,14}) {
+        Vastish f; for(auto& o:f.outputs) o.channels=1;
+        f.params[PITCH_WAVE].setValue(AUDIO_WAVE); f.params[ALG].setValue(1); f.params[MASTER].setValue(24);
+        f.params[F1_TYPE].setValue(type); f.params[F1_ADJ].setValue(type==11 ? 24 : 90); f.params[F1_B].setValue(type==14 ? .97f : 1);
+        f.params[F2_TYPE].setValue(0); f.params[F3_TYPE].setValue(0); f.params[AMP_ADJ].setValue(12);
+        f.inputs[Vastish::AUDIO_IN].channels=1; float cable=5; // a kick to start the loop
+        double peak=0;
+        for(int i=0;i<96000;++i) {
+            f.inputs[Vastish::AUDIO_IN].setVoltage(cable); f.process(args);
+            cable=f.outputs[Vastish::LEFT_OUT].getVoltage(); assert(std::isfinite(cable)); peak=std::max(peak,double(std::abs(cable)));
+        }
+        assert(f.engine.faults==0 && peak>1);
+    }
+    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, saved range and feedback\n";
 }
