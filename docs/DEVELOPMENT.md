@@ -12,6 +12,7 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
 | vcv/seance | Rack spectral core and five expanders: portable STFT engine and operations, chain link, modules. |
 | vcv/bytebus | Clocked Register and Lookup; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
+| vcv/drumlab | Original percussion voices, per-hit control capture, four-lane Gorgon kit and Rack adapter. Built separately from the release bundles. |
 | vcv/shared | Sample-file utilities, versioned sample-sharing interface, byte-bus helpers and panel-glyph sources. |
 
 Build from a complete checkout: plugins include headers from vcv/shared outside their own directories. Generated panels are committed. Regenerating their marks additionally uses the source project described in [the glyph README](../vcv/shared/glyphs/README.md).
@@ -148,6 +149,25 @@ ByteBusLab is built separately and is not in the release bundles. See the
 [contract](BYTE_BUS_SPEC.md), [Lookup manual](../vcv/bytebus/docs/LOOKUP.md),
 [Register manual](../vcv/bytebus/docs/MANUAL.md) and
 [workflow](../.github/workflows/bytebus.yml).
+
+### DrumLab
+
+~~~sh
+make -C vcv/drumlab RACK_DIR=/absolute/path/to/Rack-SDK
+make -C vcv/drumlab/tests check RACK_DIR=/absolute/path/to/Rack-SDK
+make -C vcv/drumlab/tests sanitize RACK_DIR=/absolute/path/to/Rack-SDK
+make -C vcv/drumlab/tests render
+vcv/drumlab/tests/render /tmp/DrumLab-audition.wav
+make -C vcv/drumlab dist RACK_DIR=/absolute/path/to/Rack-SDK
+~~~
+
+The tests check six audible models, pitch/decay, captured hit and outgoing-tail
+settings, deterministic reset, choke, velocity and degradation, allocation-free
+engine operations, and the real Rack adapter's polyphony and saved state. The
+audition renderer uses the same engine directly. The Linux workflow builds and
+packages the plugin and audition as Actions artifacts; the platform workflow
+adds Windows/macOS builds. See [the manual](../vcv/drumlab/docs/MANUAL.md) for
+unverified live/GUI behavior. DrumLab is outside the release bundles.
 
 ### Workstation run, 2026-10-25
 

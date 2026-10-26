@@ -1,0 +1,12 @@
+/build/
+/dist/
+/plugin.so
+/plugin.dll
+/plugin.dylib
+/tests/engine_test
+/tests/module_test
+/tests/gorgon_test
+/tests/render
+/tests/*_asan
+/examples/*.wav
+**/__pycache__/

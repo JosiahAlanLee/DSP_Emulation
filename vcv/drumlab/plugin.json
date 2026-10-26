@@ -1,0 +1,15 @@
+{
+  "slug": "DrumLab",
+  "name": "DrumLab",
+  "version": "2.0.0",
+  "license": "BSD-3-Clause",
+  "brand": "DrumLab",
+  "author": "DSP_Emulation contributors",
+  "sourceUrl": "https://github.com/JosiahAlanLee/DSP_Emulation",
+  "modules": [{
+    "slug": "Percussion",
+    "name": "Percussion",
+    "description": "Six original digital percussion models with per-hit control capture, a four-lane kit, polyphonic CV and deterministic reset.",
+    "tags": ["Drum", "Synth voice", "Polyphonic"]
+  }]
+}

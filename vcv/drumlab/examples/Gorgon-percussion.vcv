@@ -1,0 +1,128 @@
+{
+  "version": "2.6.4",
+  "modules": [
+    {
+      "id": 1,
+      "plugin": "GorgonBridge",
+      "model": "Gorgon",
+      "version": "2.2.0",
+      "pos": [
+        0,
+        0
+      ],
+      "params": []
+    },
+    {
+      "id": 2,
+      "plugin": "DrumLab",
+      "model": "Percussion",
+      "version": "2.0.0",
+      "pos": [
+        24,
+        0
+      ],
+      "params": [
+        {
+          "id": 0,
+          "value": 6
+        },
+        {
+          "id": 1,
+          "value": 0
+        },
+        {
+          "id": 2,
+          "value": -1.51457317
+        },
+        {
+          "id": 3,
+          "value": 0.5
+        },
+        {
+          "id": 4,
+          "value": 0.5
+        },
+        {
+          "id": 5,
+          "value": 0.15
+        },
+        {
+          "id": 6,
+          "value": 16
+        },
+        {
+          "id": 7,
+          "value": 0
+        },
+        {
+          "id": 8,
+          "value": 0
+        }
+      ],
+      "data": {
+        "velocityHigh": 10
+      }
+    },
+    {
+      "id": 3,
+      "plugin": "Core",
+      "model": "AudioInterface2",
+      "version": "2.6.4",
+      "pos": [
+        44,
+        0
+      ],
+      "params": []
+    }
+  ],
+  "cables": [
+    {
+      "id": 1,
+      "outputModuleId": 1,
+      "outputId": 11,
+      "inputModuleId": 2,
+      "inputId": 0,
+      "color": "#4f6f7a"
+    },
+    {
+      "id": 2,
+      "outputModuleId": 1,
+      "outputId": 12,
+      "inputModuleId": 2,
+      "inputId": 1,
+      "color": "#4f6f7a"
+    },
+    {
+      "id": 3,
+      "outputModuleId": 1,
+      "outputId": 3,
+      "inputModuleId": 2,
+      "inputId": 2,
+      "color": "#4f6f7a"
+    },
+    {
+      "id": 4,
+      "outputModuleId": 1,
+      "outputId": 1,
+      "inputModuleId": 2,
+      "inputId": 11,
+      "color": "#4f6f7a"
+    },
+    {
+      "id": 5,
+      "outputModuleId": 2,
+      "outputId": 1,
+      "inputModuleId": 3,
+      "inputId": 0,
+      "color": "#4f6f7a"
+    },
+    {
+      "id": 6,
+      "outputModuleId": 2,
+      "outputId": 2,
+      "inputModuleId": 3,
+      "inputId": 1,
+      "color": "#4f6f7a"
+    }
+  ]
+}
