@@ -26,6 +26,16 @@ string(REPLACE "\t\t__try  //" "#ifdef _MSC_VER\n\t\t__try  //" text "${text}")
 string(REPLACE "\t}\n\n\t// SetThreadDescription" "#endif\n\t}\n\n\t// SetThreadDescription" text "${text}")
 file(WRITE "${source}" "${text}")
 
+# Calling convention depends on the OS, not the compiler. Without this MinGW
+# emits System V argument registers and omits Win64 shadow space: it compiles,
+# but the first generated DSP block crashes when called from native C++.
+foreach(part jitregtypes.h jitstackhelper.cpp)
+    set(source "${MD_DSP56300_DIR}/source/dsp56kEmu/${part}")
+    file(READ "${source}" text)
+    string(REPLACE "#ifdef _MSC_VER" "#ifdef _WIN32" text "${text}")
+    file(WRITE "${source}" "${text}")
+endforeach()
+
 # The upstream GNU constexpr limit is Linux-only, although the opcode table is
 # identical under MinGW GCC.
 add_compile_options(-fconstexpr-loop-limit=10000000)
