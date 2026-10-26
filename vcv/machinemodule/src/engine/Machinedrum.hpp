@@ -4,6 +4,7 @@
 #include "MdEngine.h"
 #include "Firmware.h"
 #include "SampleBank.hpp"
+#include "Prewarm.h"
 namespace md_rack {
 class Machinedrum final:public Backend {
     md::fw::Firmware firmware; // Engine retains a reference: this must outlive it.
@@ -27,9 +28,18 @@ public:
         // Warm startup on the worker, before any host timeline begins.
         md::engine::Engine::Output warm;
         for(int b=0;b<40;++b)if(!engine->render(warm))throw std::runtime_error(engine->fault());
+        // Play every offered machine once so the DSP JIT compiles it here, not on its first hit: on a Ryzen 5 5600X a
+        // first hit costs up to 21 ms in one block, about the whole 1024-sample queue.
+        mm::prewarmMachines(*engine,hasSamples,false);
         auto& host=engine->host();
-        for(int t=0;t<tracks;++t){host.setLevel(t,100);host.setParam(t,17,100);host.setRouting(t,6);}
+        for(int t=0;t<tracks;++t){
+            host.setLevel(t,100);host.setRouting(t,6);
+            for(int p=params;p<int(kitDefaults.size());++p)host.setParam(t,p,kitDefaults[p]);
+        }
     }
+    // Raw AMD..LFOM as the desktop core's default kit has them (mm::kRawDefault in desktop/src/core/KitModel.cpp):
+    // EQF/EQG 64, FLTW 127, VOL 100, PAN 64. The host model starts all 24 at zero, a closed filter panned hard left.
+    static constexpr std::array<uint8_t,24> kitDefaults{0,0,0,0,0,0,0,0, 0,0,64,64,0,127,0,0,0,100,64,0,0,0,0,0};
     std::string description() const override {return hasSamples?"Ready · ROM sample bank loaded":"Ready · synthesis only (ROM sample bank not loaded)";}
     std::vector<Machine> machines() const override {
         std::vector<Machine> result;
