@@ -1,10 +1,10 @@
 # Vastish AUDIO IN
 
-Contract for VastishLab 2.6, linked from the [manual](MANUAL.md#ports-and-polyphony)'s
+Contract for VastishLab 2.6 and 2.7, linked from the [manual](MANUAL.md#ports-and-polyphony)'s
 inputs table. External audio replaces the oscillator block of a voice and runs
 through its DSP algorithm, envelopes, FUNs and pan: the K2500's Live Mode role,
 as an original implementation. Two steps: **mono** first (2.6.0), then
-**polyphonic**. The Pd Vastish is unchanged; this is native-only, like the
+**polyphonic** (2.7.0). The Pd Vastish is unchanged; this is native-only, like the
 SAMPLE wave.
 
 ## Ports and parameters
@@ -49,8 +49,9 @@ The decision is per voice: `VoiceInput` gains `audio`, `audioConnected` and
 whatever its gate, since the voice count is at least one, so the mono step
 does not change which voices run.
 
-In the mono step the voice count is still `max(PITCH, GATE)` channels, floor 1;
-AUDIO IN channel 1 feeds voice 1 and the other voices read 0.
+In the mono step (2.6.0) the voice count is still `max(PITCH, GATE)` channels,
+floor 1; AUDIO IN channel 1 feeds voice 1 and the other voices read 0. The
+polyphonic step replaces this.
 
 ## Polyphonic step
 
@@ -62,6 +63,17 @@ chains with one cable, each chain key-tracked by its own PITCH channel.
 Voices that AUDIO IN establishes are inside the voice count, so they already
 run every sample; the engine's `audioAll` path, which runs all eight, is not
 needed.
+
+- AUDIO IN counts toward the voice count only while the wave is AUDIO. With
+  another wave it is unused and establishes nothing.
+- A voice inside the count with no AUDIO IN channel of its own (two AUDIO
+  channels under six PITCH channels, say) reads silence and is treated as
+  unpatched: its amp envelope applies, so it is silent rather than gate-free.
+- Gate-free voices follow their own PITCH channel continuously, as voice 1
+  does in the mono step; a mono PITCH cable reaches every voice.
+- A 2.6.0 patch with a polyphonic PITCH or GATE and a mono AUDIO cable now
+  feeds that audio to every voice instead of voice 1 alone. Without a gate
+  each of those voices is at unity, so the sum is louder.
 
 Stereo is not a feature of this contract: the SAMPLE wave's right-channel
 path (`blockR`) is not used. A stereo pair is two voices, panned by PAN or by
@@ -107,8 +119,16 @@ parameters and sound unchanged; one-sample feedback loops through LP4, DIST,
 GAIN and COMB do not fault. ByteBusLab's `tests/lookup_test.cpp` checks the
 compiler's rejection.
 
-Polyphonic step, still to be built: voice count from the AUDIO IN cable and
-mono broadcast.
+Polyphonic step (`tests/adapter_test.cpp`): voice count from the AUDIO IN
+cable with nothing else patched, each voice reading its own channel; L equal
+to the voices' sum through the DC blocker; per-voice key tracking from a poly
+PITCH cable; mono broadcast to the voices PITCH establishes; voices without
+an AUDIO channel left under their envelopes; and no voices from AUDIO IN under
+another wave.
 
-Workstation: Machinemodule TRACKS → Vastish AUDIO IN (poly) → Spoon Bender,
-and the modular through an ES-6 → Vastish, with what was heard noted in the PR.
+Workstation, 2026-10-26: VCV Rack Free 2.6.6, headless, on a private JACK
+server, 16 s. Counter → Lookup Rhythm → Machinemodule (bus TRIG, OS 1.63)
+TRACKS → Vastish AUDIO IN (poly) → Spoon Bender. All eight tracks sounded, and
+Vastish's L matched the DC-blocked float32 sum of the eight tracks within
+1.5×10⁻⁷ V on every sample; Spoon Bender processed it. The run was measured,
+not listened to. The modular through an ES-6 needs hardware and was not run.

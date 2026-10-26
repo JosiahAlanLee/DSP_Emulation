@@ -133,7 +133,7 @@ struct Vastish : Module {
         for(int k=0;k<4;++k) configInput(AUX1_IN+k,string::f("AUX %d, ±10 V = ±1 source, one value per voice",k+1));
         configInput(BUS_A_IN,"Byte bus A; optional CLK on channel 9 (primary clock)");
         configInput(BUS_B_IN,"Byte bus B; optional CLK on channel 9");
-        configInput(AUDIO_IN,"Audio in: replaces the oscillator when PITCH is AUDIO (±5 V full scale; ±10 V in the menu)");
+        configInput(AUDIO_IN,"Audio in: replaces the oscillator when PITCH is AUDIO; one voice per channel, mono reaches every voice (±5 V full scale; ±10 V in the menu)");
         const char* outNames[]={"Left audio","Right audio","Amp envelope","Envelope 2","Envelope 3","LFO 1","LFO 2","FUN 1","FUN 2","FUN 3","FUN 4"};
         for(int i=0;i<=FUN4_OUT;++i) configOutput(i,outNames[i]);
         configOutput(BUS_OUT,"Selected word or eight logical lanes; primary bus clock forwarded");
@@ -159,12 +159,13 @@ struct Vastish : Module {
         for(int i=0;i<PARAM_COUNT;++i) {
             float x=params[i].getValue(); p[i]=std::isfinite(x)?vastish::clamp(x,metadata()[i].lo,metadata()[i].hi):programs()[0][i];
         }
-        int channels=std::min(8,std::max(inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels()));
-        // AUDIO wave: AUDIO IN channel 1 feeds voice 1; the other voices read silence.
+        // AUDIO wave: AUDIO IN's channels establish voices as PITCH and GATE do. Voice v reads
+        // channel v; a mono cable reaches every voice, and a voice without a channel reads silence.
         const bool audioWave=choice(p[PITCH_WAVE],AUDIO_WAVE)==AUDIO_WAVE;
         const bool audioPatched=inputs[AUDIO_IN].isConnected(), gatePatched=inputs[GATE_IN].isConnected();
-        float audio=inputs[AUDIO_IN].getVoltage(0)*(audioIn10V.load(std::memory_order_relaxed) ? .1f : .2f);
-        if(!std::isfinite(audio)) audio=0;
+        const int audioChannels=audioPatched ? inputs[AUDIO_IN].getChannels() : 0;
+        int channels=std::min(8,std::max({inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels(),audioWave ? audioChannels : 0}));
+        const float audioScale=audioIn10V.load(std::memory_order_relaxed) ? .1f : .2f;
         auto a=busA.process(inputs[BUS_A_IN]), b=busB.process(inputs[BUS_B_IN]);
         bool lanes=choice(p[BUS_OUT_MODE],2)==2;
         bool controlAll=a.connected || b.connected || lanes;
@@ -176,7 +177,9 @@ struct Vastish : Module {
             bool was=triggers[i].isHigh();
             triggers[i].process(i<channels?voltage(GATE_IN):0.f);
             bool rise=!was && triggers[i].isHigh();
-            in[i].audioConnected=audioPatched && i==0; in[i].audio=i==0 ? audio : 0.f;
+            in[i].audioConnected=audioPatched && i<channels && (audioChannels==1 || i<audioChannels);
+            float audio=in[i].audioConnected ? inputs[AUDIO_IN].getVoltage(audioChannels==1 ? 0 : i)*audioScale : 0.f;
+            in[i].audio=std::isfinite(audio) ? audio : 0.f;
             in[i].gateConnected=gatePatched;
             if(i<channels) {
                 // Pitch is held after note-off, matching the Pd voice's stored MIDI key. A gate-free
