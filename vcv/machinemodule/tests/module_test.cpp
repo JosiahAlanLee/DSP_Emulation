@@ -79,12 +79,13 @@ static void busTrig(){
         for(int k=8;k<16;++k)assert(trace.hits[k].hit.velocity==64);
         assert(trace.hits[16].hit.velocity==127);
     }
-    // The mode is saved with the patch; a patch without it reads TRIG as tracks.
+    // The mode is saved with the patch; a patch without it reads TRIG as tracks. Modules live on the
+    // heap here: each is ~240 KB, and main's frame already uses most of Windows' 2 MB stack.
     {
-        Trace trace;Machinemodule m(factory(trace));m.trigMode=Machinemodule::TRIG_BUS;
-        json_t* saved=m.dataToJson();assert(std::string(json_string_value(json_object_get(saved,"trigMode")))=="bus");
-        Machinemodule r(factory(trace));r.dataFromJson(saved);assert(r.trigMode==Machinemodule::TRIG_BUS);
-        json_object_del(saved,"trigMode");r.dataFromJson(saved);json_decref(saved);assert(r.trigMode==Machinemodule::TRIG_TRACKS);
+        Trace trace;auto m=std::make_unique<Machinemodule>(factory(trace));m->trigMode=Machinemodule::TRIG_BUS;
+        json_t* saved=m->dataToJson();assert(std::string(json_string_value(json_object_get(saved,"trigMode")))=="bus");
+        auto r=std::make_unique<Machinemodule>(factory(trace));r->dataFromJson(saved);assert(r->trigMode==Machinemodule::TRIG_BUS);
+        json_object_del(saved,"trigMode");r->dataFromJson(saved);json_decref(saved);assert(r->trigMode==Machinemodule::TRIG_TRACKS);
     }
 #ifdef BYTEBUS_COUNTER
     // Counter -> Lookup (Rhythm) -> Machinemodule through one-sample cables, in random process
