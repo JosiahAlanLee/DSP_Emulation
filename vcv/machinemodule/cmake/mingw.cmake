@@ -21,6 +21,7 @@ endforeach()
 # below it; never raise an exception that GCC cannot catch.
 set(source "${MD_DSP56300_DIR}/source/dsp56kBase/threadtools.cpp")
 file(READ "${source}" text)
+string(REPLACE "\r\n" "\n" text "${text}")
 string(REPLACE "\t\t__try  //" "#ifdef _MSC_VER\n\t\t__try  //" text "${text}")
 string(REPLACE "\t}\n\n\t// SetThreadDescription" "#endif\n\t}\n\n\t// SetThreadDescription" text "${text}")
 file(WRITE "${source}" "${text}")

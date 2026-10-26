@@ -103,6 +103,14 @@ if(RACK_DIR)
         target_compile_definitions(module_test PRIVATE GORGON_SOURCE="${GORGON_DIR}/rack/src/Gorgon.cpp")
     endif()
     add_test(NAME rack_module COMMAND module_test)
+    # Match the SDK's x64 baseline. This also prevents SIMD emulation aliases
+    # from colliding with Windows intrinsics in the real Gorgon producer.
+    if(WIN32 OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR
+       (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$"))
+        foreach(target plugin module_test plugin_load_test)
+            target_compile_options(${target} PRIVATE -march=nehalem)
+        endforeach()
+    endif()
 endif()
 
 if(MINGW)
