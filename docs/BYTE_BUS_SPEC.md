@@ -1,13 +1,12 @@
 # Byte bus: 8-bit data over Rack polyphonic cables
 
-Spec **v0.1, draft** (2026-10-25). Design record for `vcv/shared/ByteBus.hpp` and
+Spec **v0.1**, drafted 2026-10-25 and ratified 2026-10-26 (§11). Design record for `vcv/shared/ByteBus.hpp` and
 for every module that reads or writes the bus. The Vastish side is in
 [`vcv/vastish/BUS_SPEC.md`](../vcv/vastish/BUS_SPEC.md).
 
-Working name: **Harriot** — Thomas Harriot worked out binary arithmetic in his
-notebooks around 1600, unpublished, before Leibniz. A placeholder until a
-better name turns up. Panel label on every module: **BUS**. Code:
-`namespace dspemu::bus`.
+Name: **Harriot** — Thomas Harriot worked out binary arithmetic in his
+notebooks around 1600, unpublished, before Leibniz. Panel label on every
+module: **BUS**. Code: `namespace dspemu::bus`.
 
 ## 1. Purpose
 
@@ -257,16 +256,22 @@ Vastish bus I/O with optional normalized FUNs, OTIS frame control/export and
 the memoryless Vastish table compiler, and Séance Bridge spectral activity/masking.
 Remaining order: Pipeline → Counter → Switch.
 
-## 11. Decisions to ratify
+## 11. Ratified decisions
 
-1. Name and label.
-2. LSB-first channel order.
-3. Mode by channel count (the alternative, a separate clock cable, loses the
-   zero-skew property and costs a port on every module).
-4. ±5 V full scale, offset binary.
+Ratified as written on 2026-10-26. Changing one of these is a new spec version,
+not an edit to v0.1.
+
+1. Name **Harriot**; panel label **BUS**.
+2. LSB-first channel order (§3).
+3. Mode by channel count (§3). The alternative, a separate clock cable, loses
+   the zero-skew property and costs a port on every module.
+4. ±5 V full scale, offset binary (§6).
 5. Latching modules default to an internal clock in Hz rather than the engine
-   rate.
-6. Reserved channels 9–15 stay reserved in v0.1.
+   rate (§5).
+6. Reserved channels 9–15 stay reserved in v0.1 (§3). Every bus reader ignores
+   them, so a later version can assign one (§12) without changing what a bus
+   input decodes. An input that reads the cable as plain channels, such as
+   Machinemodule's TRIG in its per-track mode, would see the new line.
 
 ## 12. Extensions, not in v0.1
 

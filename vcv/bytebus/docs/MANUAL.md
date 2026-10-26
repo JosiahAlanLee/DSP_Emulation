@@ -5,7 +5,7 @@
 The register samples BUS IN on its selected clock, holds that word, and emits
 it through BUS OUT with a word-clock pulse. RESET loads the chosen seed word
 and publishes it to downstream clocked modules. All processing is on the audio
-thread, without allocation or locks. This implements the byte-bus draft in
+thread, without allocation or locks. This implements the byte-bus spec in
 [`docs/BYTE_BUS_SPEC.md`](../../../docs/BYTE_BUS_SPEC.md).
 
 ## First patch
