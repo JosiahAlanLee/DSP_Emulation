@@ -121,7 +121,7 @@ driven original core, sample for sample. It has not been run without an OS file.
 
 ## Source and attribution
 
-- [Machinemodule](https://github.com/joelanders/mpc-vst-machinedrum), desktop
+- [Machinemodule](https://github.com/sd88me/mpc-vst-machinedrum), desktop
   v0.2.1: AGPL-3.0-only; original voice/host/track effects and firmware decoder.
 - Its pinned [dsp56300](https://github.com/sd88me/dsp56300) emulator: GPL-3.0;
   Musashi/68k and asmjit retain the notices in their source dependencies.

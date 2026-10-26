@@ -6,7 +6,7 @@ commit=a2b6cf2478cbe94dfe30bc42da39e221df0e2556
 fresh=false
 if [ ! -d "$dest/.git" ] && [ ! -f "$dest/.git" ]; then
     fresh=true
-    git clone --no-checkout --filter=blob:none https://github.com/joelanders/mpc-vst-machinedrum.git "$dest"
+    git clone --no-checkout --filter=blob:none https://github.com/sd88me/mpc-vst-machinedrum.git "$dest"
 fi
 if [ "$(git -C "$dest" rev-parse HEAD 2>/dev/null || true)" != "$commit" ]; then
     if [ "$fresh" = false ] && [ -n "$(git -C "$dest" status --porcelain)" ]; then
