@@ -3,7 +3,6 @@
 #include "Layout.hpp"
 #include "Chain.hpp"
 using namespace seance;
-using namespace seance_layout::core;
 
 struct Seance : Module {
     enum Params { SIZE, SEED, MIX, RESET, NUM_PARAMS };
@@ -70,6 +69,7 @@ struct Seance : Module {
 
 struct SeanceWidget : ModuleWidget {
     SeanceWidget(Seance* m) {
+        using namespace seance_layout::core;
         setModule(m);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/Seance.svg")));
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));

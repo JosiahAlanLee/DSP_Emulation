@@ -174,7 +174,7 @@ struct MachinemoduleWidget:ModuleWidget {
         using namespace machinemodule_layout::voice;
 #define POS(N) Vec(N##_X, N##_Y)
         setModule(module);setPanel(createPanel(asset::plugin(pluginInstance,"res/Machinemodule.svg")));
-        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(WIDTH-15,365)));
+        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(machinemodule_layout::voice::WIDTH-15,365)));
         addParam(createParamCentered<RoundBlackSnapKnob>(POS(MACHINE),module,Machinemodule::MACHINE));
         addParam(createParamCentered<RoundBlackKnob>(POS(TEMPO),module,Machinemodule::TEMPO));
         addParam(createParamCentered<RoundBlackKnob>(POS(GAIN),module,Machinemodule::GAIN));

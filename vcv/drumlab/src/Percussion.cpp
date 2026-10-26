@@ -124,7 +124,7 @@ struct PercussionWidget : ModuleWidget {
 #define POS(N) Vec(N##_X, N##_Y)
         setModule(m); setPanel(createPanel(asset::plugin(pluginInstance, "res/Percussion.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(WIDTH-15, 365)));
+        addChild(createWidget<ScrewSilver>(Vec(drumlab_layout::percussion::WIDTH-15, 365)));
         auto* machine = createParam<dspemu::panel::Choice>(POS(MACHINE), m, Percussion::MACHINE);
         machine->box.size = Vec(MACHINE_W,MACHINE_H); machine->previewIndex = 6;
         machine->labels = {"KICK","SNARE","HAT","FM","MEMBRANE","CLAP","4-LANE KIT"}; addParam(machine);

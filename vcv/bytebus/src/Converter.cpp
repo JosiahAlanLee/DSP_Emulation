@@ -62,7 +62,7 @@ struct ByteConverterWidget : ModuleWidget {
         using namespace bytebus_layout::converter;
 #define POS(N) Vec(N##_X, N##_Y)
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance,"res/Converter.svg")));
-        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(WIDTH-15,365)));
+        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::converter::WIDTH-15,365)));
         auto* display=createWidget<ConverterDisplay>(POS(WORD)); display->box.size=Vec(WORD_W,WORD_H); display->module=module; addChild(display);
         const Vec gains[] = {POS(ADC_GAIN),POS(DAC_GAIN)}, offsets[] = {POS(ADC_OFFSET),POS(DAC_OFFSET)}, ranges[] = {POS(ADC_RANGE),POS(DAC_RANGE)};
         for(int side=0;side<2;++side) {

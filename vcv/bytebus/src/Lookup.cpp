@@ -184,7 +184,7 @@ struct ByteLookupWidget : ModuleWidget {
         using namespace bytebus_layout::lookup;
 #define POS(N) Vec(N##_X, N##_Y)
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance,"res/Lookup.svg")));
-        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(WIDTH-15,365)));
+        addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::lookup::WIDTH-15,365)));
         auto* family = createParam<dspemu::panel::Choice>(POS(FAMILY),module,ByteLookup::FAMILY);
         family->box.size = Vec(FAMILY_W,FAMILY_H);
         family->labels = {"HARMONIC","FORMANT","FOLD","CURVE","WALSH","RHYTHM","CUSTOM"}; addParam(family);

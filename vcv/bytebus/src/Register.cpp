@@ -86,7 +86,7 @@ struct ClockedRegisterWidget : ModuleWidget {
 #define POS(N) Vec(N##_X, N##_Y)
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance, "res/Register.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(WIDTH-15, 365)));
+        addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::reg::WIDTH-15, 365)));
         auto* source = createParam<dspemu::panel::Choice>(POS(SOURCE), module, ClockedRegister::CLOCK_MODE);
         source->box.size = Vec(SOURCE_W, SOURCE_H);
         source->labels = {"AUTO", "JACK", "BUS", "INTERNAL", "ENGINE"}; addParam(source);

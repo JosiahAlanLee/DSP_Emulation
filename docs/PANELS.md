@@ -52,6 +52,9 @@ directory. Commit all generated outputs together. The old
 An alternate font file can be passed to these three generators with `--font`.
 The component illustrations are layout aids, not Rack screenshots.
 
+Keep layout namespace imports inside widget constructors. Qualify shared names
+such as `WIDTH` so integration tests can compile several adapters together.
+
 Séance already follows this style; its narrow Cross switch legends now sit
 inside the 4 HP panel border. The established OTIS, Vastish and Spoon Bender
 generators remain in their respective `tools` directories.
@@ -60,7 +63,10 @@ generators remain in their respective `tools` directories.
 
 Linux builds for ByteBusLab, DrumLab and Machinemodule pass. All six ByteBusLab
 engine/module checks, DrumLab's engine/module/Gorgon checks, and Machinemodule's
-six firmware-free CTest checks pass. Rack's own screenshot mode loads and draws
+six firmware-free CTest checks pass. Séance's engine/module/Bridge checks also
+pass, including the native OTIS/Lookup feedback integration and ASan/UBSan
+checks. Local sanitizer runs disable leak detection because this host cannot
+inspect process threads. Rack's own screenshot mode loads and draws
 all five updated module widgets and all six Séance panels, including browser
 previews without a module instance. Live pointer/keyboard interaction and
 physical audio/CV devices were not part of this check.
