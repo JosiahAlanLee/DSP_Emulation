@@ -193,6 +193,50 @@ int main() {
         for(int i=0;i<480;++i) { bad.process(args); assert(bad.outputs[Vastish::LEFT_OUT].getVoltage()==0); }
         assert(bad.engine.faults==0);
     }
+    // Polyphonic AUDIO IN: its channels establish voices, voice v reads channel v, a mono cable
+    // reaches every voice, and a voice without a channel is a silent input under its envelope.
+    {
+        auto live=[&](Vastish& v,int pitchChannels,int audioChannels) {
+            for(int i=0;i<PARAM_COUNT;++i) v.params[i].setValue(programs()[0][i]);
+            v.params[PITCH_WAVE].setValue(AUDIO_WAVE); v.params[MASTER].setValue(0);
+            v.params[AMP_ADJ].setValue(0); v.params[PAN_ADJ].setValue(-1);
+            for(auto& o:v.outputs) o.channels=1;
+            v.inputs[Vastish::PITCH_IN].channels=pitchChannels; v.inputs[Vastish::AUDIO_IN].channels=audioChannels;
+        };
+        // Four AUDIO channels and nothing else patched: four gate-free voices, each its own channel.
+        Vastish v; live(v,0,4);
+        for(int c=0;c<4;++c) v.inputs[Vastish::AUDIO_IN].setVoltage(1.f+c,c);
+        v.process(args);
+        assert(v.outputs[Vastish::AMP_OUT].getChannels()==4);
+        for(int c=0;c<8;++c) assert(v.engine.voices[c].tap==(c<4 ? (1.f+c)*.2f : 0.f));
+        // L is the four voices' sum through the DC blocker, at unity.
+        Vastish u; live(u,0,4);
+        for(int i=0;i<4800;++i) u.process(args); // silence while MASTER's 50 ms ramp settles
+        Highpass dc;
+        for(int n=0;n<4800;++n) {
+            float sum=0;
+            for(int c=0;c<4;++c) { float x=5*std::sin(.01f*n*(c+1)); u.inputs[Vastish::AUDIO_IN].setVoltage(x,c); sum+=x*.2f; }
+            u.process(args); assert(u.outputs[Vastish::LEFT_OUT].getVoltage()==dc.tick(sum,5,48000)*5);
+        }
+        // Each voice keeps its own key: PITCH channel c tracks voice c without a gate.
+        Vastish k; live(k,4,4);
+        for(int c=0;c<4;++c) k.inputs[Vastish::PITCH_IN].setVoltage(float(c)-1.f,c);
+        k.process(args);
+        for(int c=0;c<4;++c) assert(k.in[c].note==60+12*(c-1));
+        // A mono AUDIO cable reaches every voice PITCH establishes.
+        Vastish m; live(m,3,1); m.inputs[Vastish::AUDIO_IN].setVoltage(2.5f); m.process(args);
+        assert(m.outputs[Vastish::AMP_OUT].getChannels()==3);
+        for(int c=0;c<8;++c) assert(m.engine.voices[c].tap==(c<3 ? .5f : 0.f));
+        // Two AUDIO channels under six PITCH channels: voices 3-6 read silence and stay under
+        // their (closed) envelopes, so they are silent rather than gate-free.
+        Vastish s; live(s,6,2); s.inputs[Vastish::AUDIO_IN].setVoltage(5,0); s.inputs[Vastish::AUDIO_IN].setVoltage(5,1);
+        s.process(args);
+        assert(s.outputs[Vastish::AMP_OUT].getChannels()==6);
+        for(int c=0;c<6;++c) assert(s.in[c].audioConnected==(c<2));
+        // With another wave, AUDIO IN is unused and does not establish voices.
+        Vastish w; live(w,0,4); w.params[PITCH_WAVE].setValue(0); w.process(args);
+        assert(w.outputs[Vastish::AMP_OUT].getChannels()==1);
+    }
     // The range is saved in the patch. A 2.5 patch, which has no range, opens at ±5 V,
     // and a full restore sets it even on an instance that was at ±10 V.
     {
@@ -217,5 +261,5 @@ int main() {
         }
         assert(f.engine.faults==0 && peak>1);
     }
-    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, saved range and feedback\n";
+    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, polyphonic voices and mono broadcast, saved range and feedback\n";
 }

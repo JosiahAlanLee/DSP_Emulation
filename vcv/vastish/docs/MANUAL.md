@@ -129,9 +129,9 @@ When sending polyphonic FUN output to a monophonic destination, select or combin
 | MOD | 0–10 V, clamped; feeds MWHEEL. |
 | AUX 1–4 | Bipolar per-voice control sources. ±10 V gives ±1; mono cables broadcast. |
 | BUS A, BUS B | One byte each, LSB first, optional clock on channel 9; each input holds its own clocked word. |
-| AUDIO IN | External audio for the AUDIO wave, into voice 1. ±5 V is full scale; ±10 V in the menu. See [Live processing](#live-processing) and the [contract](AUDIO_IN.md). |
+| AUDIO IN | External audio for the AUDIO wave, one voice per channel; a mono cable reaches every voice. ±5 V is full scale; ±10 V in the menu. See [Live processing](#live-processing) and the [contract](AUDIO_IN.md). |
 
-Pitch and gate channel counts determine the number of voices, up to eight. A mono input broadcasts across the other cable's polyphony. VEL, MOD and AUX do not establish additional voices on their own. Pitch updates while the gate is high and holds its last value during release.
+Pitch and gate channel counts determine the number of voices, up to eight, and so does AUDIO IN's while the wave is AUDIO. A mono input broadcasts across the other cable's polyphony. VEL, MOD and AUX do not establish additional voices on their own. Pitch updates while the gate is high and holds its last value during release.
 
 | Output | Behavior |
 |---|---|
@@ -190,7 +190,11 @@ choose **AUDIO IN range → ±10 V** in the context menu for hotter sources.
 Input beyond full scale clips before the chain. Some oscillators overshoot
 ±5 V: Fundamental VCO's saw reaches −6.6 V, so ±10 V keeps its edges intact.
 
-In 2.6 only voice 1 reads AUDIO IN, from channel 1 of a polyphonic cable.
+AUDIO IN is polyphonic: each channel is a voice with its own chain, so
+Machinemodule's TRACKS (its first eight channels) run through eight VAST chains
+from one cable, each key-tracked by its own PITCH channel. A mono AUDIO cable
+reaches every voice that PITCH or GATE establishes; a voice with no AUDIO
+channel of its own stays under its envelope. In 2.6, only voice 1 read AUDIO IN.
 Patching L or R back into AUDIO IN makes an ordinary one-sample feedback loop.
 ByteBusLab cannot compile an AUDIO program into a Lookup table, since its input
 is live audio rather than a byte.

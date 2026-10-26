@@ -1,5 +1,19 @@
 # Validation — native Vastish 2.0.0
 
+## 2.7.0 AUDIO IN, polyphonic step
+
+AUDIO IN's channels establish voices under the AUDIO wave; voice *v* reads
+channel *v* and a mono cable reaches every voice. Rack API tests cover the voice
+count, per-voice audio and key tracking, the summed L output against the DC
+blocker, mono broadcast, voices without a channel, and other waves. The legacy
+trace (`aa97f2a77d0fbb8b`) and every other suite are unchanged.
+
+Real engine, 2026-10-26: VCV Rack Free 2.6.6, headless, private JACK server,
+16 s. Machinemodule's TRACKS (OS 1.63, bus TRIG from Counter → Lookup Rhythm)
+into AUDIO IN, then Spoon Bender. All eight tracks sounded and L matched the
+DC-blocked float32 sum of the eight tracks within 1.5×10⁻⁷ V on every sample.
+Measured, not listened to.
+
 ## 2.6.0 AUDIO IN, mono step
 
 The [AUDIO IN contract](AUDIO_IN.md) appends input 10 and PITCH wave 7.
