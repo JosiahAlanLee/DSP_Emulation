@@ -15,5 +15,6 @@ int main(int argc,char** argv){
     direct.host().setTempo(120);direct.host().setMachine(0,16);for(int i=0;i<8;++i)direct.host().setParam(0,i,values[i]);direct.host().trigger(0,100);
     assert(adapter.fire(hit));double peak=0;
     for(int b=0;b<300;++b){float actual[32][channels];adapter.render(actual);assert(direct.render(raw));for(int f=0;f<32;++f){assert(actual[f][0]==raw.mix.main[f][0]/8388608.f);assert(actual[f][2]==raw.tracks[0][f]/8388608.f);peak=std::max(peak,double(std::abs(actual[f][0])));}}
-    assert(peak>0);std::cout<<"firmware_test: adapter equals direct core for 9600 frames; peak "<<peak<<"\n";
+    // A closed filter or zero track level leaves this hit near -74 dBFS.
+    assert(peak>.01);std::cout<<"firmware_test: adapter equals direct core for 9600 frames; peak "<<peak<<"\n";
 }

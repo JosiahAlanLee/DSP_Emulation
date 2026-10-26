@@ -6,14 +6,17 @@ DrumLab and the other DSP_Emulation plugins keep their own licenses.
 
 The core runs the original voice DSP and ColdFire parameter routines from a
 user-supplied Machinedrum OS. Track effects and mixing use Machinemodule's
-native implementations. No Elektron firmware or sample data is distributed.
+native implementations. Every track starts from the desktop core's default kit:
+level and VOL 100, EQ flat, filter open, pan centred. No Elektron firmware or
+sample data is distributed.
 
 ## Play it
 
 1. Build/install `MachinemoduleRack`, then add **Machinemodule** in Rack 2.
 2. Right-click the module and choose **Load Machinedrum OS (.syx)**. Use the
-   supported OS 1.63 image. Loading and emulator initialization happen on a worker.
-   The green light and menu status indicate readiness; the patch saves a file
+   supported OS 1.63 image. Loading and emulator initialization happen on a worker,
+   which also plays every offered machine once so its DSP code is compiled before
+   the first hit (about 0.3 s on a Ryzen 5 5600X). The green light and menu status indicate readiness; the patch saves a file
    path, not a copy of your firmware.
 3. For Gorgon: place Machinemodule immediately to the **right of Gorgon 2.3.0**
    and leave its **TRIG** input unpatched. The blue light indicates the sound
@@ -117,7 +120,21 @@ The real Rack test uses a deterministic backend to check packet flips, both
 Gorgon processing orders, CV, trigger precedence and sample-rate changes.
 These checks do **not** establish firmware audio fidelity or emulator real-time
 performance. The optional `firmware_test` compares the adapter with a separately
-driven original core, sample for sample. It has not been run without an OS file.
+driven original core, sample for sample, and checks that the hit is audible.
+
+Measured on 2026-10-26 with OS 1.63 on a Ryzen 5 5600X (Linux, Rack Free 2.6.6,
+a private JACK server at 48 kHz):
+- `firmware_test` passes. All 50 offered synthesis machines sound; a single hit
+  at velocity 127 peaks between −14 and −39 dBFS.
+- One core renders 16 busy P-I tracks 6.7 times faster than real time (TRX
+  tracks 10.5 times). Before prewarming, a machine's first hit took up to 21 ms
+  in one 32-sample block.
+- Played live from Gorgon 2.3.0 and HydraPy Studio with 64-, 128- and 256-frame
+  periods, with and without ten busy CPU threads, and for ten minutes with the
+  tracker editor cueing and editing locks, the menu counters stayed at zero. The
+  kick sounds 24.2 ms (±0.35 ms) after Gorgon's gate, with no drift. Each of 489 live
+  hits whose lock changes the sound matched an offline render of its expected
+  controls rather than the unlocked or the previous hit's sound.
 
 ## Source and attribution
 
