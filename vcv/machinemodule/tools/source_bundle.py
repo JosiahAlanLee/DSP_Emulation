@@ -1,4 +1,5 @@
 """Bundle corresponding adapter/core source, never user OS/sample data."""
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -9,7 +10,8 @@ CORE = Path(sys.argv[1]).resolve()
 COMMIT = 'a2b6cf2478cbe94dfe30bc42da39e221df0e2556'
 assert subprocess.check_output(['git', '-C', str(CORE), 'rev-parse', 'HEAD'], text=True).strip() == COMMIT
 out = ROOT/'dist'; out.mkdir(exist_ok=True)
-name = out/'MachinemoduleRack-2.0.0-source.tar.gz'
+version = json.loads((ROOT/'plugin.json').read_text())['version']
+name = out/f'MachinemoduleRack-{version}-source.tar.gz'
 
 
 def add_tree(tar, source, target):
@@ -24,7 +26,8 @@ def add_tree(tar, source, target):
 
 with tarfile.open(name, 'w:gz') as tar:
     add_tree(tar, ROOT, Path('MachinemoduleRack/vcv/machinemodule'))
-    tar.add(ROOT.parent/'shared/GorgonSound.hpp', arcname='MachinemoduleRack/vcv/shared/GorgonSound.hpp')
+    for header in ['GorgonSound.hpp', 'ByteBus.hpp']:
+        tar.add(ROOT.parent/'shared'/header, arcname=f'MachinemoduleRack/vcv/shared/{header}')
     # Panel sources use the same palette, outline writer and twelve marks as the
     # other modules. Include them so the source archive can regenerate artwork.
     for part in ['panels', 'glyphs']:
