@@ -18,7 +18,7 @@ int main() {
     Plugin plugin; plugin.slug="VastishLab"; plugin.version="2.0.0"; init(&plugin); assert(plugin.models.size()==1); rack::plugin::plugins.push_back(&plugin);
     auto model=plugin.models.front(); auto m=std::unique_ptr<engine::Module>(model->createModule()); m->model=model;
     for(auto& out:m->outputs) out.channels=1;
-    assert(m->params.size()==86 && m->inputs.size()==10 && m->outputs.size()==12);
+    assert(m->params.size()==86 && m->inputs.size()==11 && m->outputs.size()==12); // input 10: AUDIO IN
     engine::Module::SampleRateChangeEvent rate; rate.sampleRate=48000; rate.sampleTime=1.f/48000; m->onSampleRateChange(rate);
     engine::Module::ProcessArgs args; args.sampleRate=rate.sampleRate; args.sampleTime=rate.sampleTime;
     for(int i=0;i<100;++i) m->process(args);
@@ -38,9 +38,30 @@ int main() {
     json_t* patch=m->toJson(); assert(patch);
     auto restored=std::unique_ptr<engine::Module>(model->createModule()); restored->model=model; restored->fromJson(patch); json_decref(patch);
     assert(restored->params[vastish::PAN_ADJ].getValue()==.7f); assert(restored->params[vastish::FUN1_EQ].getValue()==6);
+    // A 2.5 patch has no audioInRange: it opens at ±5 V with its parameters and sound unchanged.
+    {
+        json_t* now=m->toJson(); json_t* old=json_deep_copy(now); json_decref(now);
+        json_t* data=json_object_get(old,"data"); assert(data && json_object_get(data,"audioInRange"));
+        json_object_del(data,"audioInRange");
+        auto a=std::unique_ptr<engine::Module>(model->createModule()); a->model=model; a->fromJson(old); json_decref(old);
+        for(size_t i=0;i<m->params.size();++i) assert(a->params[i].getValue()==m->params[i].getValue());
+        json_t* saved=a->toJson(); assert(json_integer_value(json_object_get(json_object_get(saved,"data"),"audioInRange"))==5); json_decref(saved);
+        a->onSampleRateChange(rate);
+        auto b=std::unique_ptr<engine::Module>(model->createModule()); b->model=model; b->onSampleRateChange(rate);
+        for(size_t i=0;i<m->params.size();++i) b->params[i].setValue(m->params[i].getValue());
+        for(auto* x:{a.get(),b.get()}) { for(auto& out:x->outputs) out.channels=1; x->inputs[1].channels=1; x->inputs[1].setVoltage(10); }
+        for(int i=0;i<4800;++i) { a->process(args); b->process(args); assert(a->outputs[0].getVoltage()==b->outputs[0].getVoltage()); }
+    }
+    // Rack's Initialize returns AUDIO IN to its ±5 V default.
+    {
+        auto x=std::unique_ptr<engine::Module>(model->createModule()); x->model=model;
+        json_t* data=json_object(); json_object_set_new(data,"audioInRange",json_integer(10)); x->dataFromJson(data); json_decref(data);
+        auto range=[&] { json_t* d=x->dataToJson(); auto v=json_integer_value(json_object_get(d,"audioInRange")); json_decref(d); return v; };
+        assert(range()==10); x->onReset(engine::Module::ResetEvent{}); assert(range()==5);
+    }
     // Malformed external CV is contained at the module boundary.
     m->inputs[0].channels=1; m->inputs[1].channels=1; m->inputs[1].setVoltage(10); m->inputs[0].setVoltage(NAN); m->inputs[3].setVoltage(INFINITY);
     for(int i=0;i<1000;++i) { m->process(args); assert(std::isfinite(m->outputs[0].getVoltage())); }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: compiled Rack plugin load, eight-channel pitch/gate, mono velocity/MOD broadcast, disconnect release, patch serialization, nonfinite CV containment\n";
+    std::cout<<"PASS: compiled Rack plugin load, eight-channel pitch/gate, mono velocity/MOD broadcast, disconnect release, patch serialization, 2.5 patch without AUDIO IN range, Initialize range, nonfinite CV containment\n";
 }

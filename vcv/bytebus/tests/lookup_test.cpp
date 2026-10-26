@@ -172,6 +172,12 @@ static void compiler() {
             assert(table[n] == bus::fromBipolar(y[0]));
         }
     }
+    // An AUDIO-wave program has no table: its input is live audio, not a byte.
+    {
+        auto audio = p; audio[vastish::PITCH_WAVE] = vastish::AUDIO_WAVE; bool rejected = false;
+        try { lu::compileVastish(audio); } catch (const std::runtime_error& e) { rejected = std::string(e.what()).find("AUDIO") != std::string::npos; }
+        assert(rejected);
+    }
     for (int type = 1; type <= 14; ++type) if (!lu::memoryless(type)) {
         p[vastish::F1_TYPE] = type; bool rejected = false;
         try { lu::compileVastish(p); } catch (const std::runtime_error&) { rejected = true; }

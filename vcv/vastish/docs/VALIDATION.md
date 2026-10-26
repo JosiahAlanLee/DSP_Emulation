@@ -1,5 +1,29 @@
 # Validation — native Vastish 2.0.0
 
+## 2.6.0 AUDIO IN, mono step
+
+The [AUDIO IN contract](AUDIO_IN.md) appends input 10 and PITCH wave 7.
+Portable engine tests check unity through NONE blocks (exact before pan, and
+through the engine against the DC blocker), gate-free unity against the gated
+envelope, an unpatched AUDIO IN, key tracking, non-finite and over-range input,
+and NONE plus all fourteen block types in six algorithms at 44.1/48/96 kHz.
+Rack API tests check port IDs, level at both ranges, GATE, the gate-free note,
+the saved range, a 2.5-shaped patch and one-sample feedback through LP4, DIST,
+GAIN and COMB. ByteBusLab checks that its table compiler rejects AUDIO
+programs. The pre-bus trace comparison and Pd reference results are unchanged.
+ASan/UBSan cover the engine and adapter tests.
+
+Real engine, 2026-10-26: VCV Rack Free 2.6.6, headless, on a private JACK
+server at 48 kHz/256 frames, 12 seconds. A Fundamental VCO saw fed six Vastish
+instances, recorded by an Audio-16 module. Every L output matched an
+independent float32 model of the input clamp, LOWPASS, key tracking and DC
+blocker within 6×10⁻⁷ V: unity at ±5 V, half level at ±10 V, and the LOWPASS
+key-tracked from −2 V, +2 V and an LFO switching 0/+4 V with no gate. With GATE
+patched, the sustain level was 0.640 of the ungated signal (0.8²), and the
+output was below 3 mV 200 ms after each release. The VCO's saw peaks at
+−6.6 V, so 1.5 % of its samples clip at the ±5 V range. The run was measured,
+not listened to.
+
 ## 2.5 byte-bus extension
 
 The [bus contract](../BUS_SPEC.md) covers appended ports/sources, optional FUN

@@ -20,6 +20,8 @@ inline Table compileVastish(vastish::Parameters params, const FrozenControls& fr
         if (!std::isfinite(params[i]) || params[i] < m.lo || params[i] > m.hi)
             throw std::runtime_error(std::string("Parameter outside Vastish metadata range: ") + m.name);
     }
+    if (vastish::choice(params[vastish::PITCH_WAVE], vastish::AUDIO_WAVE) == vastish::AUDIO_WAVE)
+        throw std::runtime_error("PITCH wave AUDIO processes live input and cannot be compiled to a table; choose another wave");
     for (int i = 0; i < 3; ++i) {
         int type = vastish::choice(params[vastish::F1_TYPE + 2 * i], 14);
         if (!memoryless(type)) throw std::runtime_error("Only NONE, SHAPER, DIST, GAIN and CRUSH can be compiled; stateful block in F" + std::to_string(i + 1));

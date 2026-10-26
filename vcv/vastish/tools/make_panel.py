@@ -37,6 +37,7 @@ a += ['<path d="M724 36H836M724 234H836" stroke="#4b6470"/>', text('AUX CV',780,
 a += [text(f'AUX {k+1}',780,92+40*k-15,8) for k in range(4)]
 for row,label in enumerate(['A','B','EQ']): a += [text(label,604,265+24*row,6)]
 for i,label in enumerate(['V/OCT','GATE','VEL','MOD']): a += [text(label,30+48*i,331,8)]
+a += [text('AUDIO',210,331,8)]  # AUDIO IN, appended after the original inputs
 for i,label in enumerate(['L','R','AMP','ENV2','ENV3','LFO1','LFO2','FUN1','FUN2','FUN3','FUN4']): a += [text(label,245+40*i,331,7,'#87e1c8')]
 for x,label in [(705,'BUS A'),(755,'BUS B'),(805,'BUS OUT')]: a += [text(label,x,331,7,'#f0c28b')]
 a.append(glyph(10,618,15,32,'#d9e2e5','#87e1c8'))  # X Generative substrate: conditions beneath
@@ -60,7 +61,7 @@ for e in range(3):
 for l in range(2): knob((l+3)*120+27,281); selector((l+3)*120+49,271,65,'COSINE')
 for f in range(4):
     for k,label in enumerate(['OFF','OFF','A+B']): selector(610+50*f,252+24*k,47,label)
-for x,y in [(30+48*i,348) for i in range(4)]+[(245+40*i,348) for i in range(11)]+[(780,92+40*k) for k in range(4)]+[(705,348),(755,348),(805,348)]:
+for x,y in [(30+48*i,348) for i in range(4)]+[(245+40*i,348) for i in range(11)]+[(780,92+40*k) for k in range(4)]+[(705,348),(755,348),(805,348),(210,348)]:
     b.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#bdc4c5"/><circle cx="{x}" cy="{y}" r="7" fill="#0b1013"/>')
 (root/'docs/panel-preview.svg').write_text(''.join(b)+'</svg>')
 print('Created outlined panel and layout preview')

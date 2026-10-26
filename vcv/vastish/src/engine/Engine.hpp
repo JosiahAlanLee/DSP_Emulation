@@ -11,6 +11,9 @@ inline int choice(float v,int max) { return int(clamp(std::round(v),0,float(max)
 struct VoiceInput {
     float note=60,velocity=1,modwheel=0; bool gate=false; std::array<float,4> aux{};
     float busA=0,busB=0,laneA=0,laneB=0; bool busAConnected=false;
+    // AUDIO wave: audio is AUDIO IN scaled to ±1. Without a patched gate the voice
+    // processes it continuously at unity amp (Live Mode); with one, the amp envelope gates it.
+    float audio=0; bool audioConnected=false,gateConnected=false;
 };
 // Control-source indices. 0-11 match the Pd patch; 12+ are native additions.
 enum SourceId { SRC_FUN1=5, SRC_FUN2=6, SRC_AMPENV=11, SRC_FUN3=12, SRC_FUN4=13, SRC_AUX1=14,
@@ -30,6 +33,7 @@ struct SampleView {
 };
 constexpr int SAMPLE_WAVE=5;
 constexpr int BUS_WAVE=6;
+constexpr int AUDIO_WAVE=7;
 inline bool positiveBit(float value) { return std::isfinite(value) && value>0; }
 inline float rotateBus(float value,float control) {
     double x=double(value)+1.+2.*(double(control)-60.)/12.;
@@ -120,11 +124,14 @@ struct Voice {
     std::array<float,2> tickAudio(const Parameters& p,const VoiceInput& in,float sr,const SampleView* sample=nullptr) {
         float pitchControl=control(PITCH_ADJ,p,in.note);
         float x=0,xR=0; bool stereo=false;
-        if(choice(p[PITCH_WAVE],BUS_WAVE)==BUS_WAVE) x=in.busAConnected ? rotateBus(in.busA,pitchControl) : 0.f;
+        const int wave=choice(p[PITCH_WAVE],AUDIO_WAVE);
+        const bool gateFree=wave==AUDIO_WAVE && in.audioConnected && !in.gateConnected;
+        if(wave==AUDIO_WAVE) x=in.audioConnected && std::isfinite(in.audio) ? clamp(in.audio,-1,1) : 0.f;
+        else if(wave==BUS_WAVE) x=in.busAConnected ? rotateBus(in.busA,pitchControl) : 0.f;
         else {
         float pitchHz=mtof(clamp(pitchControl,-20,135));
         float ph=pitch.tick(pitchHz,sr), n=noise.tick();
-        switch(choice(p[PITCH_WAVE],BUS_WAVE)) { case 1:x=(ph>clamp(p[PITCH_PW],.01,.99)?1.f:-1.f); break;
+        switch(wave) { case 1:x=(ph>clamp(p[PITCH_PW],.01,.99)?1.f:-1.f); break;
             case 2:x=1-std::abs(ph*4-2); break; case 3:x=cosine(ph); break; case 4:x=n; break;
             case SAMPLE_WAVE:x=sampleTick(sample,pitchHz,sr,&xR); stereo=sample && sample->valid() && sample->pcmR; break;
             default:x=ph*2-1; }
@@ -139,14 +146,14 @@ struct Voice {
         float b=block[1].tick(t2,r[0]*x+r[1]*a,k2,p[F2_B],sr);
         float c=block[2].tick(t3,r[2]*x+r[3]*a+r[4]*b+r[5]*a*b,k3,p[F3_B],sr);
         tap=r[6]*a+r[7]*b+r[8]*c;
-        const float amp=dbgain(control(AMP_ADJ,p,in.note));
-        float out=(r[6]*a+r[7]*b+r[8]*c)*amp*sources[11]*sources[11];
+        const float amp=dbgain(control(AMP_ADJ,p,in.note)), env=gateFree ? 1.f : sources[11];
+        float out=(r[6]*a+r[7]*b+r[8]*c)*amp*env*env;
         float pan=clamp(control(PAN_ADJ,p,in.note),-1,1), t=(pan+1)*.125f;
         if(stereo) {   // PAN is balance: each side keeps its own gain from the pan law
             float aR=blockR[0].tick(t1,xR,k1,p[F1_B],sr);
             float bR=blockR[1].tick(t2,r[0]*xR+r[1]*aR,k2,p[F2_B],sr);
             float cR=blockR[2].tick(t3,r[2]*xR+r[3]*aR+r[4]*bR+r[5]*aR*bR,k3,p[F3_B],sr);
-            float outR=(r[6]*aR+r[7]*bR+r[8]*cR)*amp*sources[11]*sources[11];
+            float outR=(r[6]*aR+r[7]*bR+r[8]*cR)*amp*env*env;
             return {{out*cosine(t),outR*cosine(t-.25f)}};
         }
         stereoActive=false;

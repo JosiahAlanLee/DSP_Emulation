@@ -16,8 +16,9 @@ sources = pd['SOURCES'] + ['FUN3', 'FUN4', 'AUX1', 'AUX2', 'AUX3', 'AUX4', 'BUS 
 native_params = ['fun3-a', 'fun3-b', 'fun3-eq', 'fun4-a', 'fun4-b', 'fun4-eq']
 native_params += ['bus-out-mode', 'bus-out-source', 'fun1-bit', 'fun2-bit', 'fun3-bit', 'fun4-bit']
 # SAMPLE is a native-only addition (not in the Pd patch): plays the loaded WAV,
-# K2000-style, as the oscillator feeding F1-F3.
-waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE', 'SAMPLE', 'BUS']
+# K2000-style, as the oscillator feeding F1-F3. AUDIO (native-only) takes AUDIO IN
+# in place of the oscillator, as the K2500's Live Mode.
+waves = ['SAW', 'PULSE', 'TRI', 'COSINE', 'NOISE', 'SAMPLE', 'BUS', 'AUDIO']
 shapes = ['COSINE', 'TRI', 'SAW', 'SQUARE', 'S&H']
 eqs = ['A+B','A-B','A*B','(A+B)/2','MAX','MIN','ABS(A-B)','A*(B+1)/2']
 algs = [v[0] for v in pd['ALGS'].values()]
