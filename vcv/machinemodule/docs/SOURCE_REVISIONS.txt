@@ -1,0 +1,5 @@
+.: a2b6cf2478cbe94dfe30bc42da39e221df0e2556
+libs/dsp56300: 397e4fddaa3821af0db248c3331491d93a26dbbb
+libs/dsp56300/source/asmjit: 3577608cab0bc509f856ebf6e41b2f9d9f71acc4
+libs/gearmulator-md-mm: 8cea0524a75435122c20b669ca114c9ac6509ba2
+libs/gearmulator-md-mm/source/mc68k: ace95b3d0a5a332db147244762dda65f9a010b9f

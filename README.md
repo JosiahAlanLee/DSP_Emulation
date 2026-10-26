@@ -49,3 +49,12 @@ Status: new, built and tested in CI (engine and module tests), and loaded and ru
 - [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
 
 Kurzweil, VAST, Ensoniq and EPS are their owners' trademarks. These are independent emulations, not affiliated with or derived from manufacturer code, firmware or samples. OtisLab's playback arithmetic is adapted from MAME (BSD-3-Clause, Aaron Giles); see its THIRD_PARTY_NOTICES.
+
+
+### Machinemodule Rack prototype
+
+[`vcv/machinemodule`](vcv/machinemodule) wraps the pinned Machinemodule core in a
+separate AGPL plugin with Gorgon sound locks, eight polyphonic parameter CV inputs
+and optional MDS1 ROM sample memory. A user-supplied OS is required. The original
+DrumLab synth and other plugins retain their existing licenses. See the adapter
+README for timing, validation and current sampling limits.
