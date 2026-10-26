@@ -1,0 +1,15 @@
+{
+  "slug": "MachinemoduleRack",
+  "name": "Machinemodule Rack",
+  "version": "2.0.0",
+  "license": "AGPL-3.0-only",
+  "brand": "DSP_Emulation",
+  "author": "DSP_Emulation contributors; Machinemodule by joelanders and contributors",
+  "sourceUrl": "https://github.com/JosiahAlanLee/DSP_Emulation",
+  "modules": [{
+    "slug": "Machinemodule",
+    "name": "Machinemodule",
+    "description": "Machinedrum voice core with per-hit SYN1–8 CV and Gorgon sound locks. User-supplied OS required.",
+    "tags": ["Drum", "Synth voice", "Polyphonic", "External"]
+  }]
+}

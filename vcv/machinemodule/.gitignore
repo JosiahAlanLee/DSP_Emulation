@@ -1,0 +1,11 @@
+/build*/
+/_deps/
+/dist/
+/plugin.so
+/plugin.dylib
+/plugin.dll
+/tests/*_test
+/tests/*_asan
+/tests/*_tsan
+*.syx
+*.bin
