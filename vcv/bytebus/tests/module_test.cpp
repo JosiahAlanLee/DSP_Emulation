@@ -1,10 +1,13 @@
-// Real Rack module APIs, including a Register -> Vastish FUN -> Register loop.
+// Real Rack module APIs, including a Register -> Vastish FUN -> Register loop, Counter
+// CARRY chains and a Counter -> Lookup Rhythm chain.
 // The test host supplies a Rack context; the plugin itself uses rack.hpp only.
 #include <engine/Engine.hpp>
 #include <context.hpp>
 #include <plugin.hpp>
 #undef PRIVATE
 #include "../src/Register.cpp"
+#include "../src/Counter.cpp"
+#include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
 #include <cassert>
@@ -117,17 +120,129 @@ static std::vector<uint8_t> feedback(float sr, uint8_t seed, unsigned orderSeed)
     return sequences[0];
 }
 
+static void counterPorts() {
+    using C = ByteCounter;
+    C c; c.model = modelCounter; auto a = args(); connectOutputs(c);
+    assert(c.params.size() == 6 && c.inputs.size() == 3 && c.outputs.size() == 3);
+    assert(c.params[C::INC].getValue() == 1 && c.params[C::MODULUS].getValue() == 256 && c.params[C::SEED].getValue() == 0);
+    // CLOCK jack: INC 5, MOD 12. CARRY pulses on the wrapping edges, with the word clock.
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(5); c.params[C::MODULUS].setValue(12);
+    c.inputs[C::CLOCK_IN].channels = 1;
+    c.process(a); assert(c.outputs[C::CLOCK_OUT].getVoltage() == 10); // the initial word is published
+    c.process(a);
+    std::vector<int> words, carries;
+    for (int k = 0; k < 6; ++k) {
+        c.inputs[C::CLOCK_IN].setVoltage(10); c.process(a);
+        assert(c.outputs[C::CLOCK_OUT].getVoltage() == 10 && c.outputs[C::BUS_OUT].getChannels() == 9);
+        assert(c.outputs[C::BUS_OUT].getVoltage(8) == 10);
+        words.push_back(word(c.outputs[C::BUS_OUT])); carries.push_back(c.outputs[C::CARRY_OUT].getVoltage() == 10);
+        c.inputs[C::CLOCK_IN].setVoltage(0); c.process(a);
+        assert(c.outputs[C::CARRY_OUT].getVoltage() == 0 && c.outputs[C::CLOCK_OUT].getVoltage() == 0);
+    }
+    assert((words == std::vector<int>{5, 10, 3, 8, 1, 6}) && (carries == std::vector<int>{0, 0, 1, 0, 1, 0}));
+    for (int k = 0; k < 8; ++k) assert(c.lights[C::BIT0_LIGHT+k].getBrightness() == (6 & (1<<k) ? 1 : 0));
+    // A patched BUS IN replaces INC.
+    putBus(c.inputs[C::BUS_IN], 2); c.inputs[C::CLOCK_IN].setVoltage(10); c.process(a);
+    assert(word(c.outputs[C::BUS_OUT]) == 8);
+    // Controls and the held word survive Rack JSON; reload publishes the saved word.
+    c.params[C::SEED].setValue(200);
+    json_t* saved = c.toJson(); C r; r.model = modelCounter; connectOutputs(r); r.fromJson(saved); json_decref(saved);
+    assert(r.params[C::INC].getValue() == 5 && r.params[C::MODULUS].getValue() == 12 && r.params[C::SEED].getValue() == 200);
+    r.process(a); assert(word(r.outputs[C::BUS_OUT]) == 8 && r.outputs[C::CLOCK_OUT].getVoltage() == 10);
+    // LOAD: a seed above MOD is published as it is, after the mandatory low sample.
+    r.params[C::LOAD_BUTTON].setValue(1); r.process(a);
+    assert(word(r.outputs[C::BUS_OUT]) == 200 && r.outputs[C::CLOCK_OUT].getVoltage() == 0);
+    r.process(a); assert(r.outputs[C::CLOCK_OUT].getVoltage() == 10);
+    // Engine rate: eight channels, no clock, a new word every sample.
+    r.params[C::CLOCK_MODE].setValue(4); r.params[C::INC].setValue(1); r.process(a);
+    assert(r.outputs[C::BUS_OUT].getChannels() == 8 && r.outputs[C::CLOCK_OUT].getVoltage() == 0);
+    uint8_t before = word(r.outputs[C::BUS_OUT]); r.process(a); assert(word(r.outputs[C::BUS_OUT]) == (before + 1) % 12);
+    // Initialize restores default controls and word 0; invalid saved words are bounded.
+    r.onReset(Module::ResetEvent{}); r.process(a);
+    assert(r.params[C::MODULUS].getValue() == 256 && word(r.outputs[C::BUS_OUT]) == 0);
+    json_t* bad = json_pack("{s:I}", "word", json_int_t(-5)); r.dataFromJson(bad); json_decref(bad);
+    r.process(a); assert(word(r.outputs[C::BUS_OUT]) == 0);
+}
+
+// Counter CARRY drives a second Counter's CLOCK (a 16-bit count) and a Register that captures
+// the low counter's word, all through one-sample cables in random process order.
+static std::vector<std::array<int, 3>> carryChain(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using R = ClockedRegister;
+    C low, high; R reg; connectOutputs(low); connectOutputs(high); connectOutputs(reg); auto a = args(sr);
+    low.params[C::CLOCK_MODE].setValue(1); low.params[C::INC].setValue(3); low.params[C::MODULUS].setValue(16);
+    high.params[C::CLOCK_MODE].setValue(1); reg.params[R::CLOCK_MODE].setValue(1);
+    low.inputs[C::CLOCK_IN].channels = high.inputs[C::CLOCK_IN].channels = reg.inputs[R::CLOCK_IN].channels = 1;
+    std::mt19937 order(orderSeed); std::vector<std::array<int, 3>> captured;
+    for (int t = 0; t < 32 * 48; ++t) {
+        low.inputs[C::CLOCK_IN].setVoltage(t % 32 == 8 ? 10 : 0);
+        copy(low.outputs[C::CARRY_OUT], high.inputs[C::CLOCK_IN]);
+        copy(low.outputs[C::CARRY_OUT], reg.inputs[R::CLOCK_IN]);
+        copy(low.outputs[C::BUS_OUT], reg.inputs[R::BUS_IN]);
+        Module* modules[] = {&low, &high, &reg}; std::shuffle(std::begin(modules), std::end(modules), order);
+        for (auto* m : modules) m->process(a);
+        if (t > 2 && reg.outputs[R::CLOCK_OUT].getVoltage() == 10)
+            captured.push_back({word(reg.outputs[R::BUS_OUT]), word(high.outputs[C::BUS_OUT]), t});
+    }
+    // Low counts 3, 6, ... mod 16 on each clock and carries on every wrap. Both followers hear the
+    // carry one cable later; the Register takes the low word published on the wrapping edge.
+    std::vector<std::array<int, 3>> expected; int w = 0, carries = 0;
+    for (int k = 0; k < 48; ++k) {
+        int t = 32 * k + 8; w += 3;
+        if (w >= 16) { w -= 16; ++carries; expected.push_back({w, carries, t + 1}); }
+    }
+    assert(captured == expected && captured.size() == 9);
+    return captured;
+}
+
+// Counter -> Lookup (Rhythm) -> Split: the gates equal the Rhythm table read at every count,
+// as the portable Lookup engine evaluates it directly, with a low half-step between steps.
+static std::vector<uint8_t> rhythmChain(std::shared_ptr<const dspemu::lookup::Library> library, float sr, unsigned orderSeed) {
+    namespace lu = dspemu::lookup; using C = ByteCounter;
+    C c; ByteLookup l(library); connectOutputs(c); connectOutputs(l); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.inputs[C::CLOCK_IN].channels = 1;
+    l.params[ByteLookup::FAMILY].setValue(lu::Rhythm); l.params[ByteLookup::SEED].setValue(0x5a);
+    l.params[ByteLookup::SHAPE].setValue(3);
+    std::mt19937 order(orderSeed); std::vector<uint8_t> gates, counts;
+    for (int t = 0; t < 8 * 520; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], l.inputs[ByteLookup::BUS_IN]);
+        if (order() & 1) { c.process(a); l.process(a); } else { l.process(a); c.process(a); }
+        if (l.outputs[ByteLookup::BUS_OUT].getVoltage(8) == 10) gates.push_back(word(l.outputs[ByteLookup::BUS_OUT]));
+        if (c.outputs[C::CLOCK_OUT].getVoltage() == 10) counts.push_back(word(c.outputs[C::BUS_OUT]));
+    }
+    // The Lookup publishes each count one cable after the Counter does.
+    lu::Engine direct; lu::Parameters p; p.family = lu::Rhythm; p.seed = 0x5a; p.shape = 3;
+    std::vector<uint8_t> expected;
+    for (size_t k = 0; k < gates.size(); ++k) {
+        dspemu::bus::Sample s; s.connected = s.clocked = s.rising = s.clk = s.updated = true; s.rawWord = s.word = counts[k];
+        expected.push_back(direct.tick(*library, p, s, sr).word);
+    }
+    assert(gates == expected && gates.size() >= 515);
+    int sounding = 0;
+    for (size_t k = 0; k < gates.size(); ++k) {
+        if (counts[k] % 8 >= 4) assert(gates[k] == 0);
+        sounding += gates[k] != 0;
+    }
+    assert(sounding > 32);
+    return gates;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
+    counterPorts();
+    auto chain = carryChain(48000, 1); assert(carryChain(44100, 2) == chain && carryChain(96000, 3) == chain);
+    auto library = std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load("../res/lookup-v1.bin"));
+    auto rhythm = rhythmChain(library, 48000, 4);
+    assert(rhythmChain(library, 44100, 5) == rhythm && rhythmChain(library, 96000, 6) == rhythm);
     for (uint8_t seed : {uint8_t(0), uint8_t(0xa5), uint8_t(255)}) {
         auto reference = feedback(48000, seed, 1);
         assert(feedback(44100, seed, 2) == reference);
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates in random order at 44.1/48/96 kHz\n";
 }

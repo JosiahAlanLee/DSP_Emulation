@@ -244,17 +244,17 @@ Each module's manual states:
 | Converter: ADC in, DAC out (Drezno II) | transparent; sample-and-hold when clocked | **Converter**, with independent ranges, trims and clock policies; [contract](../vcv/bytebus/docs/CONVERTER.md). Vastish also reads/exports its own signals |
 | Bit logic: invert, toggle, AND mask (Lipsk, Gera) | transparent | Vastish LANE A/B + FUN, with optional per-FUN BIT normalization for composable logic |
 | Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent; optional explicit ramp follower | **Lookup**: original generated families and Vastish/OTIS table import; [contract](../vcv/bytebus/docs/LOOKUP.md). **Vastish BUS**: gate-free pre-amp DSP and stateful transforms; [contract](../vcv/vastish/BUS_SPEC.md) |
-| Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**, new build |
+| Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**: increment from INC or a bus, modulus, seed and carry, with Register's clock ownership; [contract](../vcv/bytebus/docs/COUNTER.md) |
 | Single-word register | latching, clock source selectable | **Clocked Register**, prototype in [`vcv/bytebus`](../vcv/bytebus) |
 | Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
 | Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**, new build; partly Merge/Split plus a poly switch today |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
 | Spectral activity and band mask (original extension) | frame-clocked sender + held mask input | **Séance Bridge**: eight bands, pre-mask detection, hysteresis and gain slew; [contract](../vcv/seance/docs/BYTE_BUS.md) |
 
-Implemented prototypes: `ByteBus.hpp`, Clocked Register, Lookup, Converter,
+Implemented prototypes: `ByteBus.hpp`, Clocked Register, Counter, Lookup, Converter,
 Vastish bus I/O with optional normalized FUNs, OTIS frame control/export and
 the memoryless Vastish table compiler, and Séance Bridge spectral activity/masking.
-Remaining order: Pipeline → Counter → Switch.
+Remaining order: Pipeline → Switch.
 
 ## 11. Ratified decisions
 

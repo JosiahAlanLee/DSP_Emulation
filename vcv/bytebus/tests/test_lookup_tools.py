@@ -109,6 +109,12 @@ class Tools(unittest.TestCase):
             archive = self.work/"patch-zstd.vcv"
             archive.write_bytes(subprocess.check_output(["zstd","-q","-c"],input=stream.getvalue()))
             self.assertEqual(self.run_compile(archive,extra=["--module-id","17"])["values"],expected)
+    def test_counter_example_matches_generator(self):
+        import make_counter_patch
+        saved = json.loads((ROOT/"examples/counter-divider.vcv").read_text())
+        self.assertEqual(saved, make_counter_patch.patch())
+        models = {m["model"] for m in saved["modules"] if m["plugin"] == "ByteBusLab"}
+        self.assertEqual(models, {"Counter", "Lookup"})
 
 if __name__ == "__main__":
     unittest.main()

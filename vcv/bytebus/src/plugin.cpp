@@ -5,4 +5,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelClockedRegister);
     plugin->addModel(modelLookup);
     plugin->addModel(modelConverter);
+    plugin->addModel(modelCounter);
 }
