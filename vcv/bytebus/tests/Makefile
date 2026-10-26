@@ -12,7 +12,7 @@ io_test: io_test.cpp ../src/engine/Converter.hpp ../../vastish/src/engine/*.hpp 
 	$(CXX) $(CXXFLAGS) -Wno-mismatched-new-delete $< -o $@
 engine_test: engine_test.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) $< -o $@
-module_test: module_test.cpp ../src/Register.cpp $(HEADERS) ../../vastish/src/Vastish.cpp ../../vastish/src/engine/*.hpp $(UI_HEADERS)
+module_test: module_test.cpp ../src/Register.cpp ../src/Counter.cpp ../src/engine/Counter.hpp ../src/Lookup.cpp $(LOOKUP_HEADERS) $(HEADERS) ../../vastish/src/Vastish.cpp ../../vastish/src/engine/*.hpp $(UI_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(SDK_FLAGS) -o $@
 lookup_test: lookup_test.cpp $(LOOKUP_HEADERS) ../../vastish/src/engine/*.hpp
 	$(CXX) $(CXXFLAGS) -Wno-mismatched-new-delete $< -o $@

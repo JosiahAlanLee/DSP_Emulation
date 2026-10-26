@@ -20,6 +20,7 @@ drawn by that project's generator with the seal ornament left off.
 | Séance Bridge | III Boundary | the mask and activity buses cross the spectral frame boundary |
 | Clocked Register | VI Regulation | reset returns the held word and internal clock to their set point |
 | Lookup | IX Substitutive change | a table substitutes a new word for the incoming address |
+| Counter | VIII Additive change | new branch, old kept (each edge adds to the held count rather than replacing it) |
 | Converter | III Boundary | voltage and byte words cross between representations |
 | DrumLab Percussion | X Generative substrate | six synthesis models supply the material for each hit |
 | Machinemodule | X Generative substrate | the drum engine supplies the material for each track |

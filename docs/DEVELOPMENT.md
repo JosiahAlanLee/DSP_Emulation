@@ -11,7 +11,7 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/otislab | Rack sampler, playback engine, file handling and loop-rework worker. |
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
 | vcv/seance | Rack spectral core and five expanders: portable STFT engine and operations, chain link, modules. |
-| vcv/bytebus | Clocked Register and Lookup; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
+| vcv/bytebus | Clocked Register, Counter, Lookup and Converter; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
 | vcv/drumlab | Original percussion voices, per-hit control capture, four-lane Gorgon kit and Rack adapter. Built separately from the release bundles. |
 | vcv/shared | Sample-file utilities, versioned sample-sharing interface, byte-bus helpers and panel-glyph sources. |
 
@@ -133,6 +133,7 @@ make -C vcv/bytebus/tests test
 make -C vcv/bytebus/tests check RACK_DIR=/absolute/path/to/Rack-SDK
 make -C vcv/bytebus/tests tools-check
 python3 vcv/bytebus/tools/make_io_patch.py
+python3 vcv/bytebus/tools/make_counter_patch.py
 make -C vcv/otislab/tests bus-check RACK_DIR=/absolute/path/to/Rack-SDK
 make -C vcv/otislab/tests bus-sanitize RACK_DIR=/absolute/path/to/Rack-SDK
 make -C vcv/bytebus/tests sanitize RACK_DIR=/absolute/path/to/Rack-SDK

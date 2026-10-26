@@ -43,7 +43,7 @@ Status: new, built and tested in CI (engine and module tests), and loaded and ru
 ## Also in this repository
 
 - **[DrumLab Percussion](vcv/drumlab)**: six original percussion models with controls captured per hit and a four-lane kit for Gorgon. New synthesis prototype, built separately; outside the release bundles. [Manual](vcv/drumlab/docs/MANUAL.md).
-- **[ByteBusLab](vcv/bytebus)**: Clocked Register supplies state; Lookup supplies original waveform, CV, Walsh and rhythm transforms, plus Vastish table import. Built separately; outside the release bundles.
+- **[ByteBusLab](vcv/bytebus)**: Clocked Register supplies state; Counter counts, as a divider chain or an address; Lookup supplies original waveform, CV, Walsh and rhythm transforms, plus Vastish table import. Built separately; outside the release bundles.
 - **Gorgon**, the Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio, was developed here as `vcv/gorgon` and now lives in [its own repository](https://github.com/JosiahAlanLee/Gorgon) with its history, alongside the contract it implements. Its gates and pitch were built to drive OTIS and Vastish.
 - [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
 - [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
