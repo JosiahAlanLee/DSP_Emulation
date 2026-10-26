@@ -1,12 +1,17 @@
 # DrumLab
 
+> **Retired.** DrumLab Percussion was the first synthesis prototype for Gorgon's drum
+> lanes. [Machinemodule](../machinemodule) is now the drum destination and OTIS the
+> sampler (Gorgon system roadmap, item F1). The code stays here for reference and for
+> the Gorgon tutorial kit, which still builds it; CI no longer builds or tests it, and
+> the rest of this page describes it as it was.
+
 **Percussion** is a 20 HP VCV Rack 2 voice with six original digital percussion
 models. Each trigger captures its controls. The default four-lane kit connects
 to Gorgon's existing polyphonic gates, pitch and velocity.
 
 [Manual](docs/MANUAL.md) · [Gorgon patch](examples/Gorgon-percussion.vcv) ·
-[Development](../../docs/DEVELOPMENT.md) ·
-[Builds and audition](https://github.com/JosiahAlanLee/DSP_Emulation/actions/workflows/drumlab.yml)
+[Development](../../docs/DEVELOPMENT.md)
 
 This first prototype provides synthesis. Kit-sample playback, sequenced capture,
 Gorgon sound-lock editing and a pattern language are later work. It is an

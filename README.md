@@ -42,7 +42,6 @@ Status: new, built and tested in CI (engine and module tests), and loaded and ru
 
 ## Also in this repository
 
-- **[DrumLab Percussion](vcv/drumlab)**: six original percussion models with controls captured per hit and a four-lane kit for Gorgon. New synthesis prototype, built separately; outside the release bundles. [Manual](vcv/drumlab/docs/MANUAL.md).
 - **[ByteBusLab](vcv/bytebus)**: Clocked Register supplies state; Counter counts, as a divider chain or an address; Lookup supplies original waveform, CV, Walsh and rhythm transforms, plus Vastish table import. Built separately; outside the release bundles.
 - **Gorgon**, the Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio, was developed here as `vcv/gorgon` and now lives in [its own repository](https://github.com/JosiahAlanLee/Gorgon) with its history, alongside the contract it implements. Its gates and pitch were built to drive OTIS and Vastish.
 - [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
@@ -56,8 +55,9 @@ Kurzweil, VAST, Ensoniq and EPS are their owners' trademarks. These are independ
 
 [`vcv/machinemodule`](vcv/machinemodule) wraps the pinned Machinemodule core in a
 separate AGPL plugin with Gorgon sound locks, eight polyphonic parameter CV inputs
-and optional MDS1 ROM sample memory. A user-supplied OS is required. The original
-DrumLab synth and other plugins retain their existing licenses. See the adapter
-README for timing, validation and current sampling limits.
+and optional MDS1 ROM sample memory. A user-supplied OS is required. The other
+plugins retain their existing licenses. See the adapter README for timing,
+validation and current sampling limits.
+DrumLab Percussion, the earlier synthesis prototype, is retired; its directory remains for reference.
 Its dedicated CI builds Windows x64, Linux x64 and both Mac architectures;
 live Machinedrum OS testing has been performed on Linux.

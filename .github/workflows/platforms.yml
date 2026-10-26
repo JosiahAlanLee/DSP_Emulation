@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish, spoonbender, seance, bytebus, drumlab]
+        plugin: [otislab, vastish, spoonbender, seance, bytebus]
     defaults:
       run:
         shell: msys2 {0}
@@ -52,10 +52,6 @@ jobs:
         if: matrix.plugin == 'bytebus'
         working-directory: vcv/bytebus
         run: make -C tests test
-      - name: DrumLab engine tests
-        if: matrix.plugin == 'drumlab'
-        working-directory: vcv/drumlab
-        run: make -C tests test
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
         run: |
@@ -78,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [otislab, vastish, spoonbender, seance, bytebus, drumlab]
+        plugin: [otislab, vastish, spoonbender, seance, bytebus]
         arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
@@ -104,10 +100,6 @@ jobs:
       - name: Byte bus register engine tests
         if: matrix.plugin == 'bytebus' && matrix.arch == 'arm64'
         working-directory: vcv/bytebus
-        run: make -C tests test CXX=clang++
-      - name: DrumLab engine tests
-        if: matrix.plugin == 'drumlab' && matrix.arch == 'arm64'
-        working-directory: vcv/drumlab
         run: make -C tests test CXX=clang++
       - name: Build plugin
         working-directory: vcv/${{ matrix.plugin }}
