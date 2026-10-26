@@ -19,7 +19,7 @@ static void drain(){std::this_thread::sleep_for(std::chrono::milliseconds(5));}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
     Plugin receiverPlugin;receiverPlugin.slug="MachinemoduleRack";receiverPlugin.version="2.0.0";modelMachinemodule->plugin=&receiverPlugin;
-    Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.3.0";
+    Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.3.1";
     Model providerModel;providerModel.slug="Gorgon";providerModel.plugin=&providerPlugin;
     {
         Trace trace;Machinemodule m(factory(trace));m.model=modelMachinemodule;ready(m);
@@ -79,6 +79,38 @@ int main(){
         }
         drain();{std::lock_guard<std::mutex> guard(trace.mutex);assert(trace.hits.size()==2);assert(trace.hits[0].resolved[0]==99&&trace.hits[1].resolved[0]==11);}
         assert(receiver.underruns==0);std::cout<<"Real Gorgon -> Machinemodule, "<<(reverse?"receiver first":"sender first")<<": packet/trigger/default restoration passed\n";
+    }
+    // Gorgon 2.3.1 transport changes (Gorgon spec/cv-semantics.md: retrigger, landing gate).
+    // A seek that interrupts an open gate drops it for 1 ms; a seek heard after its row's
+    // gate window closed still opens the landing row's gate. Each must reach the receiver
+    // as exactly one hit, after the jump's panic, carrying the landing row's lock.
+    for(bool reverse:{false,true}){
+        Trace trace;Machinemodule receiver(factory(trace));receiver.model=modelMachinemodule;ready(receiver);
+        Gorgon sender;sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
+        for(auto& out:sender.outputs)out.channels=1;for(auto& out:receiver.outputs)out.channels=1;
+        sender.haveSnapshot=true;auto& s=sender.snapshot;s.score.bpm=120;s.score.sounds[0].machine=16;
+        for(int row:{0,4}){s.score.patterns[0].hit[0][row]=true;s.score.patterns[0].velocity[0][row]=100;s.score.patterns[0].locks[0][row].mask=1;}
+        s.score.patterns[0].locks[0][0].values[0]=99;s.score.patterns[0].locks[0][4].values[0]=42;
+        s.playhead.valid=s.playhead.enabled=true;s.playhead.playing=false;s.playhead.transportRevision=0;s.clock.observe(0,0,0);
+        // 120 BPM at 44.1 kHz: a row is 5512.5 frames and its 50% gate 2756. Changes land on
+        // 32-frame boundaries, where Gorgon polls its bridge. `late` is how many frames
+        // before Rack heard it the change happened in Studio.
+        auto seek=[&](int frame,double beat,int late){s.playhead.anchorBeat=beat;s.playhead.anchorTime=double(frame-late)/44100;++s.playhead.transportRevision;};
+        Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+        for(int f=0;f<16000;++f){
+            args.frame=f;
+            if(f==64){s.playhead.playing=true;s.playhead.anchorTime=64./44100;s.playhead.transportRevision=1;}
+            if(f==1024)seek(f,1.,0);      // row 0's gate is open: interrupt it and land on row 4
+            if(f==8160){drain();std::lock_guard<std::mutex> guard(trace.mutex);assert(trace.hits.size()==2);}
+            if(f==8192)seek(f,1.,4000);   // heard 0.73 rows late, past row 4's gate window
+            if(reverse){receiver.process(args);sender.process(args);}else{sender.process(args);receiver.process(args);}flip(receiver);
+            if(f%128==127)std::this_thread::sleep_for(std::chrono::microseconds(800));
+        }
+        drain();{std::lock_guard<std::mutex> guard(trace.mutex);
+            if(trace.hits.size()!=3)std::cerr<<"transport changes: "<<trace.hits.size()<<" hits, expected 3\n";
+            assert(trace.hits.size()==3);
+            assert(trace.hits[0].resolved[0]==99&&trace.hits[1].resolved[0]==42&&trace.hits[2].resolved[0]==42);}
+        assert(receiver.underruns==0);std::cout<<"Real Gorgon -> Machinemodule, "<<(reverse?"receiver first":"sender first")<<": interrupted and late seeks each play one landing hit\n";
     }
 #endif
     contextSet(nullptr);delete context.engine;context.engine=nullptr;

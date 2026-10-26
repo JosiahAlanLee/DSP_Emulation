@@ -1,6 +1,7 @@
 name: Machinemodule Rack platforms
 on:
   push:
+    branches: [main]
     paths: ['vcv/machinemodule/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/machinemodule.yml']
   pull_request:
     paths: ['vcv/machinemodule/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/machinemodule.yml']
@@ -9,6 +10,8 @@ permissions:
   contents: read
 env:
   RACK_SDK_VERSION: 2.6.4
+  # Gorgon main with GorgonBridge 2.3.1 (retrigger and landing gate, Gorgon #33/#34).
+  GORGON_REF: 752e231c81898acb1715cea3b426a65b8371b635
 jobs:
   linux:
     runs-on: ubuntu-22.04
@@ -18,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: JosiahAlanLee/Gorgon
-          ref: 2ad926e92ef2b8958e0ff0ff7ee40582b884c60e
+          ref: ${{ env.GORGON_REF }}
           path: gorgon-reference
       - name: Install native build and Rack runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build libjack-jackd2-0 libpulse0 zstd
@@ -70,7 +73,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: JosiahAlanLee/Gorgon
-          ref: 2ad926e92ef2b8958e0ff0ff7ee40582b884c60e
+          ref: ${{ env.GORGON_REF }}
           path: gorgon-reference
       - name: Extract the matching Rack runtime for real module tests
         shell: pwsh
@@ -136,7 +139,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: JosiahAlanLee/Gorgon
-          ref: 2ad926e92ef2b8958e0ff0ff7ee40582b884c60e
+          ref: ${{ env.GORGON_REF }}
           path: gorgon-reference
       - name: Install build and packaging tools
         run: brew install ninja zstd

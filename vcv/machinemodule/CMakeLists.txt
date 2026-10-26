@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
+# The released Mac packages target macOS 11 or newer. Default local builds to the
+# same, so a plugin built on a newer Mac also loads on the oldest supported one.
+# -DCMAKE_OSX_DEPLOYMENT_TARGET or MACOSX_DEPLOYMENT_TARGET still override it.
+if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0 CACHE STRING "Minimum macOS version")
+endif()
 project(MachinemoduleRack LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
