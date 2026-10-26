@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "Control.hpp"
-#include "Resampler.h"
+#include "ResamplerCompat.hpp"
 #include <memory>
 #include <stdexcept>
 #include <string>
