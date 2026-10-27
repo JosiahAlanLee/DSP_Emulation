@@ -89,6 +89,8 @@ struct Voice {
     // Lab: fraction bits used for interpolation. All bits = chip behaviour (the chip's increments
     // are multiples of 4, so 9 effective bits); 0 = drop-sample, no interpolation.
     uint32_t interpMask=fracOne-1;
+    // Otis Kit's decay: a gain falling by decayStep per chip sample; 1 (the default) is off.
+    float decayGain=1.f, decayStep=1.f;
     std::array<int32_t,6> pole{}; // 1,2,previous2,3,previous3,4
     std::array<int32_t,6> poleR{}; // a stereo pair's right voice: same registers, its own filter state
     int32_t lowpass(int32_t x, uint16_t k, int32_t previous) {
@@ -309,7 +311,12 @@ struct Controls {
     // A voice's own loop mode, starting direction and interpolation bits, from a stored patch (patch
     // select). -1 follows loop, reverse and interpBits above.
     std::array<int8_t,16> loopv,reversev,interpv;
-    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); sizeOctaves.fill(8); loopv.fill(-1); reversev.fill(-1); interpv.fill(-1); }
+    // Otis Kit: a voice's own region of sample memory, [regionBegin, regionEnd) frames, inside which
+    // startv/endv apply; -1 uses the whole sample. decaySeconds: time to fall 60 dB; 0 is no decay.
+    std::array<int32_t,16> regionBegin,regionEnd;
+    std::array<float,16> decaySeconds;
+    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); sizeOctaves.fill(8); loopv.fill(-1); reversev.fill(-1); interpv.fill(-1);
+                 regionBegin.fill(-1); regionEnd.fill(-1); decaySeconds.fill(0); }
 };
 struct Engine {
     Sample sample,recordBuffer;
@@ -353,6 +360,15 @@ struct Engine {
     Window windowFor(int channel) const {
         if(frames<2) return {};
         int i=clamp(channel,0,15);
+        if(controls.regionBegin[i]>=0) {
+            // A kit slot: START and END are fractions of the slot's own region.
+            size_t rb=std::min(size_t(controls.regionBegin[i]),frames), re=std::min(size_t(std::max(controls.regionEnd[i],0)),frames);
+            if(re<rb+2) return {};
+            size_t n=re-rb;
+            size_t a=std::min(size_t(clamp(controls.startv[i],0.f,1.f)*(n-1)),n-2);
+            size_t b=std::max(a+1,std::min(size_t(clamp(controls.endv[i],0.f,1.f)*(n-1)),n-1));
+            return {rb+a,rb+b+1,false};
+        }
         size_t a=std::min(size_t(clamp(controls.startv[i],0.f,1.f)*(frames-1)),frames-2);
         size_t b=std::max(a+1,std::min(size_t(clamp(controls.endv[i],0.f,1.f)*(frames-1)),frames-1));
         int mode=clamp(controls.windowMode,0,2);
@@ -582,6 +598,8 @@ struct Engine {
             v.k2=uint16_t(uint16_t(clamp(controls.k2v[i],0.f,1.f)*4095)<<4);
             v.volume=levelRegister(controls.level[i],controls.linearLevel);
             v.filterMode=clamp(controls.filterMode,0,3); v.loop=clamp(controls.loopv[i]<0 ? controls.loop : int(controls.loopv[i]),0,2);
+            float decay=controls.decaySeconds[i];
+            v.decayStep=std::isfinite(decay) && decay>0 ? float(std::exp(-std::log(1000.0)/(double(decay)*rate))) : 1.f;
         }
         bool stereo=sample.stereo;
         chipPhase+=rate/hostRate;
@@ -594,6 +612,11 @@ struct Engine {
                 int32_t x=applyVolume(v.tick(sample,frames,voiceEnded,fadingPcm,
                     pcmFadeTotal ? float(pcmFadeTotal-pcmFadeRemaining)/pcmFadeTotal : 1.f,stereo ? &right : nullptr),v.volume);
                 int32_t xR=stereo ? applyVolume(right,v.volume) : 0;
+                if(v.decayStep<1.f) {
+                    x=int32_t(std::lround(x*double(v.decayGain))); xR=int32_t(std::lround(xR*double(v.decayGain)));
+                    v.decayGain*=v.decayStep;
+                    if(v.decayGain<1e-4f) v.running=false;          // past -80 dB: the hit is over
+                }
                 if(voiceEnded) ended=true;
                 if(v.fadeRemaining>0) {
                     x=static_cast<int32_t>(int64_t(x)*v.fadeRemaining/v.fadeLength);

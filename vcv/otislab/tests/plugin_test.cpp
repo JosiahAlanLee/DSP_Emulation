@@ -13,7 +13,7 @@ int main() {
     if(!handle) { std::cerr<<dlerror()<<"\n"; return 1; }
     auto initialize=reinterpret_cast<void(*)(Plugin*)>(dlsym(handle,"init")); assert(initialize);
     Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.1.1"; initialize(&plugin);
-    assert(plugin.models.size()==1);
+    assert(plugin.models.size()==2 && plugin.models.back()->slug=="OtisKit"); // OTIS Sampler, then Otis Kit (2.10)
     auto model=plugin.models.front();
     auto a=std::unique_ptr<engine::Module>(model->createModule());
     auto b=std::unique_ptr<engine::Module>(model->createModule());
@@ -85,6 +85,18 @@ int main() {
     a->inputs[2].setVoltage(10); a->process(args); assert(a->lights[0].getBrightness()>0);
     a->inputs[2].setVoltage(0); a->process(args); assert(a->lights[0].getBrightness()==0);
     a.reset(); b.reset();
-    std::cout<<"PASS: plugin.so dynamic load, Rack module creation, patch sample round-trip, deterministic dual-mono playback, CV record gate, faded and hard gate release\n";
+    // Otis Kit from the compiled plugin: a saved one-slot bank restores and plays on gate channel 1.
+    {
+        auto kitModel=plugin.models.back();
+        auto k=std::unique_ptr<engine::Module>(kitModel->createModule()); k->model=kitModel; k->onSampleRateChange(rate);
+        json_t* slot=json_object(); json_object_set_new(slot,"name",json_string("bright-demo.wav"));
+        json_object_set_new(slot,"rate",json_real(wav.rate)); json_object_set_new(slot,"pcm16le",json_string(otis::encodePcm(wav.pcm.data(),wav.pcm.size()).c_str()));
+        json_t* slots=json_array(); json_array_append_new(slots,slot); json_t* kit=json_object(); json_object_set_new(kit,"slots",slots);
+        k->dataFromJson(kit); json_decref(kit);
+        k->outputs[0].channels=1; k->inputs[0].channels=1; k->process(args); k->inputs[0].setVoltage(10);
+        double kitEnergy=0; for(int i=0;i<24000;i++) { k->process(args); float x=k->outputs[0].getVoltage(); assert(std::isfinite(x)); kitEnergy+=x*x; }
+        assert(kitEnergy>1);
+    }
+    std::cout<<"PASS: plugin.so dynamic load, Rack module creation, patch sample round-trip, deterministic dual-mono playback, CV record gate, faded and hard gate release, Otis Kit bank restore and playback\n";
     // Plugin destructor owns the models. Keep the library loaded through its destruction.
 }
