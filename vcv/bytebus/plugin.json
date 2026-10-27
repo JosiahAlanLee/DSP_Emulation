@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -30,6 +30,12 @@
       "name": "Counter",
       "description": "An 8-bit word that counts: increment from a knob or a byte bus, modulus 2-256, Loop, One-shot or Pendulum, seed, carry, and the Clocked Register's clock rules.",
       "tags": ["Clock modifier", "Logic", "Sequencer", "Polyphonic"]
+    },
+    {
+      "slug": "Switch",
+      "name": "Switch",
+      "description": "Two byte words in, one out, under a control word: select A or B by a bit, take each bit from A or B, or crossfade; follows A's clock or reclocks on its own.",
+      "tags": ["Switch", "Logic", "Mixer", "Polyphonic"]
     }
   ]
 }

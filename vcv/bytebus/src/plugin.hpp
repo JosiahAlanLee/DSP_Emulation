@@ -6,3 +6,4 @@ extern Model* modelClockedRegister;
 extern Model* modelLookup;
 extern Model* modelConverter;
 extern Model* modelCounter;
+extern Model* modelSwitch;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate ByteBusLab's four outlined panels, layouts and component previews."""
+"""Generate ByteBusLab's five outlined panels, layouts and component previews."""
 from pathlib import Path
 import argparse
 import sys
@@ -137,16 +137,47 @@ def counter(font):
     return p
 
 
+def byte_switch(font):
+    p = Panel(180, font)
+    p.title('Switch', 'BYTE COMMUTATOR / A B C', 4)
+    for bit in range(8):
+        x = 27 + 18 * (7-bit)
+        p.component(f'BIT{bit}', 'light', x, 64)
+        p.text(str(bit), x, 79, 6, DIM)
+    p.component('SOURCE', 'selector', 12, 92, 74, 22, 'AUTO')
+    p.text('SOURCE', 49, 128, 8)
+    p.component('MODE', 'selector', 94, 92, 74, 22, 'SELECT')
+    p.text('MODE', 131, 128, 8)
+    for name, x, label in [('RATE', 32, 'RATE'), ('B_WORD', 71, 'B WORD'), ('C_WORD', 109, 'C WORD')]:
+        p.component(name, 'knob', x, 167)
+        p.text(label, x, 197, 7 if ' ' in label else 8)
+    p.text('Hz', 32, 208, 6, DIM)
+    p.component('SEL_BIT', 'selector', 128, 158, 40, 18, 'BIT 0')
+    p.text('SEL BIT', 148, 197, 7)
+    p.component('WORD', 'readout', 64, 211, 52, 25, '00')
+    p.text('HEX', 90, 246, 6, DIM)
+    p.rule(252)
+    for name, x, label in [('A_IN', 31, 'A'), ('B_IN', 70, 'B'), ('C_IN', 110, 'C'), ('CLOCK_IN', 149, 'CLOCK')]:
+        p.jack(name, x, 282, label)
+    p.block(42, 312, 96, 52)
+    for name, x, label in [('BUS_OUT', 66, 'BUS OUT'), ('CLOCK_OUT', 114, 'CLK OUT')]:
+        p.jack(name, x, 342, label, True)
+    p.component('CLOCK_LIGHT', 'light', 114, 359)
+    p.text('LSB FIRST / 8 BITS + CLK', 90, 375, 6, DIM)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
     args = parser.parse_args()
     panels = {'reg': register(args.font), 'lookup': lookup(args.font), 'converter': converter(args.font),
-              'counter': counter(args.font)}
-    for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter')]:
+              'counter': counter(args.font), 'byte_switch': byte_switch(args.font)}
+    for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
+                           ('byte_switch', 'Switch')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote four ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote five ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':

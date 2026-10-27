@@ -1,6 +1,6 @@
 # ByteBusLab
 
-Four modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Five modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
@@ -8,9 +8,10 @@ explicit clocking and original table content:
 | **Converter**, 14 HP | Independent ADC/DAC paths, +/-5 or +/-10 V ranges, gain/offset trims and explicit clock policies. | [Converter](docs/CONVERTER.md) |
 | **Clocked Register**, 12 HP | One word of state, selectable clock and reset word; an explicit sampling point for feedback. | [Register](docs/MANUAL.md) |
 | **Lookup**, 16 HP | Six generated waveform/CV/Walsh/rhythm families, numeric morphs, ramp tracking, analog or byte input, and a raw DAC output. JUMP steps SHAPE from a bus bit or a gate. Imports original Vastish tables. | [Lookup](docs/LOOKUP.md) |
+| **Switch**, 12 HP | Two words in, one out, under a control word C: Select A or B by a bit of C, take each bit from A or B, or Mix from A to B. Follows A's clock or reclocks on its own. | [Switch](docs/SWITCH.md) |
 | **Counter**, 12 HP | A word that counts: increment from a knob or a byte bus, modulus 2–256, seed and carry, with Register's clock rules. Loop, One-shot or Pendulum: a divider chain, a ramp that holds, or a triangle. | [Counter](docs/COUNTER.md) |
 
-Plugin **ByteBusLab**, version **2.5.0**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.6.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -31,7 +32,8 @@ tracking, persistence, JUMP steps, and compiler parity with the actual Vastish V
 I/O tests also cover calibrated conversions, all 65,536 two-byte XOR pairs,
 gate-free Vastish DSP, and the delayed Converter/Register/Vastish/Lookup/OTIS
 chain. Counter tests cover every word/increment/modulus in all three run modes,
-CARRY chains, a Counter → Lookup rhythm and One-shot → Lookup envelopes. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
+CARRY chains, a Counter → Lookup rhythm and One-shot → Lookup envelopes. Switch tests cover every (A, B, C) in all three
+modes, a Counter A/B commutator and reclocking. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
 2.8 installed, and `examples/counter-divider.vcv` with ByteBusLab alone.
 
 The [generator](tools/generate_lookup.py) and per-table manifest ship with the
