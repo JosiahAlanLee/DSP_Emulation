@@ -1,7 +1,7 @@
 {
   "slug": "OtisLab",
   "name": "OtisLab",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "license": "BSD-3-Clause",
   "brand": "OtisLab",
   "author": "OtisLab contributors",
@@ -14,6 +14,16 @@
         "Sampler",
         "Polyphonic",
         "Recording"
+      ]
+    },
+    {
+      "slug": "OtisKit",
+      "name": "Otis Kit",
+      "description": "A bank of eight sample slots on OTIS's ES5505 playback arithmetic: per-slot tune, decay, level, filter, start and direction, slot chosen per hit by a bus word or the gate channel.",
+      "tags": [
+        "Sampler",
+        "Drum",
+        "Polyphonic"
       ]
     }
   ]

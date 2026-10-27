@@ -1,5 +1,16 @@
 # OTIS change history
 
+## 2.10.0
+
+- New module, **Otis Kit** (18 HP): a bank of eight mono sample slots packed
+  into one ES5505 sample memory and played on OTIS's own voice code. Per slot:
+  TUNE, DECAY, LEVEL, FILTER (K1), START and REV. GATE channel *n* plays slot
+  *n*, or SLOT's bits 0-2 choose the slot per hit; PITCH and LEVEL CV are
+  latched from the hit's channel. Load WAVs per slot or a whole folder; the
+  bank is saved with the patch. See [KIT.md](KIT.md). Capture comes later.
+- The engine gains a per-voice region and decay for the kit. Both are off for
+  OTIS Sampler, whose 2.2.0 regression trace is unchanged.
+
 ## 2.9.0
 
 - Patch select, the EPS idiom: bits 1 and 2 of the new PATCH input choose, on
