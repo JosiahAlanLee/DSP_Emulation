@@ -3,6 +3,7 @@
 #include "../src/engine/Counter.hpp"
 #include "../src/engine/Switch.hpp"
 #include "../src/engine/Pipeline.hpp"
+#include "../src/engine/Counter2.hpp"
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -555,7 +556,58 @@ static void pipelining() {
     }
 }
 
+// Counter 2 (docs/COUNTER2.md): after n edges the word is floor(256 * frac(n * N / D)), exactly,
+// with CARRY on the edges that complete a cycle.
+static void ratios() {
+    namespace c2 = dspemu::counter2;
+    for (int n = 1; n <= 16; ++n) for (int d = 1; d <= 64; ++d) for (int seed : {0, 77}) {
+        c2::Parameters p; p.mode = ClockMode::Engine; p.n = n; p.d = d; p.seed = uint8_t(seed);
+        c2::Counter2 c; c.clear(uint8_t(seed), d); c2::Inputs in;
+        auto first = c.tick(p, in, 48000); assert(first.loaded && first.word == seed && !first.carry);
+        int64_t start = int64_t(seed) * d;                       // in units of 1 / (256 d)
+        for (int e = 1; e <= 3 * d + 5; ++e) {
+            auto o = c.tick(p, in, 48000);
+            int64_t now = start + int64_t(256) * n * e, before = now - int64_t(256) * n;
+            assert(o.advanced && o.word == (now % (256 * d)) / d);
+            assert(o.carry == (now / (256 * d) > before / (256 * d)));
+        }
+    }
+    // Polymeter: 1/12 and 1/16 on one clock carry 4 and 3 times in 48 edges and are both at 00 there.
+    {
+        c2::Parameters a, b; a.mode = b.mode = ClockMode::Engine; a.d = 12; b.d = 16;
+        c2::Counter2 ca, cb; ca.clear(0, 12); cb.clear(0, 16); c2::Inputs in; ca.tick(a, in, 48000); cb.tick(b, in, 48000);
+        int carriesA = 0, carriesB = 0; c2::Output oa, ob;
+        for (int e = 0; e < 48; ++e) { oa = ca.tick(a, in, 48000); ob = cb.tick(b, in, 48000); carriesA += oa.carry; carriesB += ob.carry; }
+        assert(carriesA == 4 && carriesB == 3 && oa.word == 0 && ob.word == 0);
+    }
+    // A new D keeps the current word; RESET loads SEED and wins over a simultaneous edge.
+    {
+        c2::Parameters p; p.mode = ClockMode::Jack; p.n = 3; p.d = 16; p.seed = 9;
+        c2::Counter2 c; c.clear(0, 16); c2::Inputs in; in.clockConnected = true;
+        c.tick(p, in, 48000); c.tick(p, in, 48000);
+        auto edge = [&] { in.clock = 10; auto o = c.tick(p, in, 48000); in.clock = 0; c.tick(p, in, 48000); return o; };
+        assert(edge().word == 48 && edge().word == 96);
+        p.d = 7; auto held = c.tick(p, in, 48000); assert(held.word == 96 && !held.advanced);
+        assert(edge().word == (96 * 7 + 256 * 3) % (256 * 7) / 7);
+        in.reset = 10; in.clock = 10; auto o = c.tick(p, in, 48000); assert(o.loaded && !o.advanced && o.word == 9);
+        in.reset = 0; in.clock = 0; c.tick(p, in, 48000);
+        assert(edge().word == (9 * 7 + 768) % (256 * 7) / 7);
+        std::mt19937 r(4); bool last = false;
+        for (int t = 0; t < 20000; ++t) {
+            in.clock = r() % 2 ? 10.f : 0.f; in.reset = r() % 173 == 0 ? 10.f : 0.f; p.d = 1 + int(r() % 64);
+            auto q = c.tick(p, in, 48000); assert(!(last && q.clk)); last = q.clk;
+        }
+    }
+    // Internal clock at 44.1/48/96 kHz: 16 Hz with 1/16 carries once a second.
+    for (double sr : {44100., 48000., 96000.}) {
+        c2::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 16; p.n = 1; p.d = 16;
+        c2::Counter2 c; c.clear(0, 16); c2::Inputs in; int carries = 0;
+        for (int t = 0; t < int(sr * 3); ++t) carries += c.tick(p, in, sr).carry;
+        assert(carries >= 2 && carries <= 3);
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks\n";
 }

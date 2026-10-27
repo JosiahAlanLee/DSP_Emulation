@@ -10,6 +10,7 @@
 #include "../src/Switch.cpp"
 #include "../src/Pipeline.cpp"
 #include "../src/Lookup2.cpp"
+#include "../src/Counter2.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -561,10 +562,40 @@ static std::vector<int> lookup2Chain(float sr, unsigned orderSeed) {
     return out;
 }
 
+// Counter 2: real ports; a 12-edge and a 16-edge cycle on one clock carry 4 and 3 times per 48
+// edges and meet at 00; a save mid-cycle resumes exactly; Initialize.
+static void counter2Module(float sr) {
+    using K = ByteCounter2;
+    K a, b; connectOutputs(a); connectOutputs(b); a.model = b.model = modelCounter2; auto args_ = args(sr);
+    assert(a.params.size() == 6 && a.inputs.size() == 2 && a.outputs.size() == 3 && a.lights.size() == 11);
+    for (K* k : {&a, &b}) { k->params[K::CLOCK_MODE].setValue(1); k->inputs[K::CLOCK_IN].channels = 1; }
+    a.params[K::D_PARAM].setValue(12); b.params[K::D_PARAM].setValue(16);
+    int carriesA = 0, carriesB = 0; std::vector<int> wordsA;
+    auto run = [&](K& m, int t) { m.inputs[K::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0); m.process(args_); };
+    for (int t = 0; t < 8 * 48; ++t) {                                  // 48 edges
+        run(a, t); run(b, t);
+        carriesA += a.outputs[K::CARRY_OUT].getVoltage() == 10; carriesB += b.outputs[K::CARRY_OUT].getVoltage() == 10;
+        if (a.outputs[K::CLOCK_OUT].getVoltage() == 10) wordsA.push_back(word(a.outputs[K::BUS_OUT]));
+    }
+    assert(carriesA == 4 && carriesB == 3 && word(a.outputs[K::BUS_OUT]) == 0 && word(b.outputs[K::BUS_OUT]) == 0);
+    for (size_t k = 1; k < wordsA.size(); ++k) assert(wordsA[k] == int((k % 12) * 256 / 12));
+    // Saved after 5 more edges of N 5 / D 7, restored, and run on: the same words as the original.
+    a.params[K::N_PARAM].setValue(5); a.params[K::D_PARAM].setValue(7);
+    for (int t = 0; t < 8 * 5; ++t) run(a, t);
+    json_t* saved = a.toJson(); K r; connectOutputs(r); r.model = modelCounter2; r.fromJson(saved); json_decref(saved);
+    r.inputs[K::CLOCK_IN].channels = 1; r.process(args_); assert(word(r.outputs[K::BUS_OUT]) == word(a.outputs[K::BUS_OUT]));
+    for (int t = 1; t < 8 * 40; ++t) { run(a, t); run(r, t); assert(word(r.outputs[K::BUS_OUT]) == word(a.outputs[K::BUS_OUT])); }
+    assert(r.ratio.load() == (5 << 8 | 7));
+    json_t* bad = json_pack("{s:i,s:i}", "accumulator", 999999, "denominator", -3); r.dataFromJson(bad); json_decref(bad);
+    assert(r.state.d == 1 && r.state.acc == 255);
+    r.onReset(Module::ResetEvent{}); assert(r.params[K::D_PARAM].getValue() == 16 && r.params[K::N_PARAM].getValue() == 1);
+    r.process(args_); assert(word(r.outputs[K::BUS_OUT]) == 0);
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -583,6 +614,7 @@ int main() {
     auto canon = pipelineCanon(library, 48000, 21);
     assert(pipelineCanon(library, 44100, 22) == canon && pipelineCanon(library, 96000, 23) == canon);
     pipelineLoop();
+    for (float sr : {44100.f, 48000.f, 96000.f}) counter2Module(sr);
     auto twoWords = lookup2Chain(48000, 31);
     assert(lookup2Chain(44100, 32) == twoWords && lookup2Chain(96000, 33) == twoWords);
     assert(jumpChain(library, 44100, 8) == jumped && jumpChain(library, 96000, 9) == jumped);
@@ -592,5 +624,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore at 44.1/48/96 kHz\n";
 }

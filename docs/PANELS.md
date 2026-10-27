@@ -19,6 +19,7 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 | Counter | 12 HP | Named clock source and run mode selectors, RATE/INC/MOD/SEED knobs, count hex display, grouped bus, clock and carry outputs | [Counter](../vcv/bytebus/docs/Counter-preview.svg) |
 | Switch | 12 HP | Named clock source, mode and select-bit selectors, RATE/B WORD/C WORD knobs, result hex display, A/B/C/CLOCK inputs, grouped bus and clock outputs | [Switch](../vcv/bytebus/docs/Switch-preview.svg) |
 | Pipeline | 12 HP | Named clock source selector, RATE/DELAY/SPREAD knobs, LOOP latch and CLEAR buttons, output hex display, BUS/CLOCK/RESET/LOOP inputs, grouped bus and clock outputs | [Pipeline](../vcv/bytebus/docs/Pipeline-preview.svg) |
+| Counter 2 | 12 HP | Named clock source selector, RATE/N/D/SEED knobs, hex and N/D readouts, CLOCK/RESET inputs, grouped bus, clock and carry outputs | [Counter 2](../vcv/bytebus/docs/Counter2-preview.svg) |
 | Converter | 14 HP | Independent ADC/DAC readouts, gain/offset/range controls, grouped outputs | [Converter](../vcv/bytebus/docs/Converter-preview.svg) |
 | Machinemodule | 18 HP | Local machine ID/name readout, labelled Ready/Link indicators, eight offset/CV pairs, grouped outputs | [Machinemodule](../vcv/machinemodule/docs/Machinemodule-preview.svg) |
 
