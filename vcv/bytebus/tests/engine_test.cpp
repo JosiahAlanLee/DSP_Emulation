@@ -763,6 +763,61 @@ static void latticing() {
         assert(lt::loadH(uint8_t(h), uint8_t(v)) == jamH(h, v) && lt::loadV(uint8_t(h), uint8_t(v)) == jamV(h, v));
         assert(lt::stepOf(uint8_t(lt::followH(uint8_t(v))), uint8_t(v)) % 5 == 0);     // the diagonal
     }
+    // One tick from every state under every input combination, against a reference written
+    // from the contract: H's edge, then V's edge or H's wrap, then the jumps from what the
+    // clocks left, Follow presets holding their counter, Load and BUS IN on rising edges only.
+    {
+        auto settle = [](auto jam, int self, int other, bool isH) {
+            int x = self; for (int k = 0; k < 8; ++k) x = isH ? jam(x, other) : jam(other, x);
+            return x;
+        };
+        long cases = 0;
+        for (int state = 0; state < 256; ++state)
+        for (int mode = 0; mode < 3; ++mode)            // Follow, Load, BUS IN
+        for (int bits = 0; bits < 32; ++bits)           // H edge, V patched, V edge, DIR H, DIR V
+        for (int jh = 0; jh < 4; ++jh) for (int jv = 0; jv < 4; ++jv) {   // previous and present levels
+            bool hEdge = bits & 1, vPatched = bits & 2, vEdge = bits & 4, dirH = bits & 8, dirV = bits & 16;
+            if (!vPatched && vEdge) continue;
+            bool jhBefore = jh & 1, jhNow = jh & 2, jvBefore = jv & 1, jvNow = jv & 2;
+            const uint8_t busWord = uint8_t(state * 37 + 101);
+            lt::Lattice l; l.clear(uint8_t(state));
+            lt::Parameters p; p.mode = ClockMode::Jack; p.jump = mode == 1 ? lt::JumpMode::Load : lt::JumpMode::Follow;
+            lt::Inputs in; in.clock.clockConnected = true; in.vClockConnected = vPatched;
+            in.bus.connected = mode == 2; in.bus.rawWord = busWord;
+            l.tick(p, in, 48000); l.tick(p, in, 48000);            // publish, then the low sample
+            assert(l.state() == state);
+            l.jumpHGate.high = jhBefore; l.jumpVGate.high = jvBefore;
+            in.clock.clock = hEdge ? 10.f : 0.f; in.vClock = vEdge ? 10.f : 0.f;
+            in.dirH = dirH ? 10.f : 0.f; in.dirV = dirV ? 10.f : 0.f;
+            in.jumpH = jhNow ? 10.f : 0.f; in.jumpV = jvNow ? 10.f : 0.f;
+            auto o = l.tick(p, in, 48000);
+            // Reference.
+            int h = state & 15, v = state >> 4;
+            bool follow = mode == 0, holdH = jhNow, holdV = jvNow;
+            bool riseH = jhNow && !jhBefore, riseV = jvNow && !jvBefore;
+            bool hMoved = false, wrapH = false;
+            if (hEdge && !(follow && holdH)) {
+                wrapH = dirH ? (h & 3) == 0 : (h & 3) == 3; h = (h + (dirH ? 15 : 1)) & 15; hMoved = true;
+            }
+            bool vStep = vPatched ? vEdge : hMoved && wrapH;
+            if (vStep && !(follow && holdV)) v = (v + (dirV ? 15 : 1)) & 15;
+            int h0 = h, v0 = v;
+            if (mode == 2) {
+                if (riseH) h = busWord & 15;
+                if (riseV) v = busWord >> 4;
+            } else if (mode == 1) {
+                if (riseH) h = jamH(h0, v0);
+                if (riseV) v = jamV(h0, v0);
+            } else {
+                bool both = holdH && holdV, now = !both || riseH || riseV;
+                if (holdH && now) h = settle(jamH, h0, v0, true);
+                if (holdV && now) v = settle(jamV, v0, h0, false);
+            }
+            assert(o.state == (v << 4 | h) && o.step == 4 * (v & 3) + (h & 3));
+            ++cases;
+        }
+        assert(cases == 256L * 3 * 24 * 16);
+    }
     for (int c = 0; c < 16; ++c) for (bool down : {false, true}) {
         bool wrap = false; int next = lt::count(uint8_t(c), down, wrap);
         assert(next == (down ? (c + 15) % 16 : (c + 1) % 16) && wrap == (down ? (c & 3) == 0 : (c & 3) == 3));
@@ -892,5 +947,5 @@ static void latticing() {
 
 int main() {
     conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag\n";
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag\n";
 }

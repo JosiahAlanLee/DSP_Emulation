@@ -149,7 +149,9 @@ curve.
 
 ## Validation
 
-Portable tests (`tests/engine_test.cpp`): Follow and Load against the
+Portable tests (`tests/engine_test.cpp`): one tick from every state under
+every input combination (clocks, directions, previous and present jump levels,
+Follow, Load, BUS IN) against a reference transition; Follow and Load against the
 schematic's jam wiring for all 256 states, iterated to its settled values and
 taken once; counting and wraps in both directions; V normalled to H's wrap,
 with DIR H; V CLOCK and DIR V; held Follow jumps following and ignoring their
