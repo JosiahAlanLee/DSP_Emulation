@@ -2,9 +2,9 @@ name: CZishLab Rack platforms
 on:
   push:
     branches: [main]
-    paths: ['vcv/czish/**', 'vcv/shared/DacStage.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', 'vcv/bytebus/src/Register.cpp', 'vcv/bytebus/src/engine/Register.hpp', 'vcv/bytebus/src/engine/ClockOwner.hpp', '.github/workflows/czish.yml']
+    paths: ['vcv/czish/**', 'vcv/shared/DacStage.hpp', 'vcv/shared/RateConverter.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', 'vcv/bytebus/src/Register.cpp', 'vcv/bytebus/src/engine/Register.hpp', 'vcv/bytebus/src/engine/ClockOwner.hpp', '.github/workflows/czish.yml']
   pull_request:
-    paths: ['vcv/czish/**', 'vcv/shared/DacStage.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', 'vcv/bytebus/src/Register.cpp', 'vcv/bytebus/src/engine/Register.hpp', 'vcv/bytebus/src/engine/ClockOwner.hpp', '.github/workflows/czish.yml']
+    paths: ['vcv/czish/**', 'vcv/shared/DacStage.hpp', 'vcv/shared/RateConverter.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', 'vcv/bytebus/src/Register.cpp', 'vcv/bytebus/src/engine/Register.hpp', 'vcv/bytebus/src/engine/ClockOwner.hpp', '.github/workflows/czish.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools and Rack runtime dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ make jq zstd libjack-jackd2-0 libpulse0
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ make jq zstd libjack-jackd2-0 libpulse0 xvfb xauth libgl1-mesa-dri libgl1 libxinerama1 libxcursor1 libxi6 libxrandr2
       - name: Fetch Rack SDK
         run: |
           curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-lin-x64.zip" -o /tmp/rack-sdk.zip
@@ -27,10 +27,31 @@ jobs:
           make -C vcv/czish/tests check RACK_DIR=/tmp/Rack-SDK
           make -C vcv/czish/tests sanitize RACK_DIR=/tmp/Rack-SDK
           make -C vcv/czish dist RACK_DIR=/tmp/Rack-SDK
+          vcv/czish/tests/render vcv/czish/examples/original-detuned-chime.syx vcv/czish/dist/czish-chime.wav 60 4
+      - name: Render actual Rack widgets on a private virtual display
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/RackFree-${RACK_SDK_VERSION}-lin-x64.zip" -o /tmp/rack-runtime.zip
+          unzip -q /tmp/rack-runtime.zip -d /tmp/cz-runtime
+          mkdir -p /tmp/cz-gui-user/plugins-lin-x64
+          cp vcv/czish/dist/*.vcvplugin /tmp/cz-gui-user/plugins-lin-x64/
+          cd /tmp/cz-runtime/Rack2Free
+          LIBGL_ALWAYS_SOFTWARE=1 timeout 120s xvfb-run -a -s '-screen 0 1600x1000x24' ./Rack -u /tmp/cz-gui-user -t 2
+          test -f /tmp/cz-gui-user/screenshots/CZishLab/CZish.png
+          test -f /tmp/cz-gui-user/screenshots/CZishLab/DACStage.png
       - uses: actions/upload-artifact@v4
         with:
           name: CZishLab-lin-x64
           path: vcv/czish/dist/*.vcvplugin
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CZishLab-reference-audio
+          path: vcv/czish/dist/czish-chime.wav
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CZishLab-Rack-panel-renders
+          path: /tmp/cz-gui-user/screenshots/CZishLab/*.png
           if-no-files-found: error
 
   windows:

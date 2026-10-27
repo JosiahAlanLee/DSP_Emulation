@@ -1,9 +1,12 @@
 # CZ voice: µPD933 phase distortion for Rack, spec v0.1
 
-Status: **draft contract; early implementation started.** [CZishLab](../vcv/czish)
-has an eight-voice, single-line front end and the µPD933 sound path; the complete
-firmware-free CZ-101 front end and hardware-fitted DAC described below remain
-open.
+Status: **software v1 implemented in CZishLab 2.1; hardware fitting pending.**
+The [module manual](../vcv/czish) describes the shipped interface and the
+[validation record](../vcv/czish/docs/VALIDATION.md) separates documented MIDI
+maps from provisional firmware/analog behavior. The panel is now 30 HP. POLY
+outputs one independently converted note (a summed pair in two-line modes).
+The initial eight-bit ByteBus XOR/tap extension is also implemented. Deferred
+features in §10 remain separate work.
 
 Working names: plugin **CZishLab**,
 module **CZish**, continuing the -ish names of Vastish and ESPish (now Spoon

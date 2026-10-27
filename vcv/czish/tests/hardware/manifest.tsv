@@ -1,0 +1,99 @@
+name	notes	held_seconds	description
+a-silence	60,	4	Noise floor; no gain normalization
+b-cosine-level-25	60,	4	Converter law against DCA level
+b-cosine-level-50	60,	4	Converter law against DCA level
+b-cosine-level-75	60,	4	Converter law against DCA level
+b-cosine-level-99	60,	4	Converter law against DCA level
+c-bursts	60,	0.01	Eight 10 ms bursts, separated by 500 ms
+d-poly-1	48,	4	Summed versus per-slot converter test
+d-poly-2	48,52,	4	Summed versus per-slot converter test
+d-poly-4	48,52,55,60,	4	Summed versus per-slot converter test
+d-poly-8	48,52,55,60,64,67,72,76,	4	Summed versus per-slot converter test
+e-saw-note-36	36,	3	High-pitch DCW limit and output filter
+e-saw-note-48	48,	3	High-pitch DCW limit and output filter
+e-saw-note-60	60,	3	High-pitch DCW limit and output filter
+e-saw-note-72	72,	3	High-pitch DCW limit and output filter
+e-saw-note-84	84,	3	High-pitch DCW limit and output filter
+f-env-0-level-0	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-0	36,	120	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-11	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-11	36,	30	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-22	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-22	36,	30	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-33	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-33	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-44	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-44	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-55	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-55	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-66	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-66	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-77	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-77	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-88	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-88	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-level-99	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-0-rate-99	36,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-0	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-0	60,	120	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-11	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-11	60,	30	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-22	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-22	60,	30	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-33	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-33	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-44	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-44	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-55	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-55	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-66	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-66	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-77	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-77	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-88	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-88	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-level-99	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-1-rate-99	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-0	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-0	60,	120	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-11	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-11	60,	30	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-22	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-22	60,	30	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-33	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-33	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-44	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-44	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-55	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-55	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-66	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-66	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-77	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-77	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-88	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-88	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-level-99	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+f-env-2-rate-99	60,	8	DCO=0, DCW=1, DCA=2; compare segment slope/target
+g-vibrato-depth-0	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-rate-0	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-depth-25	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-rate-25	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-depth-50	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-rate-50	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-depth-75	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-rate-75	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-depth-99	60,	8	Vibrato curve and firmware update cadence
+g-vibrato-rate-99	60,	8	Vibrato curve and firmware update cadence
+h-key-0-note-36	36,	6	DCW level and DCA time key follow
+h-key-0-note-60	60,	6	DCW level and DCA time key follow
+h-key-0-note-84	84,	6	DCW level and DCA time key follow
+h-key-5-note-36	36,	6	DCW level and DCA time key follow
+h-key-5-note-60	60,	6	DCW level and DCA time key follow
+h-key-5-note-84	84,	6	DCW level and DCA time key follow
+h-key-9-note-36	36,	6	DCW level and DCA time key follow
+h-key-9-note-60	60,	6	DCW level and DCA time key follow
+h-key-9-note-84	84,	6	DCW level and DCA time key follow
+i-ring-pair	60,	4	Ring pair; compare each partner alone
+i-line1	60,	4	Partner one alone
+i-line2	67,	4	Partner two at its detuned pitch
+original-detuned-chime	60,64,67,72,	2	Original demonstration, not a factory tone

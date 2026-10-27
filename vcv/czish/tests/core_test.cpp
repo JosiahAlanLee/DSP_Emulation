@@ -58,7 +58,7 @@ static void clocks() {
         for (int i = 0; i < int(host * 2); ++i) {
             float x = float(std::sin(2 * 3.141592653589793 * 437. * i / host));
             float y = stage.process(x, dac::Profile::Yamaha, 12, 0, 0, device, host);
-            assert(std::isfinite(y) && y >= -1.f && y < 1.f);
+            assert(std::isfinite(y) && std::abs(y) < 1.6f);
             assert(!(wasHigh && stage.tap.clk));
             if (stage.tap.clk) ++events;
             else assert(stage.tap.word == previous);

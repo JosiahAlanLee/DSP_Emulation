@@ -7,3 +7,7 @@
 /tests/module_test
 /tests/*_asan
 /tests/mame_ref_generated.hpp
+
+/tests/frontend_test
+
+/tests/render
