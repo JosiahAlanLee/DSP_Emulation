@@ -10,3 +10,4 @@ extern Model* modelSwitch;
 extern Model* modelPipeline;
 extern Model* modelLookup2;
 extern Model* modelCounter2;
+extern Model* modelFan;

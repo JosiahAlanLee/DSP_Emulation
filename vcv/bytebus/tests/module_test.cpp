@@ -11,6 +11,7 @@
 #include "../src/Pipeline.cpp"
 #include "../src/Lookup2.cpp"
 #include "../src/Counter2.cpp"
+#include "../src/Fan.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -629,10 +630,89 @@ static void ratioChain(float sr, unsigned orderSeed) {
     }
 }
 
+// Fan with real ports: polyphonic cables both ways, the one-hot counter mode, Hold, GLITCH,
+// persistence; then Counter -> Fan BUS IN through one-sample cables in random module order.
+static void fanPorts() {
+    using F = ByteFan;
+    F f; f.model = modelFan; auto a = args(); connectOutputs(f);
+    assert(f.params.size() == 8 && f.inputs.size() == 7 && f.outputs.size() == 6 && f.lights.size() == 9);
+    f.params[F::SOURCE].setValue(3);                                        // Engine: one step a sample
+    f.inputs[F::IN_A].channels = 16; f.inputs[F::IN_B].channels = 5;        // IN 22-32 missing: 0 V
+    for (int ch = 0; ch < 16; ++ch) f.inputs[F::IN_A].setVoltage(ch * .5f, ch);
+    for (int ch = 0; ch < 5; ++ch) f.inputs[F::IN_B].setVoltage(-1.f - ch, ch);
+    f.process(a);
+    for (int t = 1; t <= 64; ++t) {
+        f.process(a); int addr = t % 32;
+        assert(f.outputs[F::OUT_A].getChannels() == 16 && f.outputs[F::OUT_B].getChannels() == 16);
+        assert(f.outputs[F::BUS_OUT].getChannels() == 8 && word(f.outputs[F::BUS_OUT]) == addr);
+        for (int ch = 0; ch < 32; ++ch) {
+            Output& o = f.outputs[ch < 16 ? F::OUT_A : F::OUT_B];
+            assert(o.getVoltage(ch & 15) == (ch == addr ? 10.f : 0.f));         // COM IN unpatched: 10 V
+        }
+        float expect = addr < 16 ? addr * .5f : addr < 21 ? -1.f - (addr - 16) : 0.f;
+        assert(f.outputs[F::COM_OUT].getVoltage() == expect);
+        assert(f.outputs[F::EOC_OUT].getVoltage() == (addr == 0 ? 10.f : 0.f));
+        for (int k = 0; k < 5; ++k) assert(f.lights[F::BIT0_LIGHT + k].getBrightness() == (addr >> k & 1));
+    }
+    // Hold keeps each output's last value; a DIR gate counts down.
+    f.params[F::UNSELECTED].setValue(1); f.inputs[F::COM_IN].channels = 1;
+    for (int t = 0; t < 32; ++t) { f.inputs[F::COM_IN].setVoltage(float(t)); f.process(a); }
+    f.inputs[F::DIR_IN].channels = 1; f.inputs[F::DIR_IN].setVoltage(10);
+    int before = word(f.outputs[F::BUS_OUT]); f.process(a);
+    assert(word(f.outputs[F::BUS_OUT]) == (before + 31) % 32);
+    int held = 0;
+    for (int ch = 0; ch < 32; ++ch) if (f.outputs[ch < 16 ? F::OUT_A : F::OUT_B].getVoltage(ch & 15) != 0) ++held;
+    assert(held >= 30);
+    // Persistence: params and the internal count; Initialize restores the defaults.
+    f.params[F::SOURCE].setValue(1); f.params[F::LENGTH].setValue(12); f.params[F::GLITCH].setValue(1);
+    f.inputs[F::CLOCK_IN].channels = 1; f.process(a);
+    int saved = word(f.outputs[F::BUS_OUT]);
+    json_t* j = f.toJson(); F r; r.model = modelFan; connectOutputs(r); r.fromJson(j); json_decref(j);
+    assert(r.params[F::LENGTH].getValue() == 12 && r.params[F::GLITCH].getValue() == 1 && r.params[F::SOURCE].getValue() == 1);
+    r.inputs[F::CLOCK_IN].channels = 1; r.process(a); assert(word(r.outputs[F::BUS_OUT]) == saved);
+    assert(r.outputs[F::BUS_OUT].getChannels() == 9 && r.outputs[F::CLOCK_OUT].getVoltage() == 10);
+    json_t* bad = json_pack("{s:I}", "count", json_int_t(1000)); r.dataFromJson(bad); json_decref(bad);
+    r.process(a); r.process(a); assert(word(r.outputs[F::BUS_OUT]) == 31);
+    r.onReset(Module::ResetEvent{});
+    assert(r.params[F::LENGTH].getValue() == 32 && r.params[F::GLITCH].getValue() == 0 && r.params[F::UNSELECTED].getValue() == 0);
+    // GLITCH through the panel: counting up from 15 at Engine rate, out 1 joins out 17 for one sample.
+    F g; g.model = modelFan; connectOutputs(g);
+    g.params[F::SOURCE].setValue(3); g.params[F::GLITCH].setValue(1); g.params[F::SEED].setValue(15);
+    g.params[F::LOAD_BUTTON].setValue(1); g.process(a); g.params[F::LOAD_BUTTON].setValue(0);
+    assert(word(g.outputs[F::BUS_OUT]) == 15);
+    g.process(a);
+    assert(word(g.outputs[F::BUS_OUT]) == 16 && g.outputs[F::OUT_A].getVoltage(0) == 10 && g.outputs[F::OUT_B].getVoltage(0) == 10);
+    g.process(a); assert(g.outputs[F::OUT_A].getVoltage(0) == 0 && g.outputs[F::OUT_B].getVoltage(1) == 10);
+}
+
+// A Counter (MOD 32, INC 3) on a clock into Fan's BUS IN: Fan follows the count on the Counter's
+// clock, and its one-hot gates and BUS OUT match the word that arrived, whatever the module order.
+static std::vector<int> fanChain(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using F = ByteFan;
+    C c; F f; connectOutputs(c); connectOutputs(f); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::MODULUS].setValue(32); c.params[C::INC].setValue(3);
+    c.inputs[C::CLOCK_IN].channels = 1;
+    std::mt19937 order(orderSeed); std::vector<int> steps;
+    for (int t = 0; t < 32 * 40; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 32 == 7 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], f.inputs[F::BUS_IN]);
+        if (order() & 1) { c.process(a); f.process(a); } else { f.process(a); c.process(a); }
+        if (f.outputs[F::CLOCK_OUT].getVoltage() == 10) {
+            int addr = word(f.outputs[F::BUS_OUT]);
+            assert(addr == (inputWord(f.inputs[F::BUS_IN]) & 31) && f.outputs[F::BUS_OUT].getChannels() == 9);
+            for (int ch = 0; ch < 32; ++ch) assert(f.outputs[ch < 16 ? F::OUT_A : F::OUT_B].getVoltage(ch & 15) == (ch == addr ? 10.f : 0.f));
+            steps.push_back(addr);
+        }
+    }
+    assert(steps.size() >= 39);
+    for (size_t k = 1; k < steps.size(); ++k) assert(steps[k] == (steps[k-1] + 3) % 32);
+    return steps;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -661,6 +741,9 @@ int main() {
         assert(feedback(44100, seed, 2) == reference);
         assert(feedback(96000, seed, 3) == reference);
     }
+    fanPorts();
+    auto fanned = fanChain(48000, 41);
+    assert(fanChain(44100, 42) == fanned && fanChain(96000, 43) == fanned);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz\n";
 }

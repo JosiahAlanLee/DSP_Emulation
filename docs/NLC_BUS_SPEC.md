@@ -625,6 +625,10 @@ unit.
 
 ## 8. Fan (from 32:1)
 
+Implemented in ByteBusLab 2.12; the contract is [FAN.md](../vcv/bytebus/docs/FAN.md),
+which supersedes §8.2–8.3 where they differ. §8.1 and §8.4 remain the record of
+the sources.
+
 ### 8.1 What the sources establish
 
 - **Documented (F1, F3 text).** Splits one input into 32 outputs or switches

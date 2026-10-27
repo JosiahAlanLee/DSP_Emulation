@@ -10,4 +10,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelPipeline);
     plugin->addModel(modelLookup2);
     plugin->addModel(modelCounter2);
+    plugin->addModel(modelFan);
 }
