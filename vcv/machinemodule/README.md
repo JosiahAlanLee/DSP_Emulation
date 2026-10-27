@@ -18,9 +18,10 @@ sample data is distributed.
    which also plays every offered machine once so its DSP code is compiled before
    the first hit (about 0.3 s on a Ryzen 5 5600X). The green light and menu status indicate readiness; the patch saves a file
    path, not a copy of your firmware.
-3. For Gorgon: place Machinemodule immediately to the **right of Gorgon 2.3.1**
-   and leave its **TRIG** input unpatched. The blue light indicates the sound
-   link. In the matching HydraPy Audio page, open **External Rack instrument**
+3. For Gorgon: place Machinemodule immediately to the **right of Gorgon 2.4.0**
+   or later and leave its **TRIG** input unpatched. The blue light indicates the
+   sound link (version 2): Gorgon's lanes play tracks 1–6 for a version-3 score,
+   tracks 1–4 for an older one. An older Gorgon can't link to this version. In the matching HydraPy Audio page, open **External Rack instrument**
    and set track defaults or selected-hit locks. Machine IDs and P1–P8 labels
    are available in Machinemodule's context menu after loading the OS.
 4. For CV alone: patch a trigger cable, up to 16 channels. Track 1 is channel 1.

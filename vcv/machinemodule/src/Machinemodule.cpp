@@ -137,7 +137,7 @@ struct Machinemodule : Module {
                 if(fresh)for(int i=0;i<16;++i)gates[i].high=i<n&&inputs[TRIG].getVoltage(i)>.1f;
                 for(int i=0;i<16;++i)if(gates[i].process(i<n?inputs[TRIG].getVoltage(i):0.f))appendHit(i,velocity(i),sound,offset);
             }
-        }else if(packet){for(int i=0;i<4;++i)if(linked.hits[i])appendHit(i,packet->lanes[i].velocity,packet->lanes[i].sound,offset);}
+        }else if(packet){for(int i=0;i<gorgon_sound::LANES;++i)if(linked.hits[i])appendHit(i,packet->lanes[i].velocity,packet->lanes[i].sound,offset);}
         external=patched;
         float sample[md_rack::channels]={};
         int64_t wanted=frame-md_rack::queueLatency;

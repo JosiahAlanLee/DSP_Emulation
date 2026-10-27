@@ -29,6 +29,12 @@ int main(){
     p.frame=14;p.lanes[0].gate=10;assert(link.update(&p,15).hits[0]);
     assert(link.update(nullptr,16).panic);assert(!link.update(&p,16).hits[0]); // reconnect high is seeded
     assert(!link.update(&p,18).hits[0]&&!link.connected); // stale
+    // Sound link version 2: lanes 5 and 6 trigger tracks 5 and 6.
+    LinkState six;gorgon_sound::Packet q;q.frame=20;q.moving=1;q.transport=1;six.update(&q,20);
+    q.frame=21;q.lanes[5].gate=10;q.lanes[5].velocity=1;q.lanes[5].sound.machine=48;
+    auto s=six.update(&q,21);assert(s.hits[5]&&!s.hits[4]&&!s.hits[0]);
+    // A version-1 packet in a version-2 buffer is inactive, not misread.
+    q.version=1;q.frame=22;assert(!six.update(&q,22).hits[5]&&!six.connected);
     // Stress full tuple ownership across the actual SPSC acquire/release boundary.
     Queue<InputBlock,4> queue;constexpr int count=100000;
     std::thread producer([&]{for(int i=0;i<count;++i){InputBlock x;x.start=i;x.count=1;x.events[0].hit.values[0]=float(i);while(!queue.push(x))std::this_thread::yield();}});
@@ -39,5 +45,5 @@ int main(){
     write(bytes);auto samples=readSampleBank(file.string());assert(samples.size()==1&&samples[0].address==0x140000&&samples[0].words[0]==0x123456);
     for(int bad=0;bad<3;++bad){auto b=bytes;if(bad==0)b[0]='X';if(bad==1)b.resize(15);if(bad==2)b[6]=0;write(b);bool threw=false;try{readSampleBank(file.string());}catch(const std::exception&){threw=true;}assert(threw);}
     std::filesystem::remove(file);
-    std::cout<<"control_test: CV snapshots, default restoration, link edges, bounds, MDS1 and 100000 threaded tuples passed\n";
+    std::cout<<"control_test: CV snapshots, default restoration, six-lane link edges, bounds, MDS1 and 100000 threaded tuples passed\n";
 }
