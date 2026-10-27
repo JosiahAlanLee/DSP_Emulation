@@ -26,8 +26,9 @@ This is an original implementation; the K2600 is the role reference only.
 Every sample, the left Vastish sends, for each of its eight voices:
 
 - **The signal**: the voice's tap, `r[6]·a + r[7]·b + r[8]·c` of its algorithm,
-  which is the voice before AMP, PAN and the envelopes. It is also what BUS OUT
-  sends as its DSP source.
+  which is the voice before AMP, PAN and amp-envelope gain. The
+  envelopes can still modulate its blocks. It is also what BUS OUT sends as its
+  DSP source.
 - **The note, velocity and gate** in force on that voice, and whether the voice
   runs without a gate (an AUDIO voice with GATE unpatched, or a chained one that
   is itself gate-free).
@@ -45,7 +46,8 @@ The chained Vastish uses them as follows:
   each Vastish in the chain applies its own amp. Velocity is latched on each
   gate rise, as for any note.
 - A voice that is gate-free on the left is gate-free here too: it runs at unity
-  amp without a gate, so an AUDIO-IN Vastish can feed a chain continuously.
+  envelope gain without a gate; AMP and PAN still apply, so an AUDIO-IN
+  Vastish can feed a chain continuously.
 - MOD, AUX 1–4 and BUS A/B are still this Vastish's own.
 - The PITCH wave's oscillator, the SAMPLE wave and AUDIO IN are unused while
   chained; key tracking uses the chained note.
@@ -73,8 +75,8 @@ is not sent, so a stereo sample continues as its left channel.
 ## Validation
 
 - `tests/engine_test.cpp`: the chain input replaces every wave at unity through
-  NONE blocks when gate-free; without a gate it is silent and the amp envelope
-  shapes it with one; non-finite input reads 0 and runaway input is limited.
+  NONE blocks when gate-free; otherwise it is silent without a gate and the
+  amp envelope shapes it with one; non-finite input reads 0 and runaway input is limited.
 - `tests/adapter_test.cpp`, with Rack's expander wiring and end-of-frame message
   swap emulated and the modules processed in a random order every frame: three
   Vastishes in a row, the first on AUDIO IN gate-free, give exactly the first

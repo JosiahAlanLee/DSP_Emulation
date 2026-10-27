@@ -38,7 +38,8 @@ struct OtisSampler : Module {
     Patches activePatches; uint32_t activeRevision=0;  // the audio thread's copy
     std::array<uint8_t,16> voicePatch{};               // each voice's patch, taken at its last hit
     std::atomic<int> lastPatch{-1};                    // for the display; -1 while PATCH is unpatched
-    bool previousRecord=false, previousReverse=false;
+    std::array<bool,16> previousVoiceReverse{};         // effective REV at the previous host sample
+    bool previousRecord=false;
     std::atomic<bool> gated{false};
     std::atomic<bool> linearLevel{false}, declick{true}, varispeed{false};
     std::atomic<bool> smoothFrameBus{true};
@@ -373,8 +374,6 @@ struct OtisSampler : Module {
         c.linearLevel=linearLevel.load(std::memory_order_relaxed); c.declick=declick.load(std::memory_order_relaxed);
         c.outputGain=params[OUTPUT_GAIN].getValue(); c.recordGain=params[RECORD_GAIN].getValue();
         c.captureIndex=int(params[CAPTURE_RATE].getValue()); c.loop=int(params[LOOP].getValue()); c.reverse=params[REVERSE].getValue()>.5;
-        // REV turns the voices playing the panel; a stored patch keeps the direction it started with.
-        if(c.reverse!=previousReverse) { for(int i=0;i<16;i++) if(c.reversev[i]<0) engine.voices[size_t(i)].reverse=c.reverse; previousReverse=c.reverse; }
         c.channels=std::min(16,std::max(1,std::max(inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels())));
         recordGate.process(inputs[RECORD_IN].getVoltage(),.1f,2.f);
         bool requestedRecord=params[RECORD].getValue()>.5 || recordGate.isHigh();
@@ -383,7 +382,9 @@ struct OtisSampler : Module {
         previousRecord=requestedRecord;
         // Each hit takes its patch from PATCH on the same sample. Unpatched, every voice plays the panel.
         auto patchBus=patchReader.process(inputs[PATCH_IN]);
+        std::array<bool,16> hitThisSample{};
         auto hit=[&](int i) {
+            hitThisSample[size_t(i)]=true;
             int n=patchBus.connected ? patchBus.word&3 : 0;
             voicePatch[size_t(i)]=uint8_t(n); voiceControls(i);
             lastPatch.store(patchBus.connected ? n : -1,std::memory_order_relaxed);
@@ -396,6 +397,14 @@ struct OtisSampler : Module {
             if(wasHigh && !gates[i].isHigh()) engine.release(i);
         }
         if(playButton.process(params[PLAY].getValue())) hit(0);
+        // A sounding voice follows edits to its patch, including clearing it to the panel.
+        // Compare the requested direction, not playback direction (ping-pong changes that).
+        // A hit takes its direction in Engine::start(), after any retrigger fade.
+        for(size_t i=0;i<voicePatch.size();++i) {
+            bool reverse=c.reversev[i]<0 ? c.reverse : c.reversev[i]>0;
+            if(!hitThisSample[i] && reverse!=previousVoiceReverse[i]) engine.voices[i].reverse=reverse;
+            previousVoiceReverse[i]=reverse;
+        }
         float mutateVoltage=std::max(params[MUTATE].getValue()*10.f,inputs[MUTATE_IN].getVoltage());
         if(mutationGate.process(mutateVoltage,.1f,2.f)) {
             auto window=engine.windowFor(0);
@@ -426,7 +435,7 @@ struct OtisSampler : Module {
         std::lock_guard<std::mutex> guard(engineMutex); mutator.cancel(); engine.stopAll(); engine.clearPcmFade();
         if(engine.recording && engine.recordFrames>=2) liveSample=true;
         engine.stopRecord();
-        engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; varispeed=false; recordSource=0; previousRecord=false; previousReverse=false;
+        engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; varispeed=false; recordSource=0; previousRecord=false; previousVoiceReverse.fill(false);
         smoothFrameBus=true; frameReader.reset(); patchReader.reset(); voicePatch.fill(0); lastPatch=-1;
         { std::lock_guard<std::mutex> patchGuard(patchMutex); patches={}; ++patchRevision; }
         for(auto& gate:gates) gate.reset();

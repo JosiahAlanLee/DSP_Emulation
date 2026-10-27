@@ -37,7 +37,7 @@ static void frame(OtisKit& k,OtisCapture* c,const Module::ProcessArgs& a,bool ca
 static void hit(OtisKit& k,int slot,bool high) { k.inputs[OtisKit::GATE_IN].setVoltage(high ? 10.f : 0.f,slot); }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.1"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.2"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Without a kit on the left, Capture says so and never records.
