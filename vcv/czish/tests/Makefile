@@ -10,7 +10,7 @@ mame_ref_generated.hpp: make_mame_reference.py reference/mame_upd933.cpp
 core_test: $(DEPS) core_test.cpp mame_ref_generated.hpp reference/ymfm.h ../src/engine/Upd933.hpp ../../shared/DacStage.hpp
 	$(CXX) $(CXXFLAGS) core_test.cpp -o $@
 
-render: ../tools/render.cpp $(DEPS)
+render: ../tools/render.cpp ../tools/RenderSequence.hpp $(DEPS)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
 frontend_test: frontend_test.cpp $(DEPS)
@@ -30,6 +30,10 @@ check: core_test frontend_test module_test render
 	python3 ../tools/make_example.py --check
 	python3 ../tools/check_capture.py
 
+# Optional offline recording tools; the plugin itself does not need Python packages.
+calibration-check: render
+	OPENBLAS_NUM_THREADS=1 python3 calibration_test.py -v
+
 sanitize:
 	$(CXX) -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer frontend_test.cpp -o frontend_asan
 	ASAN_OPTIONS=detect_leaks=0 ./frontend_asan
@@ -39,4 +43,4 @@ sanitize:
 clean:
 	rm -f core_test module_test frontend_test render module_asan frontend_asan mame_ref_generated.hpp
 
-.PHONY: test check sanitize clean
+.PHONY: test check calibration-check sanitize clean

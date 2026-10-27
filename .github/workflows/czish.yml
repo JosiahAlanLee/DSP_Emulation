@@ -28,6 +28,23 @@ jobs:
           make -C vcv/czish/tests sanitize RACK_DIR=/tmp/Rack-SDK
           make -C vcv/czish dist RACK_DIR=/tmp/Rack-SDK
           vcv/czish/tests/render vcv/czish/examples/original-detuned-chime.syx vcv/czish/dist/czish-chime.wav 60 4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: vcv/czish/tools/calibration-requirements.txt
+      - name: Check recording preparation and measurement analysis
+        run: |
+          python -m pip install -r vcv/czish/tools/calibration-requirements.txt
+          make -C vcv/czish/tests calibration-check
+      - name: Prepare the three-take owner recording session
+        run: |
+          python vcv/czish/tools/calibrate.py prepare vcv/czish/dist/cz101-capture-starter --only a-silence b-cosine-level-50 c-bursts --rate 96000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CZishLab-capture-starter
+          path: vcv/czish/dist/cz101-capture-starter/
+          if-no-files-found: error
       - name: Render actual Rack widgets on a private virtual display
         run: |
           curl --fail --location "https://vcvrack.com/downloads/RackFree-${RACK_SDK_VERSION}-lin-x64.zip" -o /tmp/rack-runtime.zip

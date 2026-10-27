@@ -405,10 +405,11 @@ streams are compared sample for sample, int16 for int16, and cover:
 This plan fits three things: the DAC stage's CZ profile, the front end's
 parameter maps, and the control rate.
 
-0. **Trim first.** Do the DAC offset adjustment. The sources are Mulcahy for the
-   CZ-1, and the Zen Instruments CZ-1000 page, which wasn't fetched for this
-   draft (DAC stage §3.2). If the untrimmed grit is worth keeping, record sets
-   (b) and (d) below before trimming. They become the reference for TRACK.
+0. **Record the present state.** Document the keyboard's current trim status
+   and capture the untouched unit. A physical adjustment is a separate owner
+   decision using the correct service procedure for that model; this software
+   plan does not prescribe one. If a second state is recorded later, preserve
+   it as a separate session rather than overwriting the original captures.
 1. **Chain.**
    - CZ-101 line out into the Digi 003 line input, at the highest rate the
      interface runs, 24-bit.
@@ -434,9 +435,16 @@ parameter maps, and the control rate.
      line alone. This settles whether ring also sets "mute other".
 3. **Analysis.**
    - Render the same notes through the core with the DAC stage bypassed.
-   - The difference from the recording isolates the analog path.
-   - Fit the compander model, the TONE response and the noise floor from it.
+   - Differences from recordings include frontend/envelope timing, clock,
+     reconstruction and analog errors. They do not isolate the analog path.
+   - After reviewing these confounds, fit the compander model, output response
+     and noise separately, using fixed gain and independent holdout captures.
    - Fit the maps from (f)–(h).
+
+   The [recording comparison workflow](../vcv/czish/docs/CALIBRATION.md)
+   prepares the complete MIDI sequences, float references and session metadata,
+   then reports measurements. It does not select a compander law or write fitted
+   parameters. No hardware recordings have yet been used by this project.
 4. **Optional reference.** A dump of the owner's own CZ-101 ROMs, run in MAME
    locally with µPD933 writes logged for each test tone, would show the
    firmware's maps exactly.

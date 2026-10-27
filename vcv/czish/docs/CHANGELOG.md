@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased tooling
+
+- Offline recording sessions: padded MIDI, exact complete note/chord/burst
+  float renders, file/source hashes, chain metadata and fit/holdout assignment.
+- Recording analysis reports peak/RMS/DC/noise, pitch, burst intervals and
+  diagnostic aligned waveform errors. Flags missing/changed inputs, incomplete
+  tails, possible clipping and ambiguous channels. DSP and panel behavior are
+  unchanged; no hardware fitting is claimed.
+
 ## 2.1.0
 
 - CZish: all four line modes, first/second waves, six eight-step envelopes with

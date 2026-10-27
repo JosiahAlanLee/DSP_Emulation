@@ -164,6 +164,9 @@ response and deterministic capture archive. Rack API tests include saved patches
 prototype migration, 16-channel conversion and Register feedback at 44.1/48/96 kHz.
 See [validation and provenance](docs/VALIDATION.md) and the
 [owner capture procedure](tests/hardware/README.md).
+The [recording comparison tools](docs/CALIBRATION.md) prepare padded MIDI,
+full-sequence float references and metadata, then measure returned WAVs without
+changing the provisional DSP settings. Start with three short takes.
 
 Firmware mode, Gorgon sound locks, tone banks, extra chips and a variable chip
 crystal remain the design's deferred extensions. They are not required to play

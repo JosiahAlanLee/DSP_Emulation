@@ -2,6 +2,7 @@
 // Offline audition and owner-recording fixtures. No manufacturer tones/ROMs.
 #include "../src/engine/CzVoice.hpp"
 #include "../src/engine/Sysex.hpp"
+#include "RenderSequence.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -144,6 +145,26 @@ static void captures(const std::filesystem::path &dir) {
     save("original-detuned-chime", chime, {60, 64, 67, 72}, 2, "Original demonstration, not a factory tone");
 }
 int main(int argc, char **argv) {
+    if (argc >= 2 && std::string(argv[1]) == "--events") {
+        try {
+            if (argc != 6 && argc != 7)
+                throw std::runtime_error("Usage: render --events tone.syx schedule.tsv out.wav "
+                                         "native|instant|syllabic [hold|clean]");
+            std::string reconstruction = argc == 7 ? argv[6] : "hold";
+            if (reconstruction != "hold" && reconstruction != "clean")
+                throw std::runtime_error("Reconstruction must be hold or clean");
+            std::ifstream f(argv[2], std::ios::binary);
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
+            cz::Tone tone;
+            std::string error;
+            if (!cz::sysex::decode(bytes, tone, error))
+                throw std::runtime_error(error);
+            return calibration::renderSequence(tone, argv[3], argv[4], argv[5], reconstruction == "clean");
+        } catch (const std::exception &error) {
+            std::cerr << error.what() << '\n';
+            return 1;
+        }
+    }
     if (argc == 3 && std::string(argv[1]) == "--capture") {
         captures(argv[2]);
         return 0;

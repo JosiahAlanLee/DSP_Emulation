@@ -4,6 +4,10 @@ These are **test inputs, not hardware recordings**. No trim procedure or
 calibration has been performed by this project. The analog model and several
 firmware curves remain provisional until a measured comparison exists.
 
+For padded MIDI, full-sequence float reference renders, recording metadata and
+measurement reports, use the [recording comparison workflow](../../docs/CALIBRATION.md).
+It can start with three short takes and leaves DSP settings unchanged.
+
 `cz101-capture-fixtures.zip` contains 98 original single-tone SysEx files,
 matching standard MIDI note clips, and `manifest.tsv`. The unpacked manifest is
 also committed beside it. `tools/render.cpp` authors these settings; none are
