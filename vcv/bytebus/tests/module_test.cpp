@@ -13,6 +13,7 @@
 #include "../src/Counter2.cpp"
 #include "../src/Fan.cpp"
 #include "../src/Lattice.cpp"
+#include "../src/ParallelSum.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -833,10 +834,112 @@ static std::vector<int> latticeChain(float sr, unsigned orderSeed) {
     return states;
 }
 
+// Parallel Sum with real ports: the default B8/XNOR cycle at Engine rate with CV, AUDIO, GATE and
+// lights; W CV, mono and polyphonic; the MASK bus; INJECT; GATE -> INJECT feedback through a
+// cable equal to tapping stage 1; HOT; persistence with bounded restore; Initialize.
+static void parallelSumPorts() {
+    using P = ByteParallelSum; namespace ps = dspemu::parallel_sum;
+    auto a = args();
+    auto press = [&](P& m, int seed) {
+        m.params[P::SEED].setValue(seed); m.params[P::LOAD_BUTTON].setValue(1); m.process(a);
+        m.params[P::LOAD_BUTTON].setValue(0); m.process(a);
+    };
+    P s; s.model = modelParallelSum; connectOutputs(s);
+    assert(s.params.size() == 16 && s.inputs.size() == 5 && s.outputs.size() == 5 && s.lights.size() == 12);
+    s.params[P::SOURCE].setValue(4);                                        // Engine: a step every sample
+    s.process(a); assert(word(s.outputs[P::BUS_OUT]) == 0);
+    uint8_t model = 0;
+    for (int t = 1; t <= 255; ++t) {
+        s.process(a); model = ps::step(model, 0xb8, ps::Sense::Xnor, false);
+        int ones = __builtin_popcount(model);
+        assert(s.outputs[P::BUS_OUT].getChannels() == 8 && word(s.outputs[P::BUS_OUT]) == model);
+        assert(s.outputs[P::CV_OUT].getVoltage() == 1.25f * ones && s.outputs[P::AUDIO_OUT].getVoltage() == 1.25f * (2 * ones - 8));
+        assert(s.outputs[P::GATE_OUT].getVoltage() == (model & 1 ? 10.f : 0.f));
+        for (int k = 0; k < 8; ++k) assert(s.lights[P::STAGE_LIGHT + k].getBrightness() == (model >> k & 1));
+        assert(s.published.load() == (0xb800u | model) && (t == 255) == (model == 0));
+    }
+    // W CV: channel k to stage k + 1, 1 per 5 V, clamped; a mono cable moves stage 1 only.
+    s.params[P::SOURCE].setValue(1); s.inputs[P::CLOCK_IN].channels = 1;   // CLOCK patched, low: no edges
+    press(s, 0x07);
+    s.inputs[P::W_CV_IN].channels = 3;
+    s.inputs[P::W_CV_IN].setVoltage(5, 0); s.inputs[P::W_CV_IN].setVoltage(-5, 1); s.inputs[P::W_CV_IN].setVoltage(-10, 2);
+    s.process(a); assert(s.outputs[P::CV_OUT].getVoltage() == 0 && s.outputs[P::AUDIO_OUT].getVoltage() == -6.25f);
+    s.inputs[P::W_CV_IN].channels = 1; s.inputs[P::W_CV_IN].setVoltage(-5, 0);
+    s.process(a); assert(s.outputs[P::CV_OUT].getVoltage() == 2.5f);
+    s.inputs[P::W_CV_IN].channels = 0;
+    // HOT: 6 V a stage, clipped at 10.5 V.
+    s.params[P::HOT].setValue(1);
+    press(s, 0xff); assert(s.outputs[P::CV_OUT].getVoltage() == 10.5f && s.outputs[P::AUDIO_OUT].getVoltage() == 10.5f);
+    press(s, 0x00); assert(s.outputs[P::CV_OUT].getVoltage() == 0 && s.outputs[P::AUDIO_OUT].getVoltage() == -10.5f);
+    assert(s.lights[P::HOT_LIGHT].getBrightness() == 1);
+    s.params[P::HOT].setValue(0);
+    // The MASK bus replaces the knob: mask 00 under XNOR shifts in ones.
+    s.params[P::SOURCE].setValue(4); putBus(s.inputs[P::MASK_IN], 0x00);
+    for (int t = 0; t < 10; ++t) s.process(a);
+    assert(word(s.outputs[P::BUS_OUT]) == 0xff && (s.published.load() >> 8) == 0);
+    s.inputs[P::MASK_IN].channels = 0;
+    // INJECT through the comparator: MASK 00 under XOR is a delay line for it.
+    s.params[P::MASK].setValue(0); s.params[P::SENSE].setValue(0); s.inputs[P::INJECT_IN].channels = 1;
+    s.inputs[P::INJECT_IN].setVoltage(-5); for (int t = 0; t < 8; ++t) s.process(a);
+    assert(word(s.outputs[P::BUS_OUT]) == 0 && s.lights[P::INJECT_LIGHT].getBrightness() == 0);
+    s.inputs[P::INJECT_IN].setVoltage(5); for (int t = 0; t < 3; ++t) s.process(a);
+    assert(word(s.outputs[P::BUS_OUT]) == 0x07 && s.lights[P::INJECT_LIGHT].getBrightness() == 1);
+    s.inputs[P::INJECT_IN].channels = 0;
+    // GATE -> INJECT through a one-sample cable taps stage 1: B8 behaves as B9.
+    {
+        P g; g.model = modelParallelSum; connectOutputs(g); g.params[P::SOURCE].setValue(4); g.inputs[P::INJECT_IN].channels = 1;
+        uint8_t m = 0;
+        for (int t = 0; t < 600; ++t) {
+            g.inputs[P::INJECT_IN].setVoltage(g.outputs[P::GATE_OUT].getVoltage());
+            g.process(a);
+            if (t > 0) m = ps::step(m, 0xb9, ps::Sense::Xnor, false);
+            assert(word(g.outputs[P::BUS_OUT]) == m);
+        }
+    }
+    // Persistence: params and the word; bounded restore; Initialize.
+    s.params[P::SOURCE].setValue(1); s.params[P::MASK].setValue(0x8e); s.params[P::HOT].setValue(1); s.params[P::WEIGHT + 3].setValue(-.5f);
+    press(s, 0x3c);
+    json_t* j = s.toJson(); P r; r.model = modelParallelSum; connectOutputs(r); r.fromJson(j); json_decref(j);
+    assert(r.params[P::MASK].getValue() == 0x8e && r.params[P::SENSE].getValue() == 0 && r.params[P::HOT].getValue() == 1);
+    assert(r.params[P::WEIGHT + 3].getValue() == -.5f && r.params[P::SOURCE].getValue() == 1);
+    r.inputs[P::CLOCK_IN].channels = 1; r.process(a);
+    assert(word(r.outputs[P::BUS_OUT]) == 0x3c && r.outputs[P::BUS_OUT].getChannels() == 9 && r.outputs[P::CLOCK_OUT].getVoltage() == 10);
+    json_t* bad = json_pack("{s:I}", "word", json_int_t(1000)); r.dataFromJson(bad); json_decref(bad);
+    r.process(a); assert(word(r.outputs[P::BUS_OUT]) == 255);
+    r.onReset(Module::ResetEvent{});
+    assert(r.params[P::MASK].getValue() == 0xb8 && r.params[P::SENSE].getValue() == 1 && r.params[P::HOT].getValue() == 0);
+    for (int k = 0; k < 8; ++k) assert(r.params[P::WEIGHT + k].getValue() == 1);
+    r.process(a); assert(word(r.outputs[P::BUS_OUT]) == 0);
+}
+
+// A Counter (INC 7) into Parallel Sum's MASK bus, which clocks it in Auto: on each strobe the word
+// takes one step under the mask that arrived with it, through one-sample cables in random order.
+static std::vector<int> parallelSumChain(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using P = ByteParallelSum; namespace ps = dspemu::parallel_sum;
+    C c; P s; connectOutputs(c); connectOutputs(s); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(7); c.inputs[C::CLOCK_IN].channels = 1;
+    std::mt19937 order(orderSeed); std::vector<int> words; int previous = -1;
+    for (int t = 0; t < 40 * 200; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 40 == 5 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], s.inputs[P::MASK_IN]);
+        if (order() & 1) { c.process(a); s.process(a); } else { s.process(a); c.process(a); }
+        if (s.outputs[P::CLOCK_OUT].getVoltage() == 10) {
+            int w = word(s.outputs[P::BUS_OUT]), mask = inputWord(s.inputs[P::MASK_IN]);
+            if (previous >= 0) {
+                assert(w == ps::step(uint8_t(previous), uint8_t(mask), ps::Sense::Xnor, false));
+                assert((s.published.load() >> 8) == unsigned(mask));
+            }
+            previous = w; words.push_back(w);
+        }
+    }
+    assert(words.size() >= 199);
+    return words;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -871,6 +974,9 @@ int main() {
     latticePorts();
     auto latticed = latticeChain(48000, 51);
     assert(latticeChain(44100, 52) == latticed && latticeChain(96000, 53) == latticed);
+    parallelSumPorts();
+    auto summed = parallelSumChain(48000, 61);
+    assert(parallelSumChain(44100, 62) == summed && parallelSumChain(96000, 63) == summed);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz\n";
 }

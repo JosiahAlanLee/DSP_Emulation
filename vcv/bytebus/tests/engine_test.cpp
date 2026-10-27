@@ -6,6 +6,8 @@
 #include "../src/engine/Counter2.hpp"
 #include "../src/engine/Fan.hpp"
 #include "../src/engine/Lattice.hpp"
+#include "../src/engine/ParallelSum.hpp"
+#include <set>
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -945,7 +947,168 @@ static void latticing() {
     }
 }
 
+static void parallelSumming() {
+    namespace ps = dspemu::parallel_sum;
+    // The step against a reference written tap by tap, for every word, mask, sense and inject.
+    for (int w = 0; w < 256; ++w) for (int m = 0; m < 256; ++m) for (int x = 0; x < 2; ++x) for (int i = 0; i < 2; ++i) {
+        int bit = x ^ i;
+        for (int k = 0; k < 8; ++k) if (m >> k & 1) bit ^= w >> k & 1;
+        assert(ps::step(uint8_t(w), uint8_t(m), x ? ps::Sense::Xnor : ps::Sense::Xor, i) == ((w << 1 | bit) & 255));
+    }
+    auto period = [](uint8_t mask, ps::Sense sense, uint8_t start) {
+        uint8_t w = start; int n = 0;
+        do { w = ps::step(w, mask, sense, false); ++n; } while (w != start && n < 1000);
+        return w == start ? n : -1;
+    };
+    // The sixteen masks of period 255, and only those; under XNOR their lockup is FF.
+    std::vector<int> maximal;
+    for (int m = 0; m < 256; ++m) if (period(uint8_t(m), ps::Sense::Xor, 1) == 255) maximal.push_back(m);
+    assert((maximal == std::vector<int>{0x8e, 0x95, 0x96, 0xa6, 0xaf, 0xb1, 0xb2, 0xb4, 0xb8, 0xc3, 0xc6, 0xd4, 0xe1, 0xe7, 0xf3, 0xfa}));
+    for (int m : maximal) {
+        assert(ps::step(0, uint8_t(m), ps::Sense::Xor, false) == 0 && ps::step(255, uint8_t(m), ps::Sense::Xnor, false) == 255);
+        assert(period(uint8_t(m), ps::Sense::Xnor, 0) == 255);
+    }
+    // The six-stage hardware: masks within 3F. Period 63 in the low six bits for exactly six masks.
+    std::vector<int> six;
+    for (int m = 1; m < 64; ++m) {
+        uint8_t w = 1; int n = 0;
+        do { w = ps::step(w, uint8_t(m), ps::Sense::Xor, false); ++n; } while ((w & 63) != 1 && n < 200);
+        bool full = n == 63;
+        if (full) { std::set<int> seen; uint8_t v = 1; for (int k = 0; k < 63; ++k) { seen.insert(v & 63); v = ps::step(v, uint8_t(m), ps::Sense::Xor, false); } full = seen.size() == 63; }
+        if (full) six.push_back(m);
+    }
+    assert((six == std::vector<int>{0x21, 0x2d, 0x30, 0x33, 0x36, 0x39}));
+    // Masks tapping stage 7 are invertible: from 01 under XOR, 27 different cycle lengths, 8 to 255.
+    std::set<int> lengths;
+    for (int m = 128; m < 256; ++m) { int n = period(uint8_t(m), ps::Sense::Xor, 1); assert(n > 0); lengths.insert(n); }
+    assert(lengths.size() == 27 && *lengths.begin() == 8 && *lengths.rbegin() == 255);
+    // The hardware's six three-way switches (Q, off, not-Q) and SIGNAL, against MASK and SENSE:
+    // for every setting and start, the first six bits match for 100 random edges.
+    {
+        std::mt19937 r(17);
+        for (int setting = 0; setting < 729; ++setting) {
+            int sw[6], m = 0, inverted = 0;
+            for (int k = 0, c = setting; k < 6; ++k, c /= 3) { sw[k] = c % 3; if (sw[k]) m |= 1 << k; inverted += sw[k] == 2; }
+            ps::Sense sense = inverted % 2 ? ps::Sense::Xnor : ps::Sense::Xor;
+            for (int start = 0; start < 64; start += 7) {
+                int hw = start; uint8_t w = uint8_t(start);
+                for (int n = 0; n < 100; ++n) {
+                    int signal = r() & 1, d = signal;
+                    for (int k = 0; k < 6; ++k) if (sw[k]) d ^= (hw >> k & 1) ^ (sw[k] == 2);
+                    hw = (hw << 1 | d) & 63;
+                    w = ps::step(w, uint8_t(m), sense, signal);
+                    assert((w & 63) == hw);
+                }
+            }
+        }
+    }
+    // Weights: the detent, W CV at 5 V per unit, clamped.
+    assert(ps::weight(.01f, 0) == 0 && ps::weight(-.019f, 0) == 0 && ps::weight(.5f, 0) == .5f);
+    assert(ps::weight(.5f, 2.5f) == 1 && ps::weight(.5f, 10) == 1 && ps::weight(-.5f, -10) == -1 && ps::weight(0, -2.5f) == -.5f);
+    assert(ps::weight(NAN, 1) == .2f && ps::weight(1, INFINITY) == 1);
+    // CV and AUDIO are the weighted sums of the register's serial stream: direct convolution,
+    // at Engine rate, random weights and W CV, random INJECT.
+    {
+        ps::ParallelSum s; s.clear(); ps::Parameters p; p.mode = ClockMode::Engine; p.mask = 0x96; p.sense = ps::Sense::Xor;
+        ps::Inputs in; in.injectConnected = true;
+        std::mt19937 r(3); std::uniform_real_distribution<float> u(-1, 1);
+        std::vector<int> stream(8, 0);
+        s.tick(p, in, 48000);
+        for (int n = 0; n < 4000; ++n) {
+            for (int k = 0; k < 8; ++k) { p.weights[k] = u(r); in.weightCv[k] = 3 * u(r); }
+            bool inject = r() & 1; in.inject = inject ? 5.f : -5.f;
+            uint8_t before = s.word;
+            auto o = s.tick(p, in, 48000);
+            assert(o.advanced && o.word == ps::step(before, 0x96, ps::Sense::Xor, inject) && o.inject == inject);
+            stream.push_back(o.word & 1);
+            double cv = 0, audio = 0;
+            for (int k = 0; k < 8; ++k) {
+                double w = ps::weight(p.weights[k], in.weightCv[k]);
+                int x = stream[stream.size() - 1 - k];
+                cv += w * x; audio += w * (2 * x - 1);
+            }
+            assert(std::abs(o.cv - 1.25 * cv) < 1e-4 && std::abs(o.audio - 1.25 * audio) < 1e-4 && o.gate == (o.word & 1));
+        }
+    }
+    // Levels: all eight at +1 is 10 V on CV and +/-10 V on AUDIO; HOT is 6 V a stage, clipped.
+    {
+        ps::ParallelSum s; ps::Parameters p; p.mode = ClockMode::Jack; ps::Inputs in; in.clock.clockConnected = true;
+        for (int w : {0x00, 0xff, 0x0f, 0x01}) {
+            for (bool hot : {false, true}) {
+                s.clear(uint8_t(w)); p.hot = hot; auto o = s.tick(p, in, 48000);
+                int ones = __builtin_popcount(unsigned(w));
+                float v = hot ? 6.f : 1.25f;
+                float cv = std::min(hot ? 10.5f : 99.f, v * ones), audio = std::max(hot ? -10.5f : -99.f, std::min(hot ? 10.5f : 99.f, v * (2 * ones - 8)));
+                assert(o.word == w && std::abs(o.cv - cv) < 1e-5 && std::abs(o.audio - audio) < 1e-5);
+            }
+        }
+        p.hot = false; p.weights = {1, -1, 1, -1, 1, -1, 1, -1}; s.clear(0x55);
+        auto o = s.tick(p, in, 48000); assert(o.cv == 5 && o.audio == 10);
+    }
+    // INJECT's comparator: threshold and hysteresis; MASK 00 is a delay line for the injected bits,
+    // inverted under XNOR; unpatched, nothing is injected.
+    {
+        ps::Comparator c;
+        assert(!c.process(1.2f, 1.2f) && !c.process(1.24f, 1.2f) && c.process(1.26f, 1.2f) && c.process(1.16f, 1.2f) && !c.process(1.14f, 1.2f));
+        assert(c.process(-4.9f, -5) && !c.process(-5.06f, -5) && c.process(5.06f, 9) && !c.process(4.94f, 9));   // clamped to +/-5 V
+        ps::ParallelSum s; s.clear(); ps::Parameters p; p.mode = ClockMode::Engine; p.mask = 0; ps::Inputs in; in.injectConnected = true;
+        s.tick(p, in, 48000);
+        const int bits[] = {1, 0, 1, 1, 0, 0, 0, 1, 1, 1};
+        for (ps::Sense sense : {ps::Sense::Xor, ps::Sense::Xnor}) {
+            p.sense = sense; uint8_t expect = s.word;
+            for (int b : bits) {
+                in.inject = b ? 3.f : 0.f; auto o = s.tick(p, in, 48000);
+                expect = uint8_t(expect << 1 | (b ^ (sense == ps::Sense::Xnor)));
+                assert(o.word == expect);
+            }
+        }
+        in.injectConnected = false; in.inject = 10; p.sense = ps::Sense::Xor;
+        for (int k = 0; k < 8; ++k) s.tick(p, in, 48000);
+        assert(s.word == 0);
+    }
+    // The MASK bus: its data lines sampled on this module's edge, its CLK the Bus source in Auto.
+    {
+        ps::ParallelSum s; s.clear(); ps::Parameters p; p.sense = ps::Sense::Xor; p.mask = 0xff; ps::Inputs in;
+        in.clock.data.connected = true; in.clock.data.clocked = true; in.clock.data.rawWord = 0x00;
+        p.seed = 0x80; in.clock.reset = 10; s.tick(p, in, 48000); in.clock.reset = 0; s.tick(p, in, 48000);
+        in.clock.data.rawWord = 0x80; auto o = s.tick(p, in, 48000); assert(!o.advanced && o.mask == 0xb8);
+        in.clock.data.rising = true; in.clock.data.clk = true; o = s.tick(p, in, 48000);
+        assert(o.advanced && o.mask == 0x80 && o.word == 0x01 && o.clk);
+        in.clock.data.rising = false; in.clock.data.rawWord = 0x00; o = s.tick(p, in, 48000);
+        assert(!o.advanced && o.mask == 0x80 && !o.clk);
+        in.clock.data.connected = false; in.clock.data.clocked = false; o = s.tick(p, in, 48000);
+        assert(o.mask == 0xff);
+    }
+    // RESET loads SEED and publishes it; strobes are one sample with a low sample between, RESET
+    // wins over a simultaneous edge, and the published words replay the reference under random
+    // clocks, resets and masks.
+    {
+        ps::ParallelSum s; s.clear(); ps::Parameters p; p.mode = ClockMode::Jack; p.seed = 0x5a; ps::Inputs in;
+        in.clock.clockConnected = true; std::mt19937 r(9); bool last = false; uint8_t model = 0; bool clockHigh = false, resetHigh = false;
+        int strobes = 0;
+        for (int t = 0; t < 60000; ++t) {
+            in.clock.clock = r() % 3 ? 0.f : 10.f; in.clock.reset = r() % 400 ? 0.f : 10.f;
+            if (r() % 500 == 0) p.mask = uint8_t(r());
+            bool clockRise = in.clock.clock > 1 && !clockHigh, resetRise = in.clock.reset > 1 && !resetHigh;
+            clockHigh = in.clock.clock > 1; resetHigh = in.clock.reset > 1;
+            auto o = s.tick(p, in, 48000);
+            assert(!(last && o.clk)); last = o.clk; strobes += o.clk;
+            if (resetRise) { model = 0x5a; assert(!o.advanced); }
+            if (o.advanced) { assert(clockRise); model = ps::step(model, p.mask, p.sense, false); }
+            assert(o.word == model);
+        }
+        assert(strobes > 5000);
+    }
+    // The internal clock at 44.1/48/96 kHz.
+    for (double sr : {44100., 48000., 96000.}) {
+        ps::ParallelSum s; s.clear(); ps::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 100; ps::Inputs in;
+        int edges = 0;
+        for (int t = 0; t < int(sr); ++t) edges += s.tick(p, in, sr).advanced;
+        assert(edges >= 99 && edges <= 100);
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks\n";
 }
