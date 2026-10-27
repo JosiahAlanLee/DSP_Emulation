@@ -33,7 +33,7 @@ struct OtisKit : Module {
     std::array<otis::kit::Region, SLOTS> voiceTake{}; // the take each voice started on
     std::array<double, SLOTS> voiceOctaves{};
     otis::kit::CaptureRequest captureBuffers[2]; // owned here; Otis Capture on the right writes them
-    bool captureWanted = false, noRoom = false, lastTruncated = false;
+    bool captureWanted = false, captureBlocked = false, noRoom = false, lastTruncated = false;
     int lastSlot = -1, roomCountdown = 0; int32_t lastFrames = 0, room = 0; uint32_t takes = 0;
     // UI thread: what syncTakes() last copied.
     uint32_t syncedSerial = ~0u; std::array<otis::kit::Region, SLOTS> syncedTake{}; int takeNumber = 0;
@@ -89,6 +89,7 @@ struct OtisKit : Module {
         std::lock_guard<std::mutex> guard(engineMutex);
         engine.install(image, otis::kit::BANK_RATE, otis::memoryWords, false);   // all memory addressable
         bank.reset(packed); voiceTake = {}; captureWanted = false;
+        captureBlocked = true;                  // discard the rest of any request spanning this install
         exchange.publish(bank.map);
         syncedSerial = bank.map.serial; syncedTake = bank.map.take;
         layout = packed;
@@ -167,7 +168,8 @@ struct OtisKit : Module {
         auto* request = linked ? static_cast<const otis::kit::CaptureRequest*>(rightExpander.consumerMessage) : nullptr;
         if (request && request->magic != otis::kit::CaptureRequest::MAGIC) request = nullptr;
         bool wanted = request && request->recording;
-        if (wanted && !captureWanted) {
+        if (!wanted) captureBlocked = false;
+        if (wanted && !captureWanted && !captureBlocked) {
             std::array<otis::kit::Region, SLOTS> pins;
             noRoom = !bank.start(otis::clamp(request->slot, 0, SLOTS - 1), args.sampleRate, exchange.pins(pins) ? &pins : nullptr);
         }

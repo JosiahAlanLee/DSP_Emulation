@@ -1,5 +1,13 @@
 # OTIS change history
 
+## 2.11.1
+
+- Loading or compacting Otis Kit during a take now discards the take without
+  recording its remaining tail. Capture's REC and DONE keep their timing.
+- Capture latches whether a take starts with CLOCK. Removing CLOCK during a
+  clocked take falls back to the TEMPO duration measured from its start;
+  patching CLOCK during an unclocked take does not change its timing.
+
 ## 2.11.0
 
 - New module, **Otis Capture** (8 HP), Otis Kit's capture companion: placed

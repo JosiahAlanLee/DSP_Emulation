@@ -37,7 +37,7 @@ static void frame(OtisKit& k,OtisCapture* c,const Module::ProcessArgs& a,bool ca
 static void hit(OtisKit& k,int slot,bool high) { k.inputs[OtisKit::GATE_IN].setVoltage(high ? 10.f : 0.f,slot); }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.0"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.1"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Without a kit on the left, Capture says so and never records.
@@ -148,6 +148,73 @@ int main() {
         // Takes are named as they are copied out; the first was replaced before anything copied it.
         assert(k->slots[2].pcm.size()==999 && k->slots[2].name=="Capture take 1" && k->exchange.read().take[2].size()==999);
     }
+    // Installing a bank cancels the whole request, not just its recorded prefix. Check both
+    // compaction and WAV loading, in either module processing order, then record a fresh take.
+    for(bool captureFirst:{true,false}) for(bool load:{false,true}) {
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::LENGTH].setValue(0); // 1/4 beat at 120 BPM = 6000 samples
+        c->inputs[OtisCapture::AUDIO_IN].channels=1;
+        c->inputs[OtisCapture::AUDIO_IN].setVoltage(2.5f);
+        frame(*k,c.get(),a,captureFirst);
+        int recorded=0, dones=0; bool doneHigh=false;
+        otis::kit::BankMap installed;
+        for(int t=0;t<6005;++t) {
+            c->params[OtisCapture::ARM_BUTTON].setValue(t==0 ? 1.f : 0.f);
+            if(t==1000) {
+                assert(k->bank.active() && k->bank.recording.size()>0);
+                if(load) k->loadSlot(0,"examples/bright-demo.wav"); else k->install(true);
+                installed=k->exchange.read();
+                assert(!k->bank.active());
+            }
+            frame(*k,c.get(),a,captureFirst);
+            bool rec=c->outputs[OtisCapture::REC_OUT].getVoltage()>5;
+            bool d=c->outputs[OtisCapture::DONE_OUT].getVoltage()>5;
+            assert(rec==(t<6000)); assert(d==(t>=6000));
+            recorded+=rec; dones+=d && !doneHigh; doneHigh=d;
+            if(t>=1000) {
+                assert(!k->bank.active());
+                assert(k->exchange.read().serial==installed.serial && k->exchange.read().take==installed.take);
+            }
+        }
+        assert(recorded==6000 && dones==1 && k->takes==0);
+        c->params[OtisCapture::SLOT].setValue(7);
+        for(int t=0;t<6005;++t) {
+            c->params[OtisCapture::ARM_BUTTON].setValue(t==0 ? 1.f : 0.f);
+            frame(*k,c.get(),a,captureFirst);
+        }
+        auto take=k->exchange.read().take[7];
+        assert(k->takes==1 && take.size()==6000);
+        for(int i=take.begin;i<take.end;++i) assert(k->engine.sample.pcm[size_t(i)]==otis::quantize(.5f));
+    }
+    // Clock mode is chosen at start. Tempo fallback always measures from that start, while
+    // a clock kept patched can run past the fallback deadline and still end on its pulse.
+    for(bool captureFirst:{true,false}) for(int scenario=0;scenario<4;++scenario) {
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::LENGTH].setValue(0); // 6000 samples or one clock pulse
+        c->inputs[OtisCapture::AUDIO_IN].channels=1;
+        c->inputs[OtisCapture::AUDIO_IN].setVoltage(2.5f);
+        bool startsClocked=scenario!=2;
+        c->inputs[OtisCapture::CLOCK_IN].channels=startsClocked ? 1 : 0;
+        frame(*k,c.get(),a,captureFirst); // establish low clock before the start edge
+        int end=scenario==1 ? 7000 : scenario==3 ? 8000 : 6000;
+        int recorded=0, dones=0; bool doneHigh=false;
+        for(int t=0;t<end+5;++t) {
+            c->params[OtisCapture::ARM_BUTTON].setValue(t==0 ? 1.f : 0.f);
+            if((scenario==0 && t==2000) || (scenario==1 && t==7000))
+                c->inputs[OtisCapture::CLOCK_IN].channels=0;
+            if(scenario==2 && t==2000) c->inputs[OtisCapture::CLOCK_IN].channels=1;
+            bool pulse=t==0 || (scenario==2 && t>=2000 && t%100==0) || (scenario==3 && t==8000);
+            c->inputs[OtisCapture::CLOCK_IN].setVoltage(pulse ? 10.f : 0.f);
+            frame(*k,c.get(),a,captureFirst);
+            bool rec=c->outputs[OtisCapture::REC_OUT].getVoltage()>5;
+            bool d=c->outputs[OtisCapture::DONE_OUT].getVoltage()>5;
+            assert(rec==(t<end)); assert(d==(t>=end));
+            recorded+=rec; dones+=d && !doneHigh; doneHigh=d;
+        }
+        auto take=k->exchange.read().take[0];
+        assert(recorded==end && dones==1 && k->takes==1 && take.size()==end);
+        for(int i=take.begin;i<take.end;++i) assert(k->engine.sample.pcm[size_t(i)]==otis::quantize(.5f));
+    }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction\n";
+    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback\n";
 }
