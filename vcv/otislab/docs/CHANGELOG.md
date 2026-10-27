@@ -1,5 +1,16 @@
 # OTIS change history
 
+## 2.11.0
+
+- New module, **Otis Capture** (8 HP), Otis Kit's capture companion: placed
+  directly right of the kit, it records IN, the kit's own output, or both, for
+  1/4 to 32 beats of its CLOCK (or of TEMPO), into a chosen slot. The take is
+  written straight into free kit memory at Rack's sample rate and replaces the
+  slot only when complete; a hit already sounding keeps the take it started
+  with. See [CAPTURE.md](CAPTURE.md).
+- Otis Kit saves takes like any slot, copying them out without stopping the
+  audio thread, and gains **Compact the bank** in its menu.
+
 ## 2.10.0
 
 - New module, **Otis Kit** (18 HP): a bank of eight mono sample slots packed

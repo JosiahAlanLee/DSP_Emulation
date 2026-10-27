@@ -4,3 +4,4 @@ using namespace rack;
 extern Plugin* pluginInstance;
 extern Model* modelOtisSampler;
 extern Model* modelOtisKit;
+extern Model* modelOtisCapture;

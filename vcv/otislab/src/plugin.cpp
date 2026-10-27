@@ -4,4 +4,5 @@ void init(Plugin* p) {
     pluginInstance=p;
     p->addModel(modelOtisSampler);
     p->addModel(modelOtisKit);
+    p->addModel(modelOtisCapture);
 }

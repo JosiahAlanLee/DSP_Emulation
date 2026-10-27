@@ -1,7 +1,7 @@
 {
   "slug": "OtisLab",
   "name": "OtisLab",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "license": "BSD-3-Clause",
   "brand": "OtisLab",
   "author": "OtisLab contributors",
@@ -24,6 +24,16 @@
         "Sampler",
         "Drum",
         "Polyphonic"
+      ]
+    },
+    {
+      "slug": "OtisCapture",
+      "name": "Otis Capture",
+      "description": "Records takes of a set number of beats, from an input or the kit's own output, into a slot of the Otis Kit on its left; a new take replaces the slot only when complete.",
+      "tags": [
+        "Sampler",
+        "Recording",
+        "Clock modifier"
       ]
     }
   ]

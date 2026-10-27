@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Otis Kit's outlined panel, its layout header and a component preview."""
+"""Generate the outlined panels of Otis Kit and Otis Capture, their layout header and component previews."""
 from pathlib import Path
 import argparse
 import sys
@@ -35,14 +35,40 @@ def kit(font):
     return p
 
 
+def capture(font):
+    p = Panel(120, font)
+    p.title('Capture', 'TAKES INTO OTIS KIT', 8, 15, 100)
+    p.component('STATUS', 'readout', 10, 54, 100, 34, 'NO KIT')
+    for name, y, label, preview in [('SLOT', 104, 'SLOT', 'SLOT 1'), ('LENGTH', 142, 'LENGTH', '4 BEATS'), ('SOURCE', 180, 'SOURCE', 'IN')]:
+        p.text(label, 60, y - 4, 6.5, ACCENT)
+        p.component(name, 'selector', 10, y, 100, 18, preview)
+    for name, x, label in [('GAIN', 24, 'GAIN'), ('TEMPO', 62, 'TEMPO')]:
+        p.component(name, 'knob', x, 224)
+        p.text(label, x, 252, 7)
+    p.text('NO CLOCK', 62, 261, 5.5, DIM)
+    p.component('ARM', 'button', 98, 224)
+    p.component('ARM_LIGHT', 'light', 98, 208)
+    p.text('ARM', 98, 252, 7)
+    p.rule(268)
+    for name, x, label in [('AUDIO_IN', 22, 'IN'), ('CLOCK_IN', 60, 'CLOCK'), ('ARM_IN', 98, 'ARM')]:
+        p.jack(name, x, 296, label)
+    p.block(10, 314, 100, 50)
+    for name, x, label in [('REC_OUT', 38, 'REC'), ('DONE_OUT', 82, 'DONE')]:
+        p.jack(name, x, 342, label, True)
+    p.component('REC_LIGHT', 'light', 38, 359)
+    p.text('RIGHT OF OTIS KIT', 60, 376, 5.5, DIM)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
     args = parser.parse_args()
-    panel = kit(args.font)
-    panel.write(ROOT, 'OtisKit')
-    write_layout(ROOT / 'src/KitLayout.hpp', 'otis_kit_layout', {'kit': panel})
-    print('Wrote Otis Kit panel, preview and src/KitLayout.hpp')
+    panels = {'kit': kit(args.font), 'capture': capture(args.font)}
+    panels['kit'].write(ROOT, 'OtisKit')
+    panels['capture'].write(ROOT, 'OtisCapture')
+    write_layout(ROOT / 'src/KitLayout.hpp', 'otis_kit_layout', panels)
+    print('Wrote the Otis Kit and Otis Capture panels, previews and src/KitLayout.hpp')
 
 
 if __name__ == '__main__':
