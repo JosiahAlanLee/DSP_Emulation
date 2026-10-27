@@ -44,7 +44,7 @@ Status: new, built and tested in CI (engine and module tests), and loaded and ru
 
 - **[ByteBusLab](vcv/bytebus)**: Clocked Register supplies state; Counter counts, as a divider chain or an address; Switch selects, merges or crossfades two words under a third; Lookup supplies original waveform, CV, Walsh and rhythm transforms, plus Vastish table import. Built separately; outside the release bundles.
 - **Gorgon**, the Rack bridge to the Gorgon tracker in [HydraPy](https://github.com/JosiahAlanLee/hydrapy) Studio, was developed here as `vcv/gorgon` and now lives in [its own repository](https://github.com/JosiahAlanLee/Gorgon) with its history, alongside the contract it implements. Its gates and pitch were built to drive OTIS and Vastish.
-- **Specs, not built yet**: a [CZ-101 voice](docs/CZ_VOICE_SPEC.md) on MAME's µPD933 core, and a [DAC stage](docs/DAC_STAGE_SPEC.md) for period converter character (Yamaha floating-point, CZ companding, linear).
+- **[CZishLab](vcv/czish)**: early Rack experiments with an eight-voice CZ-inspired µPD933 synth and Yamaha, provisional CZ and linear DAC stages, including encoded-word ByteBus I/O. The [CZ voice](docs/CZ_VOICE_SPEC.md) and [DAC stage](docs/DAC_STAGE_SPEC.md) specifications remain drafts.
 - [`pd/vastish`](pd/vastish): the original Vastish, a VAST-style eight-voice synth in vanilla Pure Data (0.52+).
 - [Development guide](docs/DEVELOPMENT.md): building from source, the Rack SDK, tests and how the engines are validated.
 - [Panel guide and current GUI images](docs/PANELS.md): panel conventions, control layouts and artwork regeneration.

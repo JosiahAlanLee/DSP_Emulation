@@ -1,0 +1,96 @@
+name: CZishLab Rack platforms
+on:
+  push:
+    branches: [main]
+    paths: ['vcv/czish/**', 'vcv/shared/DacStage.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', 'vcv/bytebus/src/Register.cpp', 'vcv/bytebus/src/engine/Register.hpp', 'vcv/bytebus/src/engine/ClockOwner.hpp', '.github/workflows/czish.yml']
+  pull_request:
+    paths: ['vcv/czish/**', 'vcv/shared/DacStage.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', 'vcv/bytebus/src/Register.cpp', 'vcv/bytebus/src/engine/Register.hpp', 'vcv/bytebus/src/engine/ClockOwner.hpp', '.github/workflows/czish.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  RACK_SDK_VERSION: 2.6.4
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools and Rack runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ make jq zstd libjack-jackd2-0 libpulse0
+      - name: Fetch Rack SDK
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-lin-x64.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Build and test the core, real modules and ByteBus feedback
+        run: |
+          make -C vcv/czish -j2 RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/czish/tests check RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/czish/tests sanitize RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/czish dist RACK_DIR=/tmp/Rack-SDK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CZishLab-lin-x64
+          path: vcv/czish/dist/*.vcvplugin
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make unzip jq
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-python mingw-w64-x86_64-zstd
+      - name: Fetch Rack SDK
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-win-x64.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Test the portable core and package the plugin
+        run: |
+          make -C vcv/czish/tests test
+          make -C vcv/czish -j2 RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/czish dist RACK_DIR=/tmp/Rack-SDK
+          if objdump -p vcv/czish/plugin.dll | grep -Ei 'DLL Name: (libstdc|libgcc|libwinpthread)'; then
+            echo '::error::plugin.dll depends on a MinGW runtime DLL'
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CZishLab-win-x64
+          path: vcv/czish/dist/*.vcvplugin
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, cpu: arm64, arch: mac-arm64 }
+          - { runner: macos-15-intel, cpu: x86_64, arch: mac-x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging tools
+        run: brew install zstd jq
+      - name: Fetch matching Rack SDK
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+      - name: Test the portable core and package the plugin
+        run: |
+          make -C vcv/czish/tests test CXX=clang++
+          make -C vcv/czish -j3 RACK_DIR=/tmp/Rack-SDK
+          make -C vcv/czish dist RACK_DIR=/tmp/Rack-SDK
+          test "$(lipo -archs vcv/czish/plugin.dylib)" = '${{ matrix.cpu }}'
+          codesign --verify --strict vcv/czish/dist/CZishLab/plugin.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CZishLab-${{ matrix.arch }}
+          path: vcv/czish/dist/*.vcvplugin
+          if-no-files-found: error

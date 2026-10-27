@@ -1,0 +1,9 @@
+/build/
+/dist/
+/plugin.so
+/plugin.dylib
+/plugin.dll
+/tests/core_test
+/tests/module_test
+/tests/*_asan
+/tests/mame_ref_generated.hpp

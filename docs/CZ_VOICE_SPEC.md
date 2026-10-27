@@ -1,6 +1,11 @@
 # CZ voice: µPD933 phase distortion for Rack, spec v0.1
 
-Status: **draft, not built** (2026-10-27). Working names: plugin **CZishLab**,
+Status: **draft contract; early implementation started.** [CZishLab](../vcv/czish)
+has an eight-voice, single-line front end and the µPD933 sound path; the complete
+firmware-free CZ-101 front end and hardware-fitted DAC described below remain
+open.
+
+Working names: plugin **CZishLab**,
 module **CZish**, continuing the -ish names of Vastish and ESPish (now Spoon
 Bender). Names and slugs are the owner's to change.
 
