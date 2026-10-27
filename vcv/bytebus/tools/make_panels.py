@@ -429,6 +429,44 @@ def wheel(font):
     return p
 
 
+def roulette(font):
+    p = Panel(210, font)
+    p.title('Roulette', 'PLL / 12-BIT DIVIDER / SPIN AND COAST', 6)
+    p.component('FREQUENCY', 'readout', 12, 56, 90, 24, 'REST')
+    p.text('VCO HZ', 57, 92, 7)
+    p.component('SOURCE', 'selector', 110, 57, 88, 22, 'AUTO')
+    p.text('SOURCE', 154, 92, 7)
+    for k in range(12):
+        p.component(f'BIT{k}_LIGHT', 'light', 22 + 15 * k, 104)
+    p.text('/2', 22, 117, 6, DIM)
+    p.text('BITS', 105, 117, 6, DIM)
+    p.text('/4096', 187, 117, 6, DIM)
+    p.component('COMPARATOR', 'selector', 12, 126, 88, 22, 'XOR')
+    p.text('COMPARATOR', 56, 160, 7)
+    p.component('SCALE', 'selector', 110, 126, 88, 22, 'X1')
+    p.text('SCALE', 154, 160, 7)
+    p.component('RANGE', 'knob', 55, 190)
+    p.text('RANGE', 55, 220, 7)
+    p.text('VCO MAX HZ', 55, 229, 6, DIM)
+    p.component('FILTER', 'knob', 155, 190)
+    p.text('FILTER', 155, 220, 7)
+    p.text('FRICTION', 155, 229, 6, DIM)
+    p.rule(238)
+    for name, x, label in [('TRACK_IN', 27, 'TRACK'), ('ROULETTE_IN', 66, 'ROULETTE'), ('DIVIDE_IN', 105, 'DIVIDE'),
+                           ('RANGE_CV_IN', 144, 'RANGE CV'), ('RESET_IN', 183, 'RESET')]:
+        p.component(name, 'input', x, 264)
+        p.text(label, x, 246, 6.5)
+    p.block(12, 284, 186, 90)
+    for name, x, label in [('LO_OUT', 35, 'LO BUS'), ('HI_OUT', 81.5, 'HI BUS'), ('RESULT_OUT', 128, 'RESULT'), ('VCO_OUT', 174.5, 'VCO')]:
+        p.jack(name, x, 312, label, True)
+    p.component('RESULT_LIGHT', 'light', 146, 300)
+    p.jack('CLOCK_OUT', 35, 356, 'CLK OUT', True)
+    p.component('CLOCK_LIGHT', 'light', 53, 344)
+    p.text('LO: /2 ... /256', 128, 352, 6, DIM)
+    p.text('HI: /32 ... /4096', 128, 362, 6, DIM)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
@@ -437,14 +475,15 @@ def main():
               'counter': counter(args.font), 'byte_switch': byte_switch(args.font),
               'pipeline': pipeline(args.font), 'lookup2': lookup2(args.font),
               'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font),
-              'parallel_sum': parallel_sum(args.font), 'wheel': wheel(args.font)}
+              'parallel_sum': parallel_sum(args.font), 'wheel': wheel(args.font),
+              'roulette': roulette(args.font)}
     for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
                            ('byte_switch', 'Switch'), ('pipeline', 'Pipeline'),
                            ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice'),
-                           ('parallel_sum', 'ParallelSum'), ('wheel', 'Wheel')]:
+                           ('parallel_sum', 'ParallelSum'), ('wheel', 'Wheel'), ('roulette', 'Roulette')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote twelve ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote thirteen ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':

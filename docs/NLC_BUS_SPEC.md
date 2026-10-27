@@ -359,6 +359,10 @@ HOT's curve. The owner has no Burhans Timbre, so that stays as computed.
 
 ## 6. Roulette (from Wangernumb)
 
+Implemented in ByteBusLab 2.16; the contract is [ROULETTE.md](../vcv/bytebus/docs/ROULETTE.md),
+which supersedes §6.2–6.3 where they differ. §6.1 and §6.4 remain the record of
+the sources.
+
 ### 6.1 What the sources establish
 
 - **Documented (W1, W2, W5 text).** Track makes the PLL a frequency tracker

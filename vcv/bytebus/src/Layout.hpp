@@ -425,4 +425,42 @@ constexpr float LOOP_GATE_OUT_X = 81.5, LOOP_GATE_OUT_Y = 350;
 constexpr float NOISE_GATE_OUT_X = 128, NOISE_GATE_OUT_Y = 350;
 } // namespace wheel
 
+namespace roulette {
+constexpr float WIDTH = 210;
+constexpr float FREQUENCY_X = 12, FREQUENCY_Y = 56;
+constexpr float FREQUENCY_W = 90, FREQUENCY_H = 24;
+constexpr float SOURCE_X = 110, SOURCE_Y = 57;
+constexpr float SOURCE_W = 88, SOURCE_H = 22;
+constexpr float BIT0_LIGHT_X = 22, BIT0_LIGHT_Y = 104;
+constexpr float BIT1_LIGHT_X = 37, BIT1_LIGHT_Y = 104;
+constexpr float BIT2_LIGHT_X = 52, BIT2_LIGHT_Y = 104;
+constexpr float BIT3_LIGHT_X = 67, BIT3_LIGHT_Y = 104;
+constexpr float BIT4_LIGHT_X = 82, BIT4_LIGHT_Y = 104;
+constexpr float BIT5_LIGHT_X = 97, BIT5_LIGHT_Y = 104;
+constexpr float BIT6_LIGHT_X = 112, BIT6_LIGHT_Y = 104;
+constexpr float BIT7_LIGHT_X = 127, BIT7_LIGHT_Y = 104;
+constexpr float BIT8_LIGHT_X = 142, BIT8_LIGHT_Y = 104;
+constexpr float BIT9_LIGHT_X = 157, BIT9_LIGHT_Y = 104;
+constexpr float BIT10_LIGHT_X = 172, BIT10_LIGHT_Y = 104;
+constexpr float BIT11_LIGHT_X = 187, BIT11_LIGHT_Y = 104;
+constexpr float COMPARATOR_X = 12, COMPARATOR_Y = 126;
+constexpr float COMPARATOR_W = 88, COMPARATOR_H = 22;
+constexpr float SCALE_X = 110, SCALE_Y = 126;
+constexpr float SCALE_W = 88, SCALE_H = 22;
+constexpr float RANGE_X = 55, RANGE_Y = 190;
+constexpr float FILTER_X = 155, FILTER_Y = 190;
+constexpr float TRACK_IN_X = 27, TRACK_IN_Y = 264;
+constexpr float ROULETTE_IN_X = 66, ROULETTE_IN_Y = 264;
+constexpr float DIVIDE_IN_X = 105, DIVIDE_IN_Y = 264;
+constexpr float RANGE_CV_IN_X = 144, RANGE_CV_IN_Y = 264;
+constexpr float RESET_IN_X = 183, RESET_IN_Y = 264;
+constexpr float LO_OUT_X = 35, LO_OUT_Y = 312;
+constexpr float HI_OUT_X = 81.5, HI_OUT_Y = 312;
+constexpr float RESULT_OUT_X = 128, RESULT_OUT_Y = 312;
+constexpr float VCO_OUT_X = 174.5, VCO_OUT_Y = 312;
+constexpr float RESULT_LIGHT_X = 146, RESULT_LIGHT_Y = 300;
+constexpr float CLOCK_OUT_X = 35, CLOCK_OUT_Y = 356;
+constexpr float CLOCK_LIGHT_X = 53, CLOCK_LIGHT_Y = 344;
+} // namespace roulette
+
 } // namespace bytebus_layout

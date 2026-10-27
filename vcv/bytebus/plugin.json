@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -78,6 +78,12 @@
       "name": "Wheel",
       "description": "A 24-stage noise register that visits every state once, and a loop register of 1-24 steps that captures from it on demand, read through a window as two byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo.",
       "tags": ["Random", "Noise", "Sample and hold", "Sequencer", "Polyphonic"]
+    },
+    {
+      "slug": "Roulette",
+      "name": "Roulette",
+      "description": "A phase-locked loop and a 12-bit divider on byte buses: a gate spins the VCO up and the loop filter lets it coast to rest, publishing the count at rest; or it tracks an input, or divides a clock. After the Nonlinearcircuits Wangernumb.",
+      "tags": ["Clock modifier", "Random", "Oscillator", "Logic", "Polyphonic"]
     }
   ]
 }
