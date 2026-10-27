@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Otis Kit (docs/KIT.md): a bank of eight sample slots on OTIS's ES5505 playback arithmetic. Slot s
 // plays on chip voice s over its own region of one sample memory; a hit chooses the slot from SLOT's
-// bits 0-2, or from its GATE channel when SLOT is unpatched. Playback only; capture comes later.
+// bits 0-2, or from its GATE channel when SLOT is unpatched. Otis Capture directly to the right
+// records takes into free memory (docs/CAPTURE.md).
 #include "plugin.hpp"
 #include "engine/Kit.hpp"
+#include "CaptureLink.hpp"
 #include "KitLayout.hpp"
 #include "../../shared/SampleFile.hpp"
 #include "../../shared/ByteBus.hpp"
@@ -23,8 +25,18 @@ struct OtisKit : Module {
 
     otis::Engine engine;
     std::mutex engineMutex;                      // UI-thread installs; the audio thread only try-locks
-    otis::kit::Layout layout;                    // guarded by engineMutex
-    std::array<otis::kit::Slot, SLOTS> slots;    // UI thread: the bank's source audio
+    otis::kit::Layout layout;                    // UI thread: the last packing, for its truncation flags
+    std::array<otis::kit::Slot, SLOTS> slots;    // UI thread: the bank's audio, brought up to date by syncTakes()
+    // Audio thread (and installs, under engineMutex): the bank's takes and the one being recorded.
+    otis::kit::Bank bank;
+    otis::kit::Exchange exchange;                // takes, from the audio thread to saves
+    std::array<otis::kit::Region, SLOTS> voiceTake{}; // the take each voice started on
+    std::array<double, SLOTS> voiceOctaves{};
+    otis::kit::CaptureRequest captureBuffers[2]; // owned here; Otis Capture on the right writes them
+    bool captureWanted = false, noRoom = false, lastTruncated = false;
+    int lastSlot = -1, roomCountdown = 0; int32_t lastFrames = 0, room = 0; uint32_t takes = 0;
+    // UI thread: what syncTakes() last copied.
+    uint32_t syncedSerial = ~0u; std::array<otis::kit::Region, SLOTS> syncedTake{}; int takeNumber = 0;
     dspemu::bus::Reader slotReader;
     std::array<dsp::SchmittTrigger, 16> gates;
     std::array<float, SLOTS> hitPitch{}, hitLevel{}; // latched from the hit's channel
@@ -49,22 +61,45 @@ struct OtisKit : Module {
         configInput(PITCH_IN, "Pitch, 1 V/oct, polyphonic, latched per hit from the hit's channel");
         configInput(LEVEL_IN, "Level, 0-10 V, polyphonic, latched per hit (unpatched = full)");
         configOutput(OUT, "Audio (±5 V full scale)");
-        install();
+        rightExpander.producerMessage = &captureBuffers[0]; rightExpander.consumerMessage = &captureBuffers[1];
+        install(false);
     }
-    // UI thread: pack the slots into one memory image and hand it to the engine. Sounding hits stop.
-    void install() {
+    // UI thread: copy finished takes out of sample memory into slots, without stopping the audio thread.
+    void syncTakes() {
+        if (exchange.read().serial == syncedSerial) return;
+        std::array<std::vector<int16_t>, SLOTS> copies;
+        const std::vector<int16_t>& memory = engine.sample.pcm;   // replaced only by install(), on this thread
+        auto m = exchange.copyTakes([&](int s, otis::kit::Region r) {
+            auto& out = copies[size_t(s)]; out.clear();
+            if (r != syncedTake[size_t(s)] && r.playable() && r.end <= int32_t(memory.size()))
+                out.assign(memory.begin() + r.begin, memory.begin() + r.end);
+        });
+        for (int s = 0; s < SLOTS; ++s) if (m.take[size_t(s)] != syncedTake[size_t(s)]) {
+            slots[size_t(s)].pcm = std::move(copies[size_t(s)]); slots[size_t(s)].rate = m.rate[size_t(s)];
+            slots[size_t(s)].name = string::f("Capture take %d", ++takeNumber); layout.truncated[size_t(s)] = false;
+        }
+        syncedTake = m.take; syncedSerial = m.serial;
+    }
+    // UI thread: pack the slots into one memory image and hand it to the engine. Sounding hits stop and
+    // a take in progress is dropped. keepTakes first copies finished takes into slots.
+    void install(bool keepTakes = true) {
+        if (keepTakes) syncTakes();
         std::vector<int16_t> image;
         auto packed = otis::kit::pack(slots, image);
         std::lock_guard<std::mutex> guard(engineMutex);
-        engine.install(image, otis::kit::BANK_RATE, std::max<size_t>(packed.frames, 0), false);
+        engine.install(image, otis::kit::BANK_RATE, otis::memoryWords, false);   // all memory addressable
+        bank.reset(packed); voiceTake = {}; captureWanted = false;
+        exchange.publish(bank.map);
+        syncedSerial = bank.map.serial; syncedTake = bank.map.take;
         layout = packed;
     }
     void loadSlot(int s, const std::string& path) {
         try {
             auto wav = dspemu::loadWav(path, otis::memoryWords, false);   // mono: two channels are averaged
+            syncTakes();
             slots[size_t(s)].pcm = std::move(wav.pcm); slots[size_t(s)].rate = wav.rate;
             slots[size_t(s)].name = dspemu::baseName(path); lastError.clear();
-            install();
+            install(false);
         } catch (const std::exception& e) { lastError = e.what(); WARN("Otis Kit: %s", e.what()); }
     }
     // A folder's WAVs, in name order, fill slots 1-8.
@@ -75,16 +110,16 @@ struct OtisKit : Module {
             if (ext == ".wav" && system::isFile(entry)) wavs.push_back(entry);
         }
         std::sort(wavs.begin(), wavs.end());
-        lastError.clear();
+        lastError.clear(); syncTakes();
         for (size_t k = 0; k < wavs.size() && k < size_t(SLOTS); ++k) {
             try {
                 auto wav = dspemu::loadWav(wavs[k], otis::memoryWords, false);
                 slots[k].pcm = std::move(wav.pcm); slots[k].rate = wav.rate; slots[k].name = dspemu::baseName(wavs[k]);
             } catch (const std::exception& e) { lastError = e.what(); }
         }
-        install();
+        install(false);
     }
-    void clearSlot(int s) { slots[size_t(s)] = {}; install(); }
+    void clearSlot(int s) { syncTakes(); slots[size_t(s)] = {}; install(false); }
     std::string slotLabel(int s) const {
         const auto& slot = slots[size_t(s)];
         if (slot.pcm.size() < 2) return string::f("Slot %d: empty", s + 1);
@@ -99,9 +134,9 @@ struct OtisKit : Module {
         c.loop = 0; c.interpBits = dropSample.load(std::memory_order_relaxed) ? 0 : 9; c.windowMode = 0;
         for (int s = 0; s < SLOTS; ++s) {
             size_t i = size_t(s);
-            c.regionBegin[i] = layout.begin[i]; c.regionEnd[i] = layout.end[i];
+            c.regionBegin[i] = voiceTake[i].begin; c.regionEnd[i] = voiceTake[i].end;
             c.startv[i] = params[START + s].getValue(); c.endv[i] = 1;
-            c.pitch[i] = float(params[TUNE + s].getValue() / 12 + layout.octaves[i] + hitPitch[i]);
+            c.pitch[i] = float(params[TUNE + s].getValue() / 12 + voiceOctaves[i] + hitPitch[i]);
             c.level[i] = params[LEVEL + s].getValue() * hitLevel[i];
             c.k1v[i] = params[FILTER + s].getValue(); c.k2v[i] = 1;
             c.loopv[i] = 0; c.reversev[i] = params[REV + s].getValue() > .5f ? 1 : 0;
@@ -113,17 +148,51 @@ struct OtisKit : Module {
         for (int ch = 0; ch < 16; ++ch) {
             if (!gates[size_t(ch)].process(ch < channels ? inputs[GATE_IN].getVoltage(ch) : 0.f, .1f, 2.f)) continue;
             int s = otis::kit::slotFor(slotBus.connected, slotBus.word, ch);
-            if (!layout.playable(s)) continue;
+            if (!bank.map.take[size_t(s)].playable()) continue;
+            // The hit plays the slot's take as it is now, to the end, whatever Capture does meanwhile.
+            voiceTake[size_t(s)] = bank.map.take[size_t(s)];
+            voiceOctaves[size_t(s)] = std::log2(bank.map.rate[size_t(s)] / otis::kit::BANK_RATE);
+            c.regionBegin[size_t(s)] = voiceTake[size_t(s)].begin; c.regionEnd[size_t(s)] = voiceTake[size_t(s)].end;
             auto finite = [](float v) { return std::isfinite(v) ? v : 0.f; };
             hitPitch[size_t(s)] = inputs[PITCH_IN].isConnected() ? otis::clamp(finite(inputs[PITCH_IN].getPolyVoltage(ch)), -10.f, 10.f) : 0.f;
             hitLevel[size_t(s)] = inputs[LEVEL_IN].isConnected() ? otis::clamp(finite(inputs[LEVEL_IN].getPolyVoltage(ch)) / 10, 0.f, 1.f) : 1.f;
-            c.pitch[size_t(s)] = float(params[TUNE + s].getValue() / 12 + layout.octaves[size_t(s)] + hitPitch[size_t(s)]);
+            c.pitch[size_t(s)] = float(params[TUNE + s].getValue() / 12 + voiceOctaves[size_t(s)] + hitPitch[size_t(s)]);
             c.level[size_t(s)] = params[LEVEL + s].getValue() * hitLevel[size_t(s)];
             engine.trigger(s);
             flash[size_t(s)] = 1;
         }
+        // Otis Capture directly to the right asks for a take; the kit writes it into free memory.
+        Module* right = rightExpander.module;
+        bool linked = right && right->model == modelOtisCapture;
+        auto* request = linked ? static_cast<const otis::kit::CaptureRequest*>(rightExpander.consumerMessage) : nullptr;
+        if (request && request->magic != otis::kit::CaptureRequest::MAGIC) request = nullptr;
+        bool wanted = request && request->recording;
+        if (wanted && !captureWanted) {
+            std::array<otis::kit::Region, SLOTS> pins;
+            noRoom = !bank.start(otis::clamp(request->slot, 0, SLOTS - 1), args.sampleRate, exchange.pins(pins) ? &pins : nullptr);
+        }
         float out = engine.process(0.f) * 5.f;
         outputs[OUT].setVoltage(std::isfinite(out) ? out : 0.f);
+        if (bank.active()) {
+            if (wanted) {
+                float own = std::isfinite(engine.lastOutput) ? engine.lastOutput : 0.f;
+                float x = request->source == 1 ? own : request->source == 2 ? request->input + own : request->input;
+                bank.write(engine.sample.pcm, std::isfinite(x) ? x * request->gain : 0.f);
+                lastSlot = bank.slot; lastFrames = bank.recording.size(); lastTruncated = bank.truncated;
+            } else if (bank.finish()) { ++takes; exchange.publish(bank.map); }
+        }
+        captureWanted = wanted;
+        for (int s = 0; s < SLOTS; ++s)
+            bank.protect(s, engine.voices[size_t(s)].running ? voiceTake[size_t(s)] : otis::kit::Region{});
+        if (linked) if (auto* status = static_cast<otis::kit::CaptureStatus*>(right->leftExpander.producerMessage)) {
+            // While a take runs, the room left for it; otherwise the longest take that would fit.
+            if (bank.active()) room = bank.limit - bank.recording.end;
+            else if (--roomCountdown <= 0) { room = bank.largestGap().size(); roomCountdown = 1024; }
+            status->magic = otis::kit::CaptureStatus::MAGIC; status->recording = bank.active();
+            status->truncated = lastTruncated; status->noRoom = noRoom; status->slot = lastSlot;
+            status->frames = lastFrames; status->room = room; status->rate = args.sampleRate; status->takes = takes;
+            right->leftExpander.messageFlipRequested = true;
+        }
         for (int s = 0; s < SLOTS; ++s) {
             lights[HIT_LIGHT + s].setBrightnessSmooth(flash[size_t(s)], args.sampleTime * 4);
             flash[size_t(s)] = 0;
@@ -138,9 +207,10 @@ struct OtisKit : Module {
         for (auto& g : gates) g.reset();
         hitPitch.fill(0); hitLevel.fill(1);
         for (auto& s : slots) s = {};
-        install();
+        install(false);
     }
     json_t* dataToJson() override {
+        syncTakes();
         json_t* root = json_object();
         json_object_set_new(root, "engineMode", json_integer(engineMode.load()));
         json_object_set_new(root, "dropSample", json_boolean(dropSample.load()));
@@ -175,7 +245,7 @@ struct OtisKit : Module {
             const char* name = json_string_value(json_object_get(o, "name"));
             slots[size_t(s)].name = name ? name : "RESTORED";
         }
-        install();
+        install(false);
     }
 };
 
@@ -205,6 +275,7 @@ struct OtisKitWidget : ModuleWidget {
     }
     void appendContextMenu(Menu* menu) override {
         auto* m = dynamic_cast<OtisKit*>(module); if (!m) return;
+        m->syncTakes();
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuItem("Load a folder of WAVs into slots 1-8…", "", [m] {
             char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
@@ -225,8 +296,11 @@ struct OtisKitWidget : ModuleWidget {
                 [m, k] { return m->engineMode.load() == k; }, [m, k] { m->engineMode = k; }));
         }));
         menu->addChild(createBoolMenuItem("Drop-sample playback (no interpolation)", "", [m] { return m->dropSample.load(); }, [m](bool on) { m->dropSample = on; }));
-        menu->addChild(createMenuLabel(string::f("Bank: %.1f of %.1f s at 44.1 kHz", m->layout.frames / otis::kit::BANK_RATE,
-            otis::memoryWords / otis::kit::BANK_RATE)));
+        auto map = m->exchange.read(); double used = 0;
+        for (int s = 0; s < SLOTS; ++s) used += map.take[size_t(s)].size();
+        menu->addChild(createMenuLabel(string::f("Bank: %.0f%% in use (%.1f of %.1f s at 44.1 kHz)", 100 * used / otis::memoryWords,
+            used / otis::kit::BANK_RATE, otis::memoryWords / otis::kit::BANK_RATE)));
+        menu->addChild(createMenuItem("Compact the bank (stops sounding hits)", "", [m] { m->install(true); }));
     }
 };
 Model* modelOtisKit = createModel<OtisKit, OtisKitWidget>("OtisKit");

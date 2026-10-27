@@ -13,7 +13,7 @@ int main() {
     if(!handle) { std::cerr<<dlerror()<<"\n"; return 1; }
     auto initialize=reinterpret_cast<void(*)(Plugin*)>(dlsym(handle,"init")); assert(initialize);
     Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.1.1"; initialize(&plugin);
-    assert(plugin.models.size()==2 && plugin.models.back()->slug=="OtisKit"); // OTIS Sampler, then Otis Kit (2.10)
+    assert(plugin.models.size()==3 && (*std::next(plugin.models.begin()))->slug=="OtisKit" && plugin.models.back()->slug=="OtisCapture"); // 2.10, 2.11
     auto model=plugin.models.front();
     auto a=std::unique_ptr<engine::Module>(model->createModule());
     auto b=std::unique_ptr<engine::Module>(model->createModule());
@@ -87,7 +87,7 @@ int main() {
     a.reset(); b.reset();
     // Otis Kit from the compiled plugin: a saved one-slot bank restores and plays on gate channel 1.
     {
-        auto kitModel=plugin.models.back();
+        auto kitModel=*std::next(plugin.models.begin());
         auto k=std::unique_ptr<engine::Module>(kitModel->createModule()); k->model=kitModel; k->onSampleRateChange(rate);
         json_t* slot=json_object(); json_object_set_new(slot,"name",json_string("bright-demo.wav"));
         json_object_set_new(slot,"rate",json_real(wav.rate)); json_object_set_new(slot,"pcm16le",json_string(otis::encodePcm(wav.pcm.data(),wav.pcm.size()).c_str()));

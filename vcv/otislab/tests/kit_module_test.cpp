@@ -5,6 +5,7 @@
 #include <plugin.hpp>
 #undef PRIVATE
 #include "../src/OtisKit.cpp"
+#include "../src/OtisCapture.cpp"   // the kit links to Capture on its right
 #include "../src/engine/Wav.hpp"
 #include <cassert>
 #include <filesystem>

@@ -66,4 +66,26 @@ constexpr float LEVEL_IN_X = 178, LEVEL_IN_Y = 334;
 constexpr float OUT_X = 235, OUT_Y = 334;
 } // namespace kit
 
+namespace capture {
+constexpr float WIDTH = 120;
+constexpr float STATUS_X = 10, STATUS_Y = 54;
+constexpr float STATUS_W = 100, STATUS_H = 34;
+constexpr float SLOT_X = 10, SLOT_Y = 104;
+constexpr float SLOT_W = 100, SLOT_H = 18;
+constexpr float LENGTH_X = 10, LENGTH_Y = 142;
+constexpr float LENGTH_W = 100, LENGTH_H = 18;
+constexpr float SOURCE_X = 10, SOURCE_Y = 180;
+constexpr float SOURCE_W = 100, SOURCE_H = 18;
+constexpr float GAIN_X = 24, GAIN_Y = 224;
+constexpr float TEMPO_X = 62, TEMPO_Y = 224;
+constexpr float ARM_X = 98, ARM_Y = 224;
+constexpr float ARM_LIGHT_X = 98, ARM_LIGHT_Y = 208;
+constexpr float AUDIO_IN_X = 22, AUDIO_IN_Y = 296;
+constexpr float CLOCK_IN_X = 60, CLOCK_IN_Y = 296;
+constexpr float ARM_IN_X = 98, ARM_IN_Y = 296;
+constexpr float REC_OUT_X = 38, REC_OUT_Y = 342;
+constexpr float DONE_OUT_X = 82, DONE_OUT_Y = 342;
+constexpr float REC_LIGHT_X = 38, REC_LIGHT_Y = 359;
+} // namespace capture
+
 } // namespace otis_kit_layout

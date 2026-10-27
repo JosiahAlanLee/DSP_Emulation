@@ -1,11 +1,12 @@
 # DSP_Emulation
 
-Four modules for VCV Rack 2, built around early digital instruments and usable on their own or as one chain:
+Five modules for VCV Rack 2, built around early digital instruments and usable on their own or as one chain:
 
 | Module | What it does | Manual |
 |---|---|---|
 | **OTIS Sampler** | Records or loads a mono or stereo sample and plays it through an ES5505-derived engine, with variable chip clock, short-loop scanning and destructive loop reworking. | [OTIS manual](vcv/otislab/docs/MANUAL.md) |
 | **Otis Kit** | A bank of eight sample slots on the same ES5505 playback arithmetic: one slot per hit, chosen by gate channel or a byte bus, with per-slot tune, decay, level, filter, start and direction. | [Otis Kit](vcv/otislab/docs/KIT.md) |
+| **Otis Capture** | Otis Kit's capture companion: takes of a set number of beats, from an input or the kit itself, into a slot, which a hit already sounding never hears change. | [Otis Capture](vcv/otislab/docs/CAPTURE.md) |
 | **Vastish** | Eight-voice synthesizer in the style of Kurzweil VAST: three DSP blocks per voice, six routings, envelopes, LFOs, FUN processors, sample playback from OTIS, and a chain mode that continues each voice through the next Vastish. | [Vastish manual](vcv/vastish/docs/MANUAL.md) |
 | **Spoon Bender** | Stereo echo with a frequency shifter in its feedback loop, an eight-line reverb with freeze, an optional ES5510-style fixed-point engine, and CAPTURE, which turns the last few seconds into an OTIS sample. | [Spoon Bender manual](vcv/spoonbender/docs/MANUAL.md) |
 

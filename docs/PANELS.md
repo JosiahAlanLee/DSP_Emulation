@@ -22,6 +22,7 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 | Counter 2 | 12 HP | Named clock source selector, RATE/N/D/SEED knobs, hex and N/D readouts, CLOCK/RESET inputs, grouped bus, clock and carry outputs | [Counter 2](../vcv/bytebus/docs/Counter2-preview.svg) |
 | Converter | 14 HP | Independent ADC/DAC readouts, gain/offset/range controls, grouped outputs | [Converter](../vcv/bytebus/docs/Converter-preview.svg) |
 | Otis Kit | 18 HP | Eight slot rows of TUNE/DECAY/LEVEL/FILTER/START knobs with REV switches and hit lights, GATE/SLOT/PITCH/LEVEL inputs, grouped output | [Otis Kit](../vcv/otislab/docs/OtisKit-preview.svg) |
+| Otis Capture | 8 HP | Status display, named slot, length and source selectors, GAIN/TEMPO knobs, ARM button, IN/CLOCK/ARM inputs, grouped REC/DONE outputs | [Otis Capture](../vcv/otislab/docs/OtisCapture-preview.svg) |
 | Machinemodule | 18 HP | Local machine ID/name readout, labelled Ready/Link indicators, eight offset/CV pairs, grouped outputs | [Machinemodule](../vcv/machinemodule/docs/Machinemodule-preview.svg) |
 
 The machine readout describes the local selector. A patched machine CV or an

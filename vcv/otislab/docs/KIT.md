@@ -1,12 +1,12 @@
 # Otis Kit
 
-**OtisLab 2.10 · 18 HP · a bank of eight sample slots on OTIS's playback arithmetic**
+**OtisLab 2.11 · 18 HP · a bank of eight sample slots on OTIS's playback arithmetic**
 
 Otis Kit is the playback half of the "Otis flavor" in Gorgon's
 [DRUM_MACHINE.md](https://github.com/JosiahAlanLee/Gorgon/blob/main/docs/DRUM_MACHINE.md):
 a bounded bank, one slot per hit, on the same ES5505-derived playback arithmetic
-as OTIS Sampler. The capture companion, which records into a slot and hands the
-new sample over as a fresh generation, is a later step.
+as OTIS Sampler. Its capture companion, [Otis Capture](CAPTURE.md), records
+takes into a slot directly on its right.
 
 It reuses OTIS rather than multiplying it, as that document asks: there is one
 sample memory, one chip clock and one output converter, and the eight slots are
@@ -26,6 +26,9 @@ log volume, declick and the host-rate converter are unchanged.
   so) and the slots after it are empty. Loading never moves earlier slots.
 - Loading or clearing a slot rebuilds the bank and stops any sounding hits.
   Loading is something done between takes.
+- Takes from Otis Capture are written into free memory instead, and replace
+  their slot only when complete; a hit already sounding keeps the take it
+  started with. See [Where takes go](CAPTURE.md#where-takes-go).
 
 ## Controls and ports
 
@@ -70,13 +73,15 @@ are read when a hit starts. PITCH and LEVEL CV are held from the hit.
   78.1 kHz. All of them have at least eight voices.
 - **Drop-sample playback**: turns the chip's interpolation off, for a rougher
   sound.
-- How much of the bank is in use.
+- How much of the bank is in use, and **Compact the bank**, which packs every
+  slot, takes included, back into one run of memory (it stops sounding hits).
 
 ## Saving and reset
 
 The patch saves the eight slots' audio (16-bit PCM, as OTIS saves its sample),
 names and rates, the chip clock and the drop-sample setting, so a kit reopens
-exactly as it was. An empty slot is saved as `null`. A slot whose saved rate
+exactly as it was. Takes from Otis Capture are saved the same way, copied out of
+memory without stopping the audio thread. An empty slot is saved as `null`. A slot whose saved rate
 is invalid or whose audio is damaged is left empty, with the error in the menu,
 and the other slots still load. Rack's Initialize empties the bank and restores
 the controls.
