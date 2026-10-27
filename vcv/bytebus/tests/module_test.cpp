@@ -7,6 +7,7 @@
 #undef PRIVATE
 #include "../src/Register.cpp"
 #include "../src/Counter.cpp"
+#include "../src/Switch.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -27,6 +28,11 @@ static void putBus(Input& input, uint8_t word, bool clocked = false, bool clk = 
 static uint8_t word(Output& output) {
     uint8_t result = 0;
     for (int k = 0; k < 8; ++k) if (output.getVoltage(k) >= 1) result |= 1 << k;
+    return result;
+}
+static uint8_t inputWord(Input& input) {
+    uint8_t result = 0;
+    for (int k = 0; k < 8; ++k) if (input.getVoltage(k) >= 1) result |= 1 << k;
     return result;
 }
 static void copy(Output& source, Input& dest) {
@@ -334,15 +340,96 @@ static std::vector<uint8_t> jumpChain(std::shared_ptr<const dspemu::lookup::Libr
     return out;
 }
 
+// Switch: real ports and defaults (A passes through), parameters through Rack JSON.
+static void switchPorts() {
+    using S = ByteSwitch;
+    S s; s.model = modelSwitch; auto a = args(); connectOutputs(s);
+    assert(s.params.size() == 6 && s.inputs.size() == 4 && s.outputs.size() == 2 && s.lights.size() == 9);
+    for (int k = 0; k < 256; k += 3) {
+        putBus(s.inputs[S::A_IN], uint8_t(k)); s.process(a);
+        assert(word(s.outputs[S::BUS_OUT]) == k && s.outputs[S::BUS_OUT].getChannels() == 8);
+    }
+    putBus(s.inputs[S::A_IN], 0x5a, true, true); s.process(a);
+    assert(word(s.outputs[S::BUS_OUT]) == 0x5a && s.outputs[S::BUS_OUT].getChannels() == 9 && s.outputs[S::CLOCK_OUT].getVoltage() == 10);
+    // A gate into C is bit 0: Select with BIT 0 passes B while it is high.
+    s.params[S::B_WORD].setValue(0xc3); s.inputs[S::C_IN].channels = 1; s.inputs[S::C_IN].setVoltage(10);
+    putBus(s.inputs[S::A_IN], 0x5a); s.process(a); assert(word(s.outputs[S::BUS_OUT]) == 0xc3);
+    s.inputs[S::C_IN].setVoltage(0); s.process(a); assert(word(s.outputs[S::BUS_OUT]) == 0x5a);
+    for (int k = 0; k < 8; ++k) assert(s.lights[S::BIT0_LIGHT + k].getBrightness() == (0x5a >> k & 1));
+    s.params[S::MODE].setValue(2); s.params[S::SOURCE].setValue(3); s.params[S::BIT].setValue(5);
+    json_t* saved = s.toJson(); S r; r.model = modelSwitch; r.fromJson(saved); json_decref(saved);
+    assert(r.params[S::MODE].getValue() == 2 && r.params[S::SOURCE].getValue() == 3 && r.params[S::BIT].getValue() == 5);
+    assert(r.params[S::B_WORD].getValue() == 0xc3);
+    r.onReset(Module::ResetEvent{}); assert(r.params[S::MODE].getValue() == 0 && r.params[S::B_WORD].getValue() == 0);
+}
+
+// Two Counters on one clock into A and B, A's count also into C with SEL BIT 3: the output is A's
+// count for counts 0-7 and B's for 8-15, on A's clock, through one-sample cables in random order.
+// Then Mix toward a B WORD of 00 is an 8-bit VCA on A, with C WORD as the gain.
+static std::vector<int> commutator(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using S = ByteSwitch;
+    C ca, cb; S s; connectOutputs(ca); connectOutputs(cb); connectOutputs(s); auto a = args(sr);
+    for (C* c : {&ca, &cb}) { c->params[C::CLOCK_MODE].setValue(1); c->params[C::MODULUS].setValue(16); c->inputs[C::CLOCK_IN].channels = 1; }
+    cb.params[C::INC].setValue(5); s.params[S::BIT].setValue(3);
+    std::mt19937 order(orderSeed); std::vector<int> out; std::vector<std::array<int, 2>> counts;
+    for (int t = 0; t < 8 * 64; ++t) {
+        for (C* c : {&ca, &cb}) c->inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+        copy(ca.outputs[C::BUS_OUT], s.inputs[S::A_IN]); copy(cb.outputs[C::BUS_OUT], s.inputs[S::B_IN]);
+        copy(ca.outputs[C::BUS_OUT], s.inputs[S::C_IN]);
+        Module* modules[] = {&ca, &cb, &s}; std::shuffle(std::begin(modules), std::end(modules), order);
+        for (auto* m : modules) m->process(a);
+        if (s.outputs[S::CLOCK_OUT].getVoltage() == 10 && s.outputs[S::BUS_OUT].getChannels() == 9) out.push_back(word(s.outputs[S::BUS_OUT]));
+        if (ca.outputs[C::CLOCK_OUT].getVoltage() == 10) counts.push_back({word(ca.outputs[C::BUS_OUT]), word(cb.outputs[C::BUS_OUT])});
+    }
+    assert(out.size() >= 62);
+    for (size_t k = 0; k < out.size(); ++k) assert(out[k] == (counts[k][0] & 8 ? counts[k][1] : counts[k][0]));
+    // Mix: B unpatched at 00, C unpatched at 64: out = round(a * 191 / 255).
+    s.inputs[S::B_IN].channels = s.inputs[S::C_IN].channels = 0; s.params[S::MODE].setValue(2); s.params[S::C_WORD].setValue(64);
+    ca.params[C::MODULUS].setValue(256); ca.params[C::INC].setValue(37);
+    for (int t = 0; t < 8 * 64; ++t) {
+        ca.inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+        copy(ca.outputs[C::BUS_OUT], s.inputs[S::A_IN]);
+        if (order() & 1) { ca.process(a); s.process(a); } else { s.process(a); ca.process(a); }
+        if (s.outputs[S::CLOCK_OUT].getVoltage() == 10) {
+            int w = inputWord(s.inputs[S::A_IN]); out.push_back(word(s.outputs[S::BUS_OUT]));
+            assert(out.back() == (w * 191 + 127) / 255);
+        }
+    }
+    return out;
+}
+
+// Reclocking: a Counter on its internal clock into A; Switch on its own CLOCK jack at another rate
+// publishes the raw word that arrived on each of its edges, with one-sample strobes.
+static void reclock(float sr) {
+    using C = ByteCounter; using S = ByteSwitch;
+    C c; S s; connectOutputs(c); connectOutputs(s); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(3); c.params[C::RATE].setValue(std::log2(1000.f)); c.params[C::INC].setValue(1);
+    s.params[S::SOURCE].setValue(1); s.inputs[S::CLOCK_IN].channels = 1;
+    int strobes = 0; bool last = false;
+    for (int t = 0; t < int(sr / 4); ++t) {
+        s.inputs[S::CLOCK_IN].setVoltage(t % 997 < 3 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], s.inputs[S::A_IN]);
+        c.process(a); s.process(a);
+        bool clk = s.outputs[S::CLOCK_OUT].getVoltage() == 10;
+        assert(!(clk && last) && s.outputs[S::BUS_OUT].getChannels() == 9); last = clk;
+        if (clk && t > 0) { ++strobes; assert(word(s.outputs[S::BUS_OUT]) == inputWord(s.inputs[S::A_IN])); }
+    }
+    assert(strobes >= int(sr / 4 / 997) - 1);
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
     counterRunModes();
     for (float sr : {44100.f, 48000.f, 96000.f}) counterEnvelope(sr);
+    switchPorts();
+    auto switched = commutator(48000, 11);
+    assert(commutator(44100, 12) == switched && commutator(96000, 13) == switched);
+    for (float sr : {44100.f, 48000.f, 96000.f}) reclock(sr);
     auto chain = carryChain(48000, 1); assert(carryChain(44100, 2) == chain && carryChain(96000, 3) == chain);
     auto library = std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load("../res/lookup-v1.bin"));
     auto rhythm = rhythmChain(library, 48000, 4);
@@ -355,5 +442,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz\n";
 }

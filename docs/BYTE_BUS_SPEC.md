@@ -247,14 +247,14 @@ Each module's manual states:
 | Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**: increment from INC or a bus, modulus, Loop/One-shot/Pendulum, seed and carry, with Register's clock ownership; [contract](../vcv/bytebus/docs/COUNTER.md) |
 | Single-word register | latching, clock source selectable | **Clocked Register**, prototype in [`vcv/bytebus`](../vcv/bytebus) |
 | Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
-| Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**, new build; partly Merge/Split plus a poly switch today |
+| Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**: Select, Bits and Mix of A and B under a control word C; follows A's clock or its own; [contract](../vcv/bytebus/docs/SWITCH.md) |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
 | Spectral activity and band mask (original extension) | frame-clocked sender + held mask input | **Séance Bridge**: eight bands, pre-mask detection, hysteresis and gain slew; [contract](../vcv/seance/docs/BYTE_BUS.md) |
 
-Implemented prototypes: `ByteBus.hpp`, Clocked Register, Counter, Lookup, Converter,
+Implemented prototypes: `ByteBus.hpp`, Clocked Register, Counter, Switch, Lookup, Converter,
 Vastish bus I/O with optional normalized FUNs, OTIS frame control/export and
 the memoryless Vastish table compiler, and Séance Bridge spectral activity/masking.
-Remaining order: Pipeline → Switch.
+Remaining: Pipeline.
 
 ## 11. Ratified decisions
 

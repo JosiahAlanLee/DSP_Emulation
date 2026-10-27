@@ -6,4 +6,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelLookup);
     plugin->addModel(modelConverter);
     plugin->addModel(modelCounter);
+    plugin->addModel(modelSwitch);
 }

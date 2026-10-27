@@ -113,4 +113,34 @@ constexpr float CLOCK_LIGHT_X = 90, CLOCK_LIGHT_Y = 359;
 constexpr float CARRY_LIGHT_X = 146, CARRY_LIGHT_Y = 359;
 } // namespace counter
 
+namespace byte_switch {
+constexpr float WIDTH = 180;
+constexpr float BIT0_X = 153, BIT0_Y = 64;
+constexpr float BIT1_X = 135, BIT1_Y = 64;
+constexpr float BIT2_X = 117, BIT2_Y = 64;
+constexpr float BIT3_X = 99, BIT3_Y = 64;
+constexpr float BIT4_X = 81, BIT4_Y = 64;
+constexpr float BIT5_X = 63, BIT5_Y = 64;
+constexpr float BIT6_X = 45, BIT6_Y = 64;
+constexpr float BIT7_X = 27, BIT7_Y = 64;
+constexpr float SOURCE_X = 12, SOURCE_Y = 92;
+constexpr float SOURCE_W = 74, SOURCE_H = 22;
+constexpr float MODE_X = 94, MODE_Y = 92;
+constexpr float MODE_W = 74, MODE_H = 22;
+constexpr float RATE_X = 32, RATE_Y = 167;
+constexpr float B_WORD_X = 71, B_WORD_Y = 167;
+constexpr float C_WORD_X = 109, C_WORD_Y = 167;
+constexpr float SEL_BIT_X = 128, SEL_BIT_Y = 158;
+constexpr float SEL_BIT_W = 40, SEL_BIT_H = 18;
+constexpr float WORD_X = 64, WORD_Y = 211;
+constexpr float WORD_W = 52, WORD_H = 25;
+constexpr float A_IN_X = 31, A_IN_Y = 282;
+constexpr float B_IN_X = 70, B_IN_Y = 282;
+constexpr float C_IN_X = 110, C_IN_Y = 282;
+constexpr float CLOCK_IN_X = 149, CLOCK_IN_Y = 282;
+constexpr float BUS_OUT_X = 66, BUS_OUT_Y = 342;
+constexpr float CLOCK_OUT_X = 114, CLOCK_OUT_Y = 342;
+constexpr float CLOCK_LIGHT_X = 114, CLOCK_LIGHT_Y = 359;
+} // namespace byte_switch
+
 } // namespace bytebus_layout

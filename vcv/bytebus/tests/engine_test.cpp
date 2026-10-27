@@ -1,6 +1,7 @@
 // Portable protocol and state-machine tests; no Rack SDK.
 #include "../src/engine/Register.hpp"
 #include "../src/engine/Counter.hpp"
+#include "../src/engine/Switch.hpp"
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -412,7 +413,86 @@ static void runModes() {
     }
 }
 
+// Switch (docs/SWITCH.md): Select, Bits and Mix on every (A, B, C), and its two clock regimes.
+static void switching() {
+    namespace sw = dspemu::byte_switch;
+    using sw::Op; using sw::Source;
+    // Every (a, b, c): Bits takes each bit from B where C has it; Select is Bits with C's chosen bit
+    // spread to all eight; Mix is the nearest byte to a + (b - a) c / 255, which is never a tie.
+    for (int a = 0; a < 256; ++a) for (int b = 0; b < 256; ++b) for (int c = 0; c < 256; ++c) {
+        uint8_t bits = sw::apply(Op::Bits, 0, uint8_t(a), uint8_t(b), uint8_t(c));
+        for (int k = 0; k < 8; ++k) assert((bits >> k & 1) == ((c >> k & 1) ? (b >> k & 1) : (a >> k & 1)));
+        int bit = c & 7;
+        assert(sw::apply(Op::Select, bit, uint8_t(a), uint8_t(b), uint8_t(c)) ==
+               sw::apply(Op::Bits, 0, uint8_t(a), uint8_t(b), uint8_t((c >> bit & 1) ? 255 : 0)));
+        double exact = a + (b - a) * c / 255.;
+        int mix = sw::apply(Op::Mix, 0, uint8_t(a), uint8_t(b), uint8_t(c));
+        assert(std::abs(mix - exact) < .5 && std::abs(std::abs(mix - exact) - .5) > 1e-9);
+    }
+    for (int a = 0; a < 256; a += 5) for (int b = 0; b < 256; b += 7) {
+        assert(sw::apply(Op::Mix, 0, uint8_t(a), uint8_t(b), 0) == a && sw::apply(Op::Mix, 0, uint8_t(a), uint8_t(b), 255) == b);
+        int last = a;                                            // Mix moves monotonically from A to B
+        for (int c = 1; c < 256; ++c) {
+            int m = sw::apply(Op::Mix, 0, uint8_t(a), uint8_t(b), uint8_t(c));
+            assert(b >= a ? m >= last : m <= last); last = m;
+        }
+    }
+    auto bus = [](uint8_t word, bool clocked = false, bool clk = false, bool rising = false) {
+        bus::Sample s; s.connected = true; s.clocked = clocked; s.clk = clk; s.rising = rising;
+        s.rawWord = word; s.updated = !clocked || rising; return s;
+    };
+    // Follow A, clocked: evaluated on A's CLK rising edge with B and C's raw lines on that sample,
+    // held between, and A's CLK level passed through unchanged, however long it is high.
+    {
+        sw::Switch s; sw::Parameters p; p.op = Op::Bits; sw::Inputs in;
+        in.a = bus(0x0f, true, true, true); in.b = bus(0xf0); in.c = bus(0x3c);
+        auto o = s.tick(p, in, 48000); assert(o.evaluated && o.word == 0x33 && o.clocked && o.clk && !o.owned);
+        in.a = bus(0xff, true, true, false); in.c = bus(0x00);
+        for (int k = 0; k < 5; ++k) { o = s.tick(p, in, 48000); assert(!o.evaluated && o.word == 0x33 && o.clk); }
+        in.a = bus(0xff, true, false, false); o = s.tick(p, in, 48000); assert(o.word == 0x33 && !o.clk && o.clocked);
+        in.a = bus(0xff, true, true, true); o = s.tick(p, in, 48000); assert(o.word == 0xff && o.clk);
+        // Unclocked A: every sample, no clock. Unpatched A reads 00; unpatched B and C read their words.
+        in.a = bus(0x81); in.c = bus(0x01); p.op = Op::Select;
+        o = s.tick(p, in, 48000); assert(o.word == 0xf0 && !o.clocked);
+        in.c = bus(0x00); o = s.tick(p, in, 48000); assert(o.word == 0x81);
+        in.a = bus::Sample{}; in.b = bus::Sample{}; in.c = bus::Sample{}; p.b = 0x5a; p.c = 0x02; p.bit = 1;
+        o = s.tick(p, in, 48000); assert(o.word == 0x5a && !o.clocked);
+        p.bit = 0; o = s.tick(p, in, 48000); assert(o.word == 0x00);
+        p.op = Op::Mix; p.c = 128; in.a = bus(0); p.b = 255; o = s.tick(p, in, 48000); assert(o.word == 128);
+    }
+    // Auto: the CLOCK jack when patched, else Follow A. Taking the clock over publishes the current
+    // result first; then each jack edge evaluates and strobes for one sample with a low gap.
+    {
+        sw::Switch s; sw::Parameters p; p.op = Op::Select; p.bit = 7; sw::Inputs in;
+        in.a = bus(0x11, true, false, false); in.b = bus(0x22); in.c = bus(0x00);
+        auto o = s.tick(p, in, 48000); assert(!o.owned && !o.evaluated);
+        in.clockConnected = true;
+        o = s.tick(p, in, 48000); assert(o.owned && o.evaluated && o.word == 0x11 && o.clk && o.clocked);
+        o = s.tick(p, in, 48000); assert(!o.clk && !o.evaluated);
+        in.c = bus(0x80); o = s.tick(p, in, 48000); assert(o.word == 0x11);    // no edge: held
+        in.clock = 10; o = s.tick(p, in, 48000); assert(o.evaluated && o.word == 0x22 && o.clk);
+        o = s.tick(p, in, 48000); assert(!o.clk && !o.evaluated);             // held high: one strobe
+        in.clock = 0; s.tick(p, in, 48000);
+        // A's own clock means nothing while Switch owns the clock.
+        in.a = bus(0x33, true, true, true); in.c = bus(0x00); o = s.tick(p, in, 48000); assert(!o.evaluated && o.word == 0x22);
+        in.clock = 10; o = s.tick(p, in, 48000); assert(o.evaluated && o.word == 0x33);
+        // Unpatching the jack returns to Follow A.
+        in.clockConnected = false; in.a = bus(0x44, true, true, true); o = s.tick(p, in, 48000);
+        assert(!o.owned && o.word == 0x44);
+    }
+    // Internal at 16 Hz and Engine rate.
+    for (double sr : {44100., 48000., 96000.}) {
+        sw::Switch s; sw::Parameters p; p.source = Source::Internal; p.rateHz = 16; sw::Inputs in; in.a = bus(7);
+        int strobes = 0; std::vector<int> edges;
+        for (int t = 0; t < int(sr); ++t) { auto o = s.tick(p, in, sr); if (o.clk) { ++strobes; edges.push_back(t); } }
+        assert(strobes >= 16 && strobes <= 17);                         // the takeover publication, then 15-16
+        for (size_t k = 2; k < edges.size(); ++k) assert(std::abs((edges[k] - edges[k-1]) - sr / 16) <= 1);
+        p.source = Source::Engine;
+        for (int t = 0; t < 10; ++t) { in.a = bus(uint8_t(t)); auto o = s.tick(p, in, sr); assert(o.word == t && !o.clocked && !o.clk); }
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks\n";
 }
