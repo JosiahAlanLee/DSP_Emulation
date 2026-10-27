@@ -1,5 +1,21 @@
 # Validation and limits — 2026-10-14
 
+## 2.9.0 patch select
+
+`patch_select_module_test` drives the real Rack module. A hit on a stored patch
+plays, sample for sample, what a second OTIS with its panel set to that patch
+plays, though PATCH falls right after the hit. Unpatched, or at 0, stored
+patches change nothing, and a patch never stored plays the panel. It checks
+that each voice takes its patch on the same sample as its gate, from an
+unclocked or clocked bus, and holds it until its next hit. CV adds to a
+patch, REV turns only the panel's voices, and storing again reaches the voices
+on that patch. It also checks saving, restoring and clamping malformed patch
+data, recall to the panel, clear, and Initialize. The test also runs under
+ASan/UBSan.
+
+The legacy trace still matches the 2.2.0 engine byte for byte. All earlier
+portable, sanitizer and Rack API tests pass.
+
 ## 2.8.0 frame bus and table export
 
 The [frame-bus contract](BYTE_BUS.md) defines this original extension.

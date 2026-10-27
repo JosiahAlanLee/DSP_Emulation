@@ -11,12 +11,13 @@
 #include <osdialog.h>
 #include <mutex>
 #include <atomic>
+#include <optional>
 
 struct OtisSampler : Module {
     // CLOCK and INTERP (LAB column) are appended so existing patches keep their parameter ids.
     enum Params { PITCH, START, END, K1, K2, RECORD_GAIN, OUTPUT_GAIN, CAPTURE_RATE, PLAY, RECORD, LOOP, REVERSE, CLOCK, INTERP, POSITION, SIZE, WINDOW_MODE, SMOOTHNESS, MUTATION_AMOUNT, MUTATE, NUM_PARAMS };
-    // LEVEL_IN and AUDIO_R_IN are appended so existing patches keep their cable ids.
-    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, POSITION_IN, SIZE_IN, MUTATE_IN, MUTATION_AMOUNT_IN, AUDIO_R_IN, FRAME_BUS_IN, NUM_INPUTS };
+    // LEVEL_IN, AUDIO_R_IN, FRAME_BUS_IN and PATCH_IN are appended so existing patches keep their cable ids.
+    enum Inputs { AUDIO_IN, PITCH_IN, GATE_IN, RECORD_IN, START_IN, END_IN, K1_IN, K2_IN, LEVEL_IN, CLOCK_IN, INTERP_IN, POSITION_IN, SIZE_IN, MUTATE_IN, MUTATION_AMOUNT_IN, AUDIO_R_IN, FRAME_BUS_IN, PATCH_IN, NUM_INPUTS };
     enum Outputs { LEFT_OUT, RIGHT_OUT, EOC_OUT, POSITION_OUT, NUM_OUTPUTS };
     enum Lights { PLAY_LIGHT, RECORD_LIGHT, FULL_LIGHT, MUTATION_LIGHT, NUM_LIGHTS };
     otis::Engine engine;
@@ -26,7 +27,17 @@ struct OtisSampler : Module {
     std::array<dsp::SchmittTrigger,16> gates;
     dsp::SchmittTrigger playButton;
     dsp::SchmittTrigger recordGate,mutationGate;
-    dspemu::bus::Reader frameReader;
+    dspemu::bus::Reader frameReader,patchReader;
+    // Patch select (2.9), the EPS idiom: PATCH's bits 1 and 2, read on each hit, choose the panel (0) or
+    // one of three patches stored from it. A patch holds the knobs and switches a single voice can play
+    // with; CV still adds to it. A patch never stored plays the panel.
+    struct Patch { float pitch=0,start=0,end=1,k1=1,k2=1,position=0,size=8,interp=9; int loop=0; bool reverse=false; };
+    using Patches=std::array<std::optional<Patch>,4>;   // [0] stays empty: patch 0 is the panel
+    std::mutex patchMutex; Patches patches;           // the UI writes these and bumps the revision
+    std::atomic<uint32_t> patchRevision{1};
+    Patches activePatches; uint32_t activeRevision=0;  // the audio thread's copy
+    std::array<uint8_t,16> voicePatch{};               // each voice's patch, taken at its last hit
+    std::atomic<int> lastPatch{-1};                    // for the display; -1 while PATCH is unpatched
     bool previousRecord=false, previousReverse=false;
     std::atomic<bool> gated{false};
     std::atomic<bool> linearLevel{false}, declick{true}, varispeed{false};
@@ -122,6 +133,7 @@ struct OtisSampler : Module {
         configInput(INTERP_IN,"LAB interpolation CV, 1.1 V per bit added to INTERP");
         configInput(POSITION_IN,"LAB window position / frame selection, polyphonic (0–10 V)");
         configInput(FRAME_BUS_IN,"Byte frame selection in FRM mode (LSB first; optional CLK on channel 9)");
+        configInput(PATCH_IN,"Patch select: bits 1 and 2 choose the panel or a stored patch per hit (optional CLK on channel 9)");
         configInput(SIZE_IN,"LAB window size, polyphonic (1 V doubles sample count)");
         configInput(MUTATE_IN,"Rework selected voice-1 window on rising gate (2 V)");
         configInput(MUTATION_AMOUNT_IN,"Rework amount CV (0–10 V), latched on trigger");
@@ -262,18 +274,88 @@ struct OtisSampler : Module {
             std::lock_guard<std::mutex> names(nameMutex); lastError.clear();
         } catch(const std::exception& e) { std::lock_guard<std::mutex> names(nameMutex); lastError=e.what(); }
     }
+    Patch panelPatch() {
+        Patch p;
+        p.pitch=params[PITCH].getValue(); p.start=params[START].getValue(); p.end=params[END].getValue();
+        p.k1=params[K1].getValue(); p.k2=params[K2].getValue(); p.position=params[POSITION].getValue();
+        p.size=params[SIZE].getValue(); p.interp=params[INTERP].getValue();
+        p.loop=int(params[LOOP].getValue()); p.reverse=params[REVERSE].getValue()>.5;
+        return p;
+    }
+    // UI thread.
+    void storePatch(int n,std::optional<Patch> patch) {
+        if(n<1 || n>3) return;
+        std::lock_guard<std::mutex> guard(patchMutex); patches[size_t(n)]=patch; ++patchRevision;
+    }
+    std::optional<Patch> storedPatch(int n) { std::lock_guard<std::mutex> guard(patchMutex); return n>=1 && n<=3 ? patches[size_t(n)] : std::nullopt; }
+    void recallPatch(int n) {
+        auto p=storedPatch(n); if(!p) return;
+        params[PITCH].setValue(p->pitch); params[START].setValue(p->start); params[END].setValue(p->end);
+        params[K1].setValue(p->k1); params[K2].setValue(p->k2); params[POSITION].setValue(p->position);
+        params[SIZE].setValue(p->size); params[INTERP].setValue(p->interp);
+        params[LOOP].setValue(float(p->loop)); params[REVERSE].setValue(p->reverse ? 1.f : 0.f);
+    }
+    std::string patchSummary(int n) {
+        auto p=storedPatch(n);
+        if(!p) return string::f("Patch %d: not stored, plays the panel",n);
+        const char* loops[3]={"ONE-SHOT","FWD","PING"};
+        return string::f("Patch %d: START %.0f%%  END %.0f%%  %s%s  PITCH %+.1f  K1 %.0f%%  K2 %.0f%%  INTERP %.0f",n,p->start*100,p->end*100,
+            loops[std::min(2,std::max(0,p->loop))],p->reverse ? " REV" : "",p->pitch,p->k1*100,p->k2*100,p->interp);
+    }
+    static json_t* patchToJson(const Patch& p) {
+        json_t* o=json_object();
+        json_object_set_new(o,"pitch",json_real(p.pitch)); json_object_set_new(o,"start",json_real(p.start)); json_object_set_new(o,"end",json_real(p.end));
+        json_object_set_new(o,"k1",json_real(p.k1)); json_object_set_new(o,"k2",json_real(p.k2)); json_object_set_new(o,"position",json_real(p.position));
+        json_object_set_new(o,"size",json_real(p.size)); json_object_set_new(o,"interp",json_real(p.interp));
+        json_object_set_new(o,"loop",json_integer(p.loop)); json_object_set_new(o,"reverse",json_boolean(p.reverse));
+        return o;
+    }
+    static std::optional<Patch> patchFromJson(json_t* o) {
+        if(!json_is_object(o)) return std::nullopt;
+        auto number=[o](const char* key,float lo,float hi,float fallback) {
+            json_t* v=json_object_get(o,key); double x=json_is_number(v) ? json_number_value(v) : fallback;
+            return std::isfinite(x) ? otis::clamp(float(x),lo,hi) : fallback;
+        };
+        Patch p;
+        p.pitch=number("pitch",-48,48,0); p.start=number("start",0,1,0); p.end=number("end",0,1,1);
+        p.k1=number("k1",0,1,1); p.k2=number("k2",0,1,1); p.position=number("position",0,1,0);
+        p.size=number("size",1,16,8); p.interp=number("interp",0,9,9);
+        p.loop=int(otis::clamp<json_int_t>(json_integer_value(json_object_get(o,"loop")),0,2));
+        p.reverse=json_is_true(json_object_get(o,"reverse"));
+        return p;
+    }
     void process(const ProcessArgs& args) override {
         // Never wait on UI/file operations from the audio thread. Rare contention outputs silence.
         std::unique_lock<std::mutex> guard(engineMutex,std::try_to_lock);
         if(!guard.owns_lock()) { for(auto& output:outputs) output.setVoltage(0); return; }
         auto& c=engine.controls;
         c.engineMode=engineMode.load(std::memory_order_relaxed); c.filterMode=filterMode.load(std::memory_order_relaxed); c.gated=gated.load(std::memory_order_relaxed);
-        for(int i=0;i<16;i++) {
-            c.startv[i]=otis::clamp(params[START].getValue()+inputs[START_IN].getPolyVoltage(i)/10,0.f,1.f);
-            c.endv[i]=otis::clamp(params[END].getValue()+inputs[END_IN].getPolyVoltage(i)/10,0.f,1.f);
-            c.position[i]=otis::clamp(params[POSITION].getValue()+inputs[POSITION_IN].getPolyVoltage(i)/10,0.f,1.f);
-            c.sizeOctaves[i]=otis::clamp(params[SIZE].getValue()+inputs[SIZE_IN].getPolyVoltage(i),1.f,16.f);
+        uint32_t revision=patchRevision.load(std::memory_order_acquire);
+        if(revision!=activeRevision) {
+            // Never wait for the UI; a patch stored mid-block is picked up on a later sample.
+            std::unique_lock<std::mutex> lock(patchMutex,std::try_to_lock);
+            if(lock.owns_lock()) { activePatches=patches; activeRevision=revision; }
         }
+        const Patch panel=panelPatch();
+        float interpCv=inputs[INTERP_IN].getVoltage()/1.1f;
+        bool levelPatched=inputs[LEVEL_IN].isConnected();
+        // A voice plays the panel or its stored patch, with each CV added.
+        auto voiceControls=[&](int i) {
+            const auto& stored=activePatches[voicePatch[i]];
+            const Patch& p=stored ? *stored : panel;
+            c.startv[i]=otis::clamp(p.start+inputs[START_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.endv[i]=otis::clamp(p.end+inputs[END_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.position[i]=otis::clamp(p.position+inputs[POSITION_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.sizeOctaves[i]=otis::clamp(p.size+inputs[SIZE_IN].getPolyVoltage(i),1.f,16.f);
+            c.k1v[i]=otis::clamp(p.k1+inputs[K1_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.k2v[i]=otis::clamp(p.k2+inputs[K2_IN].getPolyVoltage(i)/10,0.f,1.f);
+            c.level[i]=levelPatched ? otis::clamp(inputs[LEVEL_IN].getPolyVoltage(i)/10,0.f,1.f) : 1.f;
+            c.pitch[i]=p.pitch/12+inputs[PITCH_IN].getPolyVoltage(i);
+            c.loopv[i]=stored ? int8_t(p.loop) : int8_t(-1);
+            c.reversev[i]=stored ? int8_t(p.reverse) : int8_t(-1);
+            c.interpv[i]=stored ? int8_t(std::lround(otis::clamp(p.interp+interpCv,0.f,9.f))) : int8_t(-1);
+        };
+        for(int i=0;i<16;i++) voiceControls(i);
         c.windowMode=int(params[WINDOW_MODE].getValue());
         auto frame=frameReader.process(inputs[FRAME_BUS_IN]);
         c.frameBus=frame.connected; c.frameWord=frame.word;
@@ -282,35 +364,38 @@ struct OtisSampler : Module {
         // LAB: a tiny dead band keeps a re-centred knob on the authentic clock path.
         float clock=params[CLOCK].getValue()+inputs[CLOCK_IN].getVoltage();
         c.clockOctaves=std::abs(clock)<.005f ? 0.f : clock;
-        c.interpBits=int(std::lround(otis::clamp(params[INTERP].getValue()+inputs[INTERP_IN].getVoltage()/1.1f,0.f,9.f)));
+        c.interpBits=int(std::lround(otis::clamp(params[INTERP].getValue()+interpCv,0.f,9.f)));
         c.varispeed=varispeed.load(std::memory_order_relaxed); c.recordSource=recordSource.load(std::memory_order_relaxed);
         // A take is stereo when AUDIO R is patched, or when it resamples a stereo sample's own output.
         bool audioR=inputs[AUDIO_R_IN].isConnected();
         c.recordStereo=audioR || (c.recordSource>0 && engine.sample.stereo);
-        bool levelPatched=inputs[LEVEL_IN].isConnected();
-        for(int i=0;i<16;i++) {
-            c.k1v[i]=otis::clamp(params[K1].getValue()+inputs[K1_IN].getPolyVoltage(i)/10,0.f,1.f);
-            c.k2v[i]=otis::clamp(params[K2].getValue()+inputs[K2_IN].getPolyVoltage(i)/10,0.f,1.f);
-            c.level[i]=levelPatched ? otis::clamp(inputs[LEVEL_IN].getPolyVoltage(i)/10,0.f,1.f) : 1.f;
-        }
         c.k1=c.k1v[0]; c.k2=c.k2v[0];
         c.linearLevel=linearLevel.load(std::memory_order_relaxed); c.declick=declick.load(std::memory_order_relaxed);
         c.outputGain=params[OUTPUT_GAIN].getValue(); c.recordGain=params[RECORD_GAIN].getValue();
         c.captureIndex=int(params[CAPTURE_RATE].getValue()); c.loop=int(params[LOOP].getValue()); c.reverse=params[REVERSE].getValue()>.5;
-        if(c.reverse!=previousReverse) { for(auto& v:engine.voices) v.reverse=c.reverse; previousReverse=c.reverse; }
+        // REV turns the voices playing the panel; a stored patch keeps the direction it started with.
+        if(c.reverse!=previousReverse) { for(int i=0;i<16;i++) if(c.reversev[i]<0) engine.voices[size_t(i)].reverse=c.reverse; previousReverse=c.reverse; }
         c.channels=std::min(16,std::max(1,std::max(inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels())));
-        for(int i=0;i<16;i++) c.pitch[i]=params[PITCH].getValue()/12+inputs[PITCH_IN].getPolyVoltage(i);
         recordGate.process(inputs[RECORD_IN].getVoltage(),.1f,2.f);
         bool requestedRecord=params[RECORD].getValue()>.5 || recordGate.isHigh();
         if(requestedRecord && !previousRecord) engine.startRecord();
         if(!requestedRecord && previousRecord) { if(engine.recording && engine.recordFrames>=2) liveSample=true; engine.stopRecord(); }
         previousRecord=requestedRecord;
+        // Each hit takes its patch from PATCH on the same sample. Unpatched, every voice plays the panel.
+        auto patchBus=patchReader.process(inputs[PATCH_IN]);
+        auto hit=[&](int i) {
+            int n=patchBus.connected ? patchBus.word&3 : 0;
+            voicePatch[size_t(i)]=uint8_t(n); voiceControls(i);
+            lastPatch.store(patchBus.connected ? n : -1,std::memory_order_relaxed);
+            engine.trigger(i);
+        };
+        if(!patchBus.connected) lastPatch.store(-1,std::memory_order_relaxed);
         for(int i=0;i<16;i++) {
             bool wasHigh=gates[i].isHigh();
-            if(gates[i].process(i<c.channels ? inputs[GATE_IN].getPolyVoltage(i) : 0,.1f,2.f)) engine.trigger(i);
+            if(gates[i].process(i<c.channels ? inputs[GATE_IN].getPolyVoltage(i) : 0,.1f,2.f)) hit(i);
             if(wasHigh && !gates[i].isHigh()) engine.release(i);
         }
-        if(playButton.process(params[PLAY].getValue())) engine.trigger(0);
+        if(playButton.process(params[PLAY].getValue())) hit(0);
         float mutateVoltage=std::max(params[MUTATE].getValue()*10.f,inputs[MUTATE_IN].getVoltage());
         if(mutationGate.process(mutateVoltage,.1f,2.f)) {
             auto window=engine.windowFor(0);
@@ -342,7 +427,8 @@ struct OtisSampler : Module {
         if(engine.recording && engine.recordFrames>=2) liveSample=true;
         engine.stopRecord();
         engineMode=0; filterMode=2; gated=false; linearLevel=false; declick=true; varispeed=false; recordSource=0; previousRecord=false; previousReverse=false;
-        smoothFrameBus=true; frameReader.reset();
+        smoothFrameBus=true; frameReader.reset(); patchReader.reset(); voicePatch.fill(0); lastPatch=-1;
+        { std::lock_guard<std::mutex> patchGuard(patchMutex); patches={}; ++patchRevision; }
         for(auto& gate:gates) gate.reset();
         recordGate.reset(); mutationGate.reset(); playButton.reset(); refreshDisplay();
     }
@@ -371,6 +457,10 @@ struct OtisSampler : Module {
         json_object_set_new(root,"followFx",json_boolean(followFx));
         json_object_set_new(root,"fxMono",json_boolean(fxMono.load()));
         json_object_set_new(root,"smoothFrameBus",json_boolean(smoothFrameBus.load()));
+        // Patches 1-3; null where a patch was never stored.
+        json_t* stored=json_array();
+        { std::lock_guard<std::mutex> guard(patchMutex); for(int n=1;n<=3;n++) json_array_append_new(stored,patches[size_t(n)] ? patchToJson(*patches[size_t(n)]) : json_null()); }
+        json_object_set_new(root,"patches",stored);
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -386,7 +476,12 @@ struct OtisSampler : Module {
             fxMono=json_is_true(json_object_get(root,"fxMono"));
             auto dc=json_object_get(root,"declick"); declick=dc ? json_is_true(dc) : true;
             auto smooth=json_object_get(root,"smoothFrameBus"); smoothFrameBus=smooth ? json_is_true(smooth) : true;
-            frameReader.reset();
+            frameReader.reset(); patchReader.reset();
+            {
+                Patches loaded; json_t* stored=json_object_get(root,"patches");
+                for(int n=1;n<=3;n++) loaded[size_t(n)]=patchFromJson(json_array_get(stored,size_t(n-1)));
+                std::lock_guard<std::mutex> guard(patchMutex); patches=loaded; ++patchRevision;
+            }
             auto text=json_string_value(json_object_get(root,"pcm16le"));
             if(text && *text) {
                 auto pcm=otis::decodePcm(text); double rate=json_number_value(json_object_get(root,"rate"));
@@ -443,6 +538,8 @@ struct SampleDisplay : widget::Widget {
                 case otis::LoopMutator::Canceled: message="REWORK: CANCELED"; break;
             }
             nvgText(args.vg,319,0,message,nullptr);
+            int n=module->lastPatch.load(std::memory_order_relaxed);
+            if(n>=0) nvgText(args.vg,319,19,n==0 ? "PATCH 0: PANEL" : module->storedPatch(n) ? string::f("PATCH %d",n).c_str() : string::f("PATCH %d: PANEL",n).c_str(),nullptr);
         }
     }
 };
@@ -467,6 +564,7 @@ struct OtisSamplerWidget : ModuleWidget {
         addInput(createInputCentered<PJ301MPort>(Vec(360,292),module,OtisSampler::CLOCK_IN));
         addInput(createInputCentered<PJ301MPort>(Vec(360,341),module,OtisSampler::INTERP_IN));
         addInput(createInputCentered<PJ301MPort>(Vec(360,246),module,OtisSampler::FRAME_BUS_IN));
+        addInput(createInputCentered<PJ301MPort>(Vec(85,246),module,OtisSampler::PATCH_IN));
         addParam(createParamCentered<RoundBlackKnob>(Vec(435,125),module,OtisSampler::POSITION));
         addParam(createParamCentered<RoundBlackKnob>(Vec(435,187),module,OtisSampler::SIZE));
         addParam(createParamCentered<CKSSThree>(Vec(435,246),module,OtisSampler::WINDOW_MODE));
@@ -535,6 +633,17 @@ struct OtisSamplerWidget : ModuleWidget {
             },i==1 && !m->displayedStereo.load()));
         }));
         menu->addChild(createMenuItem("Stop all voices","",[m]() { std::lock_guard<std::mutex> g(m->engineMutex); m->engine.stopAll(); }));
+        menu->addChild(createSubmenuItem("Patch select","",[m](Menu* child) {
+            child->addChild(createMenuLabel("PATCH bits 1 and 2, on each hit: 0 = the panel, 1-3 = a stored patch"));
+            for(int n=1;n<=3;n++) {
+                bool stored=m->storedPatch(n).has_value();
+                child->addChild(new MenuSeparator);
+                child->addChild(createMenuLabel(m->patchSummary(n)));
+                child->addChild(createMenuItem(string::f("Store the panel as patch %d",n),"",[m,n]{ m->storePatch(n,m->panelPatch()); }));
+                child->addChild(createMenuItem(string::f("Recall patch %d to the panel",n),"",[m,n]{ m->recallPatch(n); },!stored));
+                child->addChild(createMenuItem(string::f("Clear patch %d",n),"",[m,n]{ m->storePatch(n,std::nullopt); },!stored));
+            }
+        }));
         menu->addChild(new MenuSeparator);
         menu->addChild(createBoolMenuItem("Gate release stops playback (default: one-shot)","",[m](){return m->gated.load();},[m](bool b){m->gated=b;}));
         menu->addChild(createBoolMenuItem("Declick release/retrigger (1.5 ms fades)","",[m](){return m->declick.load();},[m](bool b){m->declick=b;}));

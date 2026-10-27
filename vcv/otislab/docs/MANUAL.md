@@ -91,6 +91,54 @@ Choose **Chip filter topology** from the menu:
 
 Enable **Gate release stops playback (default: one-shot)** to stop a voice on gate release. **Declick release/retrigger (1.5 ms fades)** is enabled initially; it softens those boundaries and slightly delays a retrigger. Disable it for hard cuts.
 
+## Patch select
+
+The EPS had two patch-select buttons beside its keyboard: four combinations,
+each sounding a different set of an instrument's layers, changed between notes
+to vary a part as it played. OTIS does the same with one sample and four sets of
+playback settings.
+
+**PATCH** takes a byte, like FRAME BUS. Bits 1 and 2 (cable channels 1 and 2)
+choose the patch for each hit, read on the same sample as its gate:
+
+| Bit 2 | Bit 1 | Patch |
+|---|---|---|
+| low | low | 0, the panel |
+| low | high | 1 |
+| high | low | 2 |
+| high | high | 3 |
+
+A ninth channel carries an optional clock, as on FRAME BUS: the choice then
+changes only on its rising edges. The other bit lanes are ignored, and a mono
+cable sets bit 1 alone (patches 0 and 1). Unpatched, every hit plays the panel.
+
+Patches 1–3 are stored from the panel, under **Patch select** in the menu:
+
+- **Store the panel as patch n** copies the panel's settings below.
+- **Recall patch n to the panel** sets the panel to it, to change and store again.
+- **Clear patch n** forgets it.
+
+The menu lists what each patch holds. A patch that was never stored plays the
+panel. Patches are saved with the Rack patch; **Initialize** clears them.
+
+A patch holds PITCH, START, END, K1, K2, LOOP, REV, INTERP, POSITION and SIZE.
+CV adds to a patch's values as it does to the panel's. Everything else is shared
+by every patch: the record controls, LEVEL, MODE, the menu settings, and CLOCK,
+which sets the one chip clock all voices run at.
+
+Each voice keeps the patch its last hit chose until its next hit; a change on
+PATCH in between doesn't reach it. A voice follows its patch, not a copy of it:
+turning a knob changes the voices playing the panel, and storing a patch again
+changes the voices playing that patch. REV turns only the voices playing the
+panel. With PATCH patched, the display shows the patch the last hit chose
+(**PATCH 2**, or **PATCH 2: PANEL** while patch 2 isn't stored).
+
+Any byte source can choose. With its BUS OUT source set to **Hit mask**, Gorgon
+carries lane n's hit on bit n, on the same sample as the row's gates. Patched
+straight into PATCH, a hit on a row where lane 1 also hits plays patch 1, where
+lane 2 also hits patch 2, and where both do patch 3. Through a
+Lookup, a Register or Counter can step through patches in any order.
+
 ## LAB clock and interpolation
 
 **CLOCK is a playback-rate control, not a tempo-sync input.** CLK CV adds octaves at 1 V/oct.
@@ -189,6 +237,7 @@ Pitch and gate channel counts establish the voice count, subject to the selected
 | INT CV | Mono; approximately 1.1 V per interpolation bit. |
 | POS CV | Per-voice; 10 V adds 100% to POSITION. |
 | FRAME BUS | One byte, LSB first; optional clock on channel 9. Selects frames in FRM mode, overriding POSITION/POS CV. |
+| PATCH | One byte, LSB first; optional clock on channel 9. Bits 1 and 2 choose each hit's patch (see [Patch select](#patch-select)). |
 | SIZE CV | Per-voice; 1 V doubles the window sample count. |
 | AMT CV | Mono; 10 V adds 100% to AMOUNT, latched on REWORK. |
 | TRIG | Mono REWORK trigger; rising at 2 V, rearmed below 0.1 V. |
