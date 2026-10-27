@@ -33,7 +33,7 @@ this is an original per-edge implementation with no interpolation between edges.
 
 | Item | Behavior |
 |---|---|
-| SOURCE | Selector: Auto (CLOCK jack, else internal), CLOCK jack, Internal, Engine rate. Counter 2 has no bus input, so no Bus CLK choice. |
+| SOURCE | Selector: Auto (CLOCK jack, else internal), CLOCK jack, Internal, Engine rate. There is no Bus CLK choice: RATIO's clock latches the ratio word, never the phase. |
 | RATE | Internal clock, 0.125–2048 Hz. Used only when Internal owns the clock. |
 | N | Integer 1–16, default 1. Cycles per D edges. |
 | D | Integer 1–64, default 16. Edges per N cycles. |
