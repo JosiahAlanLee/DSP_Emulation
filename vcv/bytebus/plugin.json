@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.12.0",
+  "version": "2.13.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -60,6 +60,12 @@
       "name": "Fan",
       "description": "A 5-bit address routes one signal to 32 outputs and one of 32 inputs to a common output, on 16-channel cables: an up/down counter of 1-32 steps or a byte bus, with an optional late-enable glitch.",
       "tags": ["Switch", "Sequencer", "Logic", "Polyphonic"]
+    },
+    {
+      "slug": "Lattice",
+      "name": "Lattice",
+      "description": "A 4 x 4 step sequencer on two up/down counters with separate clocks, cross-coupled jumps after the Nonlinearcircuits Bindubba, two slewed outputs, and its state on a byte bus.",
+      "tags": ["Sequencer", "Logic", "Slew limiter", "Polyphonic"]
     }
   ]
 }

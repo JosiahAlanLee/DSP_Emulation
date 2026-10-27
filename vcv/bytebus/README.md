@@ -1,6 +1,6 @@
 # ByteBusLab
 
-Nine modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Ten modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
@@ -14,8 +14,9 @@ explicit clocking and original table content:
 | **Pipeline**, 12 HP | A word returns DELAY (1–64) edges later; SPREAD delays each bit a little more, and LOOP repeats the last DELAY words. The canon of the kit. | [Pipeline](docs/PIPELINE.md) |
 | **Counter**, 12 HP | A word that counts: increment from a knob or a byte bus, modulus 2–256, seed and carry, with Register's clock rules. Loop, One-shot or Pendulum: a divider chain, a ramp that holds, or a triangle. | [Counter](docs/COUNTER.md) |
 | **Fan**, 16 HP | One 5-bit address, 32 places: routes COM IN to one of 32 outputs and one of 32 inputs to COM OUT, on 16-channel cables, from an up/down counter of 1–32 steps or a byte bus. Hold, and an optional late-enable GLITCH after the Nonlinearcircuits 32:1. | [Fan](docs/FAN.md) |
+| **Lattice**, 26 HP | Sixteen steps on a 4 × 4 grid, column from one up/down counter and row from another on its own clock, with the cross-coupled jumps of the Nonlinearcircuits Bindubba (settled or one-pass) or jumps from a byte bus; CV, inverted CV, two slews under CV and sixteen gates. | [Lattice](docs/LATTICE.md) |
 
-Plugin **ByteBusLab**, version **2.12.0**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.13.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -40,7 +41,7 @@ CARRY chains, a Counter → Lookup rhythm and One-shot → Lookup envelopes. Swi
 modes, a Counter A/B commutator and reclocking. Pipeline tests cover every DELAY and
 SPREAD, loops, a saved looped phrase and a Rhythm canon through Switch. Lookup2
 tests cover every (A, B) in Logic and Arithmetic and every Walsh shape; Counter 2
-tests every N/D against the exact formula and a 12-against-16 polymeter; Fan tests every address, length and direction, routing both ways, GLITCH and a Counter → Fan chain. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
+tests every N/D against the exact formula and a 12-against-16 polymeter; Fan tests every address, length and direction, routing both ways, GLITCH and a Counter → Fan chain. Lattice tests both jump modes against the jam wiring for all 256 states, held and simultaneous jumps, and a Counter → Lattice jump chain. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
 2.8 installed, and `examples/counter-divider.vcv` with ByteBusLab alone.
 
 The [generator](tools/generate_lookup.py) and per-table manifests ship with the

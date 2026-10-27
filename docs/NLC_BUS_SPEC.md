@@ -489,6 +489,10 @@ resting state behave as inferred. §9.1 measures each on the owner's unit.
 
 ## 7. Lattice (from Bindubba)
 
+Implemented in ByteBusLab 2.13; the contract is [LATTICE.md](../vcv/bytebus/docs/LATTICE.md),
+which supersedes §7.2–7.3 where they differ. §7.1 and §7.4 remain the record of
+the sources.
+
 ### 7.1 What the sources establish
 
 - **Documented (D1, D2 text).** A Eurorack version of the bindubba3 sequencer,

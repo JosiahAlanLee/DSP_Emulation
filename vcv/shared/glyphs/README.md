@@ -31,6 +31,7 @@ drawn by that project's generator with the seal ornament left off.
 | Counter 2 | VIII Additive change | as Counter: each edge adds N/D of a cycle to the held phase |
 | Converter | III Boundary | voltage and byte words cross between representations |
 | Fan | V Bottleneck | fails the bypass test (one of 32 paths gets through) |
+| Lattice | XI Reflexive loop | the map moves it (each counter's state moves the other through the jumps) |
 | DrumLab Percussion | X Generative substrate | six synthesis models supply the material for each hit |
 | Machinemodule | X Generative substrate | the drum engine supplies the material for each track |
 
