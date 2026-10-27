@@ -93,10 +93,10 @@ inline std::array<int,params> resolve(const Hit& hit, const std::array<uint8_t,p
 struct LinkState {
     bool connected=false, moving=false;
     int64_t transport=-1, lastFrame=-1;
-    std::array<Edge,4> gates;
+    std::array<Edge,gorgon_sound::LANES> gates;
     Edge reset;
     // Results are per-sample; the caller copies complete events into its block.
-    struct Result { bool panic=false; std::array<bool,4> hits{}; };
+    struct Result { bool panic=false; std::array<bool,gorgon_sound::LANES> hits{}; };
     Result update(const gorgon_sound::Packet* packet, int64_t frame) {
         Result result;
         if(!packet||!gorgon_sound::valid(*packet,frame)){
@@ -106,7 +106,7 @@ struct LinkState {
         }
         if(!connected){ // Connecting in the middle of a pulse must not invent a hit.
             connected=true;moving=packet->moving;transport=packet->transport;lastFrame=packet->frame;
-            for(int i=0;i<4;++i)gates[i].high=packet->lanes[i].gate>.1f;
+            for(int i=0;i<gorgon_sound::LANES;++i)gates[i].high=packet->lanes[i].gate>.1f;
             reset.high=packet->reset>.1f;return result;
         }
         if(packet->frame<=lastFrame)return result; // each producer frame is consumed once
@@ -116,7 +116,7 @@ struct LinkState {
         result.panic=(moving&&!packet->moving)||jumped||resetEdge;
         // A seek/run revision starts a fresh trigger phase. A repeated reset pulse does not.
         if(jumped)for(auto& e:gates)e.high=false;
-        for(int i=0;i<4;++i){bool edge=gates[i].process(packet->lanes[i].gate);result.hits[i]=packet->moving&&edge&&packet->lanes[i].velocity>0;}
+        for(int i=0;i<gorgon_sound::LANES;++i){bool edge=gates[i].process(packet->lanes[i].gate);result.hits[i]=packet->moving&&edge&&packet->lanes[i].velocity>0;}
         moving=packet->moving;transport=packet->transport;
         return result;
     }

@@ -132,7 +132,7 @@ static void busTrig(){
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
     Plugin receiverPlugin;receiverPlugin.slug="MachinemoduleRack";receiverPlugin.version="2.0.0";modelMachinemodule->plugin=&receiverPlugin;
-    Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.3.1";
+    Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.4.0";
     Model providerModel;providerModel.slug="Gorgon";providerModel.plugin=&providerPlugin;
     {
         Trace trace;Machinemodule m(factory(trace));m.model=modelMachinemodule;ready(m);
@@ -229,6 +229,33 @@ int main(){
             assert(trace.hits.size()==3);
             assert(trace.hits[0].resolved[0]==99&&trace.hits[1].resolved[0]==42&&trace.hits[2].resolved[0]==42);}
         assert(receiver.underruns==0);std::cout<<"Real Gorgon -> Machinemodule, "<<(reverse?"receiver first":"sender first")<<": interrupted and late seeks each play one landing hit\n";
+    }
+    // Gorgon 2.4.0 and a version-3 score: lanes 5 and 6 reach tracks 5 and 6 over sound
+    // link version 2, each hit with its own lock over the lane's kit sound.
+    for(bool reverse:{false,true}){
+        Trace trace;Machinemodule receiver(factory(trace));receiver.model=modelMachinemodule;ready(receiver);
+        Gorgon sender;sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
+        for(auto& out:sender.outputs)out.channels=1;for(auto& out:receiver.outputs)out.channels=1;
+        auto score=std::make_shared<gorgon::v3::ScoreV3>();score->bpm=120;score->loop=true;
+        gorgon::v3::PatternV3 pattern;pattern.geometry.w=480;pattern.geometry.rows=pattern.geometry.bar=16;pattern.geometry.bars=1;
+        for(auto& lane:pattern.lanes){lane.len=16;lane.cells.assign(16,gorgon::v3::Cell());}
+        for(int lane:{4,5}){auto& c=pattern.lanes[lane].cells[lane==4?0:2];c.present=true;c.vel=127;c.midi=60;
+            c.hasLocks=true;c.locks.mask=1;c.locks.values[0]=float(lane*10);score->sounds[lane].machine=16;}
+        score->store.push_back(pattern);score->index[0]=0;score->buildTimeline();
+        auto& s=sender.snapshot;s.score3=score;s.layer=std::make_shared<gorgon::v3::Layer>();
+        s.playhead.valid=s.playhead.enabled=s.playhead.v3=true;s.playhead.playing=false;s.playhead.transportRevision=0;s.clock.observe(0,0,0);
+        sender.haveSnapshot=true;
+        Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+        for(int f=0;f<16000;++f){
+            args.frame=f;
+            if(f==64){s.playhead.playing=true;s.playhead.anchorTime=64./44100;s.playhead.transportRevision=1;}
+            if(reverse){receiver.process(args);sender.process(args);}else{sender.process(args);receiver.process(args);}flip(receiver);
+            if(f%128==127)std::this_thread::sleep_for(std::chrono::microseconds(800));
+        }
+        drain();{std::lock_guard<std::mutex> guard(trace.mutex);
+            assert(trace.hits.size()==2);
+            assert(trace.hits[0].hit.track==4&&trace.hits[0].resolved[0]==40&&trace.hits[1].hit.track==5&&trace.hits[1].resolved[0]==50);}
+        assert(receiver.underruns==0);std::cout<<"Real Gorgon -> Machinemodule, "<<(reverse?"receiver first":"sender first")<<": version 3, lanes 5 and 6 with their locks\n";
     }
 #endif
     contextSet(nullptr);delete context.engine;context.engine=nullptr;
