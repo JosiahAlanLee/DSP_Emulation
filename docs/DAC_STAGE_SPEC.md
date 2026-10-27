@@ -1,6 +1,10 @@
 # DAC stage: period converter character, spec v0.1
 
-Status: **draft, not built** (2026-10-27). Working names: **DAC Stage** for the
+Status: **draft contract; early implementation started.** [CZishLab](../vcv/czish)
+implements the word formats and a ByteBus XOR/tap experiment. Its raw HOLD,
+limited AA, and provisional CZ profile are not the full contract below.
+
+Working names: **DAC Stage** for the
 module, `dspemu::dac` for the shared header. Names and slugs are the owner's to
 change. Hardware claims cite their source. Items marked *provisional* or
 *unverified* still need a primary source or a measurement. The CZ-101 voice that
