@@ -91,6 +91,35 @@ struct Selector {
         return selected;
     }
 };
+// JUMP (docs/LOOKUP.md): a persistent SHAPE step of one position on each publication of the JUMP
+// bus where the selected bit is high, the Machinemodule BUS TRIG rule. Clocked: each CLK rising
+// edge with the bit high steps, and the first edge after a fresh start only arms, since a reader
+// counts a CLK that is already high as an edge. Unclocked: each rising edge of the bit steps, and
+// a bit already high when the cable arrives, or when the bit selection changes, does not.
+struct Jump {
+    int steps = 0;                     // 0-63, added to SHAPE; RESET clears it
+    bool connected = false, clocked = false, armed = false, high = false;
+    int bit = -1;
+    void clear() { *this = Jump{}; }
+    // Detectors start over; the step count stays.
+    void restart() { int kept = steps; clear(); steps = kept; }
+    bool tick(const bus::Sample& in, int selectedBit) {
+        bool fresh = in.connected != connected || in.clocked != clocked;
+        connected = in.connected; clocked = in.clocked;
+        if (!in.connected) { restart(); return false; }
+        bool level = in.rawWord >> selectedBit & 1, step = false;
+        if (in.clocked) {
+            if (fresh) armed = false;
+            if (in.rising) { step = armed && level; armed = true; }
+        } else {
+            if (fresh || selectedBit != bit) high = level;
+            step = level && !high; high = level;
+        }
+        bit = selectedBit;
+        if (step) steps = (steps + 1) & 63;
+        return step;
+    }
+};
 struct Parameters {
     int family = Harmonic;
     double shape = 0, phase = 0; // shape 0..64 circular; phase in cycles

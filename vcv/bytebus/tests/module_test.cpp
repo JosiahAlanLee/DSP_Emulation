@@ -308,6 +308,32 @@ static std::vector<uint8_t> rhythmChain(std::shared_ptr<const dspemu::lookup::Li
     return gates;
 }
 
+// Counter -> Lookup BUS IN and JUMP (BIT 3), through one-sample cables in random order: the
+// address and the JUMP bit arrive on the same publication, so each count with bit 3 high steps
+// SHAPE before that count is evaluated. The Counter's seed publication only arms JUMP.
+static std::vector<uint8_t> jumpChain(std::shared_ptr<const dspemu::lookup::Library> library, float sr, unsigned orderSeed) {
+    namespace lu = dspemu::lookup; using C = ByteCounter; using L = ByteLookup;
+    C c; L l(library); connectOutputs(c); connectOutputs(l); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::MODULUS].setValue(16); c.inputs[C::CLOCK_IN].channels = 1;
+    l.params[L::FAMILY].setValue(lu::Walsh); l.params[L::SHAPE].setValue(9); l.params[L::JUMP_BIT].setValue(3);
+    std::mt19937 order(orderSeed); std::vector<uint8_t> out, counts;
+    for (int t = 0; t < 8 * 100; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], l.inputs[L::BUS_IN]); copy(c.outputs[C::BUS_OUT], l.inputs[L::JUMP_IN]);
+        if (order() & 1) { c.process(a); l.process(a); } else { l.process(a); c.process(a); }
+        if (l.outputs[L::BUS_OUT].getVoltage(8) == 10) out.push_back(word(l.outputs[L::BUS_OUT]));
+        if (c.outputs[C::CLOCK_OUT].getVoltage() == 10) counts.push_back(word(c.outputs[C::BUS_OUT]));
+    }
+    assert(out.size() >= 98 && counts.size() >= out.size());
+    int steps = 0;
+    for (size_t k = 0; k < out.size(); ++k) {
+        if (k > 0 && (counts[k] & 8)) ++steps;
+        assert(out[k] == library->table(lu::Walsh, (9 + steps) & 63)[counts[k]]);
+    }
+    assert(steps > 40 && l.jumpSteps.load() == (steps & 63));
+    return out;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
@@ -321,11 +347,13 @@ int main() {
     auto library = std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load("../res/lookup-v1.bin"));
     auto rhythm = rhythmChain(library, 48000, 4);
     assert(rhythmChain(library, 44100, 5) == rhythm && rhythmChain(library, 96000, 6) == rhythm);
+    auto jumped = jumpChain(library, 48000, 7);
+    assert(jumpChain(library, 44100, 8) == jumped && jumpChain(library, 96000, 9) == jumped);
     for (uint8_t seed : {uint8_t(0), uint8_t(0xa5), uint8_t(255)}) {
         auto reference = feedback(48000, seed, 1);
         assert(feedback(44100, seed, 2) == reference);
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz\n";
 }

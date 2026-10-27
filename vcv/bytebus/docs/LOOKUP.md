@@ -1,6 +1,6 @@
 # Lookup
 
-**ByteBusLab 2.1 · 16 HP · original byte transforms and table authoring**
+**ByteBusLab 2.5 · 16 HP · original byte transforms and table authoring**
 
 Lookup maps an 8-bit address to an 8-bit result. It ships six original families,
 each with 64 shapes of 256 bytes, and accepts a custom table compiled from a
@@ -61,11 +61,12 @@ FNV-1a fingerprint; SHA-256 is checked by the generator/asset tests.
 | Control | Behavior |
 |---|---|
 | FAMILY | Harmonic, Formant, Fold, Curve, Walsh, Rhythm, Custom. FAMILY CV adds one family per volt and clamps to the ends. |
-| SHAPE | Circular 0–64; 64 returns to 0. SHAPE CV adds 64 positions per 10 V. |
+| SHAPE | Circular 0–64; 64 returns to 0. SHAPE CV adds 64 positions per 10 V, and JUMP adds its steps. |
 | PHASE | ±1 cycle, added to the address modulo 256. PHASE CV adds one cycle per volt, including negative modulation. |
 | PATTERN SEED | Integer 0–255, used by Walsh and Rhythm only. Its effect depends only on the current settings/address, not a running random state. |
 | MODE | Map, Track rising ramp, Track falling ramp. |
-| RESET TRACK / RESET | Button or rising trigger resets the ramp follower; it does not change tables or reset an upstream counter. |
+| RESET TRACK / RESET | Button or rising trigger resets the ramp follower and returns JUMP's steps to zero; it does not change tables or reset an upstream counter. |
+| JUMP, BIT | A bus (or gate) input and the bit it watches, 0–7. Each publication with that bit high steps SHAPE by one; see [JUMP](#jump). |
 | Map clock policy | Context menu: Follow bus CLK (default), or Engine rate. Saved as a parameter. Track modes always generate an unclocked output at the engine rate. |
 
 Numeric families interpolate both between table addresses and neighboring
@@ -80,6 +81,41 @@ Rhythm stores each hit high for the first four of its eight phase addresses,
 then low for four. Consecutive hits therefore have a low gap if the phase source
 visits those addresses. Skipping across a pulse window can miss it. Use a phase
 source slow enough for the desired gates; input phase is not an event queue.
+
+## JUMP
+
+JUMP steps SHAPE rhythmically from logic: each step adds one shape position,
+wrapping at 64, and the steps stay until RESET. They add to the knob and SHAPE
+CV, so a step from SHAPE 5 reads shape 6 of a discrete family and morphs a
+numeric one by one table; on Custom, one step is 1/64 of the morph's cycle.
+
+When a step happens is the Machinemodule
+[BUS TRIG](../../machinemodule/docs/BUS_TRIG.md) rule, with BIT choosing the line:
+
+- **Clocked JUMP (nine channels):** each CLK rising edge where the bit is high
+  steps once. Adjacent high words step twice, and a bit held high across
+  publications steps on each one. The first edge after the cable is connected,
+  or after it gains its clock, only arms: a Reader counts a CLK that is already
+  high as an edge, and that must not replay a held bit.
+- **Unclocked JUMP (eight or fewer channels):** each rising edge of the bit
+  steps. A bit already high when the cable arrives, when it loses its clock, or
+  when BIT moves onto it does not. A gate or trigger cable is bit 0.
+
+JUMP is decoded before the address on the same sample, so a step and an address
+arriving together (one source patched to both) evaluate with the new shape. In
+Map/Follow the output still changes only on BUS IN's edges; a step between them
+shows at the next one. RESET clears the steps and wins over a step on the same
+sample. The steps are saved with the patch; Initialize clears them, and a patch
+from before 2.5 has none. The light beside JUMP flashes on each step, and the
+context menu shows the count.
+
+A held offset ("+1 while high") is not JUMP: that is attenuated SHAPE CV, one
+shape per 10/64 V (about 0.156 V). A 10 V bit straight into SHAPE CV is a full
+turn and lands where it started.
+
+A Gorgon v3 BUS OUT lane bit into JUMP steps on every publication its hit
+covers, as BUS TRIG does: one step per hit only when Gorgon's CLOCK pulses once
+per row and the lane has no `ply`.
 
 ## Bus timing and tracking
 
@@ -183,5 +219,10 @@ Tests exhaust all byte inputs for every Walsh shape/seed, verify rhythm gaps
 and anchors, bound DC/RMS and every shape seam, compare the compiler to the
 actual Vastish Voice implementation, and exercise real Rack ports, import,
 patch restore, UI/audio handoff, packaged assets, tracking and reset feedback
-at 44.1/48/96 kHz. The audio path performs no heap allocations. GUI and physical
+at 44.1/48/96 kHz. JUMP is tested through a real Reader (arming, held and
+adjacent high bits, gates, Schmitt thresholds, clocked/unclocked changes,
+disconnection, wrap) and through the module (a step on its own sample, bit
+choice, RESET priority, persistence, Initialize), and a Counter feeding both
+BUS IN and JUMP through one-sample cables in random order gives the expected
+Walsh shape for every count at 44.1/48/96 kHz. The audio path performs no heap allocations. GUI and physical
 device behavior require separate workstation checks.

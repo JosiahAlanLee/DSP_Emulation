@@ -20,14 +20,16 @@ static std::string lookupHash(const dspemu::lookup::Table& table) {
     return text.str();
 }
 struct ByteLookup : Module {
-    enum Params { FAMILY, SHAPE, PHASE, SEED, MODE, CLOCK_POLICY, RESET_BUTTON, NUM_PARAMS };
-    enum Inputs { BUS_IN, FAMILY_CV, SHAPE_CV, PHASE_CV, RESET_IN, SIGNAL_IN, NUM_INPUTS };
+    enum Params { FAMILY, SHAPE, PHASE, SEED, MODE, CLOCK_POLICY, RESET_BUTTON, JUMP_BIT, NUM_PARAMS };
+    enum Inputs { BUS_IN, FAMILY_CV, SHAPE_CV, PHASE_CV, RESET_IN, SIGNAL_IN, JUMP_IN, NUM_INPUTS };
     enum Outputs { BUS_OUT, AUDIO_OUT, NUM_OUTPUTS };
     enum Lights { BIT0_LIGHT, BIT1_LIGHT, BIT2_LIGHT, BIT3_LIGHT, BIT4_LIGHT, BIT5_LIGHT,
-        BIT6_LIGHT, BIT7_LIGHT, LOCK_LIGHT, NUM_LIGHTS };
+        BIT6_LIGHT, BIT7_LIGHT, LOCK_LIGHT, JUMP_LIGHT, NUM_LIGHTS };
     std::shared_ptr<const dspemu::lookup::Library> library;
     dspemu::lookup::Engine engine;
-    dspemu::bus::Reader reader; dspemu::bus::Writer writer;
+    dspemu::bus::Reader reader, jumpReader; dspemu::bus::Writer writer;
+    dspemu::lookup::Jump jump;
+    std::atomic<int> jumpSteps{0}; // jump.steps, for saving from the UI thread
     dspemu::bus::Gate resetGate; bool resetButtonHigh = false;
     std::atomic<unsigned> displayedWord{128};
     std::atomic<bool> libraryMismatch{false};
@@ -44,13 +46,15 @@ struct ByteLookup : Module {
         configParam(SEED,0,255,0,"Pattern seed (Walsh / Rhythm)"); getParamQuantity(SEED)->snapEnabled = true;
         configSwitch(MODE,0,2,0,"Phase mode",{"Map","Track rising ramp","Track falling ramp"});
         configSwitch(CLOCK_POLICY,0,1,0,"Map clock policy",{"Follow bus CLK","Engine rate (unclocked output)"});
-        configButton(RESET_BUTTON,"Reset ramp follower");
+        configButton(RESET_BUTTON,"Reset ramp follower and JUMP steps");
+        configSwitch(JUMP_BIT,0,7,0,"JUMP bit",{"Bit 0","Bit 1","Bit 2","Bit 3","Bit 4","Bit 5","Bit 6","Bit 7"});
         configInput(BUS_IN,"Byte address; optional CLK on channel 9");
         configInput(FAMILY_CV,"Family CV (1 V per family, clamped)");
         configInput(SHAPE_CV,"Shape CV (10 V per 64 shapes)");
         configInput(PHASE_CV,"Phase CV (1 V per cycle)");
-        configInput(RESET_IN,"Reset ramp follower");
+        configInput(RESET_IN,"Reset ramp follower and JUMP steps");
         configInput(SIGNAL_IN,"Analog address (±5 V); used when BUS IN is unconnected");
+        configInput(JUMP_IN,"Jump: SHAPE steps by one on each publication with the selected bit high (a gate is bit 0)");
         configOutput(BUS_OUT,"Transformed byte bus"); configOutput(AUDIO_OUT,"Raw DAC (0x80 = 0 V; nominal ±5 V)");
         if (!library) try {
             if (!pluginInstance) throw std::runtime_error("Lookup library path unavailable");
@@ -118,6 +122,12 @@ struct ByteLookup : Module {
         p.engineClock = params[CLOCK_POLICY].getValue() >= .5f;
         bool button = params[RESET_BUTTON].getValue() >= .5f;
         bool reset = resetGate.process(cv(RESET_IN)) | (button && !resetButtonHigh); resetButtonHigh = button;
+        // JUMP is decoded before the address is evaluated, so a step applies on its own sample.
+        // RESET wins over a simultaneous step.
+        int bit = int(std::round(clamp(finite(params[JUMP_BIT].getValue()),0.f,7.f)));
+        bool stepped = jump.tick(jumpReader.process(inputs[JUMP_IN]),bit) && !reset;
+        if (reset) jump.steps = 0;
+        p.shape += jump.steps; jumpSteps.store(jump.steps,std::memory_order_relaxed);
         auto data = reader.process(inputs[BUS_IN]);
         if (!data.connected && inputs[SIGNAL_IN].isConnected()) {
             data.connected = data.updated = true;
@@ -135,13 +145,16 @@ struct ByteLookup : Module {
         displayedWord.store(out.word,std::memory_order_relaxed);
         for (int k = 0; k < 8; ++k) lights[BIT0_LIGHT+k].setBrightness(out.word & (1u<<k) ? 1.f : 0.f);
         lights[LOCK_LIGHT].setBrightness(out.locked ? 1.f : 0.f);
+        lights[JUMP_LIGHT].setBrightnessSmooth(stepped ? 1.f : 0.f,args.sampleTime);
     }
     void onReset(const ResetEvent& event) override {
         Module::onReset(event); engine.reset(); reader.reset(); resetGate.reset(); resetButtonHigh = false;
+        jumpReader.reset(); jump.clear(); jumpSteps.store(0);
         libraryMismatch.store(false); displayedWord.store(128);
     }
     json_t* dataToJson() override {
         json_t* root = json_object(); json_object_set_new(root,"library_sha256",json_string(dspemu::lookup::LIBRARY_SHA256));
+        json_object_set_new(root,"jump",json_integer(jumpSteps.load(std::memory_order_relaxed)));
         if (uiTable) {
             json_t* table = json_object();
             json_object_set_new(table,"format",json_string("ByteBusLab.LookupTable"));
@@ -164,6 +177,10 @@ struct ByteLookup : Module {
             slot->name = "Identity"; publish(slot.release());
         }
         engine.reset(); reader.reset();
+        // Patches before ByteBusLab 2.5 have no JUMP steps.
+        auto* steps = json_object_get(root,"jump");
+        int saved = json_is_integer(steps) ? int(std::max<json_int_t>(0,std::min<json_int_t>(63,json_integer_value(steps)))) : 0;
+        jumpReader.reset(); jump.clear(); jump.steps = saved; jumpSteps.store(saved);
     }
 };
 
@@ -207,6 +224,11 @@ struct ByteLookupWidget : ModuleWidget {
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(BUS_OUT),module,ByteLookup::BUS_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(AUDIO_OUT),module,ByteLookup::AUDIO_OUT));
         addInput(createInputCentered<PJ301MPort>(POS(RESET_IN),module,ByteLookup::RESET_IN));
+        addInput(createInputCentered<PJ301MPort>(POS(JUMP_IN),module,ByteLookup::JUMP_IN));
+        addChild(createLightCentered<SmallLight<GreenLight>>(POS(JUMP_LIGHT),module,ByteLookup::JUMP_LIGHT));
+        auto* jumpBit = createParam<dspemu::panel::Choice>(POS(JUMP_BIT),module,ByteLookup::JUMP_BIT);
+        jumpBit->box.size = Vec(JUMP_BIT_W,JUMP_BIT_H);
+        jumpBit->labels = {"BIT 0","BIT 1","BIT 2","BIT 3","BIT 4","BIT 5","BIT 6","BIT 7"}; addParam(jumpBit);
 #undef POS
     }
     void step() override {
@@ -226,6 +248,7 @@ struct ByteLookupWidget : ModuleWidget {
             menu->addChild(createCheckMenuItem(policy ? "Map at engine rate (8 channels)" : "Map follows bus CLK", "",
                 [m,policy] { return int(m->params[ByteLookup::CLOCK_POLICY].getValue()) == policy; },
                 [m,policy] { m->getParamQuantity(ByteLookup::CLOCK_POLICY)->setValue(float(policy)); }));
+        menu->addChild(createMenuLabel(string::f("JUMP steps: +%d (RESET clears)",m->jumpSteps.load())));
         if (!m->tableError.empty()) menu->addChild(createMenuLabel(m->tableError));
         if (!m->libraryError.empty()) menu->addChild(createMenuLabel(m->libraryError));
         if (m->libraryMismatch.load()) menu->addChild(createMenuLabel("Patch requests a different library; built-in output is neutral"));
