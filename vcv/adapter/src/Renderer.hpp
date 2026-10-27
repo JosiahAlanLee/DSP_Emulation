@@ -20,6 +20,7 @@ public:
     virtual std::string description() const {return "Ready · SYN controls captured on each hit";}
     virtual std::vector<Machine> machines() const {return {};}
     virtual bool fire(const Hit&)=0; // false means an unavailable machine; do not guess another one
+    virtual void release(int /*track*/) {}   // the track's gate fell: a pitched instrument ends its note
     virtual void panic()=0;
     virtual void render(float (&out)[L::nativeFrames][L::channels])=0;
 };
@@ -68,6 +69,7 @@ public:
             while(pendingRead<pendingWrite&&pending[pendingRead%pending.size()].frame<=native){
                 const auto& ev=pending[pendingRead++%pending.size()].event;
                 if(ev.panic){backend.panic();fired.fill(false);}
+                else if(ev.release){if(ev.hit.track<tracks)backend.release(ev.hit.track);}
                 else if(ev.hit.velocity&&ev.hit.track<tracks){
                     if(fired[ev.hit.track])++coalesced;
                     fired[ev.hit.track]=true;

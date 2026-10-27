@@ -1,0 +1,15 @@
+{
+  "slug": "MonomoduleRack",
+  "name": "Monomodule Rack",
+  "version": "2.0.0",
+  "license": "AGPL-3.0-only",
+  "brand": "DSP_Emulation",
+  "author": "DSP_Emulation contributors; Monomodule by Shnolk",
+  "sourceUrl": "https://github.com/JosiahAlanLee/DSP_Emulation",
+  "modules": [{
+    "slug": "Monomodule",
+    "name": "Monomodule",
+    "description": "Monomachine six-track synth on Shnolk's Monomodule engine, with per-note SYN CV and Gorgon notes and locks. User-supplied OS required.",
+    "tags": ["Synth voice", "Polyphonic", "Effect", "External"]
+  }]
+}

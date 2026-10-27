@@ -1,0 +1,181 @@
+name: Monomodule Rack platforms
+on:
+  push:
+    branches: [main]
+    paths: ['vcv/monomodule/**', 'vcv/adapter/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/monomodule.yml']
+  pull_request:
+    paths: ['vcv/monomodule/**', 'vcv/adapter/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/monomodule.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  RACK_SDK_VERSION: 2.6.4
+  # Gorgon with Monomodule as a sound-link receiver (Gorgon #55) and the C4 = 0 V link pitch (#54).
+  GORGON_REF: 9a15b9ee9ab924efeb51465ece1afa9c7d7a0a25
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out matching Gorgon sound-link producer
+        uses: actions/checkout@v4
+        with:
+          repository: JosiahAlanLee/Gorgon
+          ref: ${{ env.GORGON_REF }}
+          path: gorgon-reference
+      - name: Install native build and Rack runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build libjack-jackd2-0 libpulse0 zstd
+      - name: Fetch Rack SDK and pinned core source
+        run: |
+          curl --fail --location https://vcvrack.com/downloads/Rack-SDK-2.6.4-lin-x64.zip -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+          vcv/monomodule/tools/fetch-core.sh
+      - name: Build the adapter, the real Rack module and Gorgon interop (the OS-backed firmware test needs a user's OS)
+        run: |
+          cmake -S vcv/monomodule -B vcv/monomodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
+          cmake --build vcv/monomodule/build --target plugin renderer_test firmware_test module_test plugin_load_test -j2
+          cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
+          ctest --test-dir vcv/monomodule/build --output-on-failure
+      - name: Sanitize the adapter without any firmware
+        run: |
+          cmake -S vcv/monomodule -B vcv/monomodule/build-sanitize -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMNM_RACK_SANITIZE=ON
+          cmake --build vcv/monomodule/build-sanitize --target renderer_test -j2
+          ASAN_OPTIONS=detect_leaks=0 ctest --test-dir vcv/monomodule/build-sanitize --output-on-failure -R '^renderer$'
+      - name: Package binary with corresponding source; exclude all OS/sample data
+        run: |
+          python3 vcv/monomodule/tools/source_bundle.py vcv/monomodule/_deps/monomodule vcv/monomodule/_deps/dsp56300
+          python3 vcv/monomodule/tools/package.py
+          python3 - <<'PY'
+          import tarfile
+          from pathlib import Path
+          source = Path('vcv/monomodule/dist/MonomoduleRack-2.0.0-source.tar.gz')
+          with tarfile.open(source) as tar:
+              names = tar.getnames()
+              assert any(n.endswith('asmjit/src/asmjit/core/builder.cpp') for n in names)
+              assert any(n.endswith('dsp56300/LICENSE.md') for n in names)
+              assert 'MonomoduleRack/vcv/shared/GorgonSound.hpp' in names
+              assert 'MonomoduleRack/vcv/adapter/src/Renderer.hpp' in names
+              assert 'MonomoduleRack/vcv/monomodule/_deps/monomodule/src/core/MonoVoice.cpp' in names
+              assert 'MonomoduleRack/vcv/monomodule/_deps/monomodule/MONOMODULE_REVISION' in names
+              assert not any(n.lower().endswith(('.syx', '.bin', '.so', '.dll', '.dylib')) for n in names)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonomoduleRack-linux-prototype-and-source
+          path: |
+            vcv/monomodule/dist/*.vcvplugin
+            vcv/monomodule/dist/*-source.tar.gz
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JosiahAlanLee/Gorgon
+          ref: ${{ env.GORGON_REF }}
+          path: gorgon-reference
+      - name: Extract the matching Rack runtime for real module tests
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'RackFree.exe'
+          $runtime = Join-Path $env:RUNNER_TEMP 'Rack-runtime'
+          Invoke-WebRequest "https://vcvrack.com/downloads/RackFree-$env:RACK_SDK_VERSION-win-x64.exe" -OutFile $installer
+          & 'C:\Program Files\7-Zip\7z.exe' x $installer "-o$runtime" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Rack runtime extraction failed' }
+          $dll = Get-ChildItem $runtime -Recurse -Filter libRack.dll | Select-Object -First 1
+          if (-not $dll) { throw 'Rack installer did not contain libRack.dll' }
+          $dll.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: >-
+            git unzip
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja mingw-w64-x86_64-python
+            mingw-w64-x86_64-zstd
+      - name: Fetch Rack SDK and pinned core
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-win-x64.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+          vcv/monomodule/tools/fetch-core.sh
+      - name: Build and run native adapter, DSP JIT and Gorgon interop tests
+        run: |
+          cmake -S vcv/monomodule -B vcv/monomodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
+          cmake --build vcv/monomodule/build --target plugin renderer_test firmware_test module_test plugin_load_test -j2
+          cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
+          ctest --test-dir vcv/monomodule/build --output-on-failure
+      - name: Verify DLL imports and package with corresponding source
+        run: |
+          objdump -p vcv/monomodule/plugin.dll | grep 'DLL Name:'
+          if objdump -p vcv/monomodule/plugin.dll | grep -Ei 'DLL Name: (libstdc|libgcc|libwinpthread)'; then
+            echo '::error::plugin.dll depends on a MinGW runtime DLL'
+            exit 1
+          fi
+          python3 vcv/monomodule/tools/source_bundle.py vcv/monomodule/_deps/monomodule vcv/monomodule/_deps/dsp56300
+          python3 vcv/monomodule/tools/package.py
+          test -f vcv/monomodule/dist/MonomoduleRack-2.0.0-win-x64.vcvplugin
+          vcv/monomodule/build/plugin_load_test.exe vcv/monomodule/dist/MonomoduleRack/plugin.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonomoduleRack-win-x64-and-source
+          path: |
+            vcv/monomodule/dist/*.vcvplugin
+            vcv/monomodule/dist/*-source.tar.gz
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, cpu: arm64, arch: mac-arm64 }
+          - { runner: macos-15-intel, cpu: x86_64, arch: mac-x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JosiahAlanLee/Gorgon
+          ref: ${{ env.GORGON_REF }}
+          path: gorgon-reference
+      - name: Install build and packaging tools
+        run: brew install ninja zstd
+      - name: Fetch matching Rack SDK and pinned core
+        run: |
+          curl --fail --location "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip" -o /tmp/rack-sdk.zip
+          unzip -q /tmp/rack-sdk.zip -d /tmp
+          vcv/monomodule/tools/fetch-core.sh
+      - name: Build and run native adapter, DSP JIT and Gorgon interop tests
+        env:
+          DYLD_LIBRARY_PATH: /tmp/Rack-SDK
+        run: |
+          cmake -S vcv/monomodule -B vcv/monomodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cpu }} -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
+          cmake --build vcv/monomodule/build --target plugin renderer_test firmware_test module_test plugin_load_test -j3
+          cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
+          ctest --test-dir vcv/monomodule/build --output-on-failure
+          test "$(lipo -archs vcv/monomodule/plugin.dylib)" = '${{ matrix.cpu }}'
+      - name: Package and verify the signed plugin with corresponding source
+        env:
+          DYLD_LIBRARY_PATH: /tmp/Rack-SDK
+        run: |
+          python3 vcv/monomodule/tools/source_bundle.py vcv/monomodule/_deps/monomodule vcv/monomodule/_deps/dsp56300
+          python3 vcv/monomodule/tools/package.py
+          test -f vcv/monomodule/dist/MonomoduleRack-2.0.0-${{ matrix.arch }}.vcvplugin
+          otool -L vcv/monomodule/dist/MonomoduleRack/plugin.dylib
+          otool -L vcv/monomodule/dist/MonomoduleRack/plugin.dylib | grep '/tmp/Rack2/libRack.dylib'
+          codesign --verify --strict vcv/monomodule/dist/MonomoduleRack/plugin.dylib
+          vcv/monomodule/build/plugin_load_test vcv/monomodule/dist/MonomoduleRack/plugin.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonomoduleRack-${{ matrix.arch }}-and-source
+          path: |
+            vcv/monomodule/dist/*.vcvplugin
+            vcv/monomodule/dist/*-source.tar.gz
+          if-no-files-found: error

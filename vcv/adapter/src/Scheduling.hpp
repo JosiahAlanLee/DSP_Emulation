@@ -38,8 +38,10 @@ struct Hit {
     float values[params]={}, offsets[params]={};
     float bpm=120;
     uint8_t track=0, velocity=127;
+    int8_t note=-1;          // MIDI note for a pitched instrument; -1 for none (a drum machine ignores it)
 };
-struct Event { uint16_t offset=0; bool panic=false; Hit hit; };
+// A hit, a panic, or a release: the gate of hit.track fell, so a pitched instrument ends its note.
+struct Event { uint16_t offset=0; bool panic=false, release=false; Hit hit; };
 struct InputBlock {
     uint64_t generation=0;
     int64_t start=0;
@@ -79,8 +81,9 @@ public:
 };
 template<class L>
 inline Hit capture(int track, const gorgon_sound::Sound& sound, int selectedMachine,
-                   float velocity, const float* knobs, const float* cv, float bpm) {
+                   float velocity, const float* knobs, const float* cv, float bpm, int note=-1) {
     Hit hit;
+    hit.note=int8_t(note<0?-1:std::clamp(note,0,127));
     hit.track=uint8_t(std::clamp(track,0,L::tracks-1));
     hit.machine=int16_t(sound.machine>=0?sound.machine:std::clamp(selectedMachine,0,191));
     hit.mask=sound.mask&255;
@@ -104,8 +107,10 @@ struct LinkState {
     int64_t transport=-1, lastFrame=-1;
     std::array<Edge,gorgon_sound::LANES> gates;
     Edge reset;
-    // Results are per-sample; the caller copies complete events into its block.
-    struct Result { bool panic=false; std::array<bool,gorgon_sound::LANES> hits{}; };
+    // Results are per-sample; the caller copies complete events into its block. `releases` are lanes
+    // whose gate fell, for a pitched instrument's note-offs; a drum machine ignores them.
+    // `resetOnly`: the panic is a reset pulse alone (a loop wrap), with the transport unchanged and moving.
+    struct Result { bool panic=false, resetOnly=false; std::array<bool,gorgon_sound::LANES> hits{}, releases{}; };
     Result update(const gorgon_sound::Packet* packet, int64_t frame) {
         Result result;
         if(!packet||!gorgon_sound::valid(*packet,frame)){
@@ -123,9 +128,14 @@ struct LinkState {
         bool jumped=packet->transport!=transport;
         bool resetEdge=reset.process(packet->reset);
         result.panic=(moving&&!packet->moving)||jumped||resetEdge;
+        result.resetOnly=resetEdge&&!jumped&&!(moving&&!packet->moving);
         // A seek/run revision starts a fresh trigger phase. A repeated reset pulse does not.
         if(jumped)for(auto& e:gates)e.high=false;
-        for(int i=0;i<gorgon_sound::LANES;++i){bool edge=gates[i].process(packet->lanes[i].gate);result.hits[i]=packet->moving&&edge&&packet->lanes[i].velocity>0;}
+        for(int i=0;i<gorgon_sound::LANES;++i){
+            bool was=gates[i].high,edge=gates[i].process(packet->lanes[i].gate);
+            result.hits[i]=packet->moving&&edge&&packet->lanes[i].velocity>0;
+            result.releases[i]=was&&!gates[i].high;
+        }
         moving=packet->moving;transport=packet->transport;
         return result;
     }

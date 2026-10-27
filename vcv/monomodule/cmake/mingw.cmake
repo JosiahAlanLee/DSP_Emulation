@@ -1,0 +1,37 @@
+# The dsp56300 sources Monomodule pins build with MSVC on Windows; Rack uses MinGW. As Machinemodule's
+# cmake/mingw.cmake does for its own copy, adapt a private copy and leave the checkout intact.
+set(MNM_MINGW_DSP56300 "${CMAKE_CURRENT_BINARY_DIR}/mingw-dsp56300")
+file(MAKE_DIRECTORY "${MNM_MINGW_DSP56300}/source")
+foreach(part asmjit dsp56kBase dsp56kEmu vtuneSdk)
+    file(COPY "${DSP56300_DIR}/source/${part}" DESTINATION "${MNM_MINGW_DSP56300}/source" PATTERN ".git" EXCLUDE)
+endforeach()
+# Windows headers are case insensitive on Windows, but cross compilers are not.
+file(GLOB_RECURSE sources "${MNM_MINGW_DSP56300}/source/dsp56kBase/*.cpp" "${MNM_MINGW_DSP56300}/source/dsp56kEmu/*.cpp")
+foreach(source IN LISTS sources)
+    file(READ "${source}" text)
+    string(REPLACE "<Windows.h>" "<windows.h>" fixed "${text}")
+    if(NOT fixed STREQUAL text)
+        file(WRITE "${source}" "${fixed}")
+    endif()
+endforeach()
+# The debugger naming exception needs MSVC SEH; MinGW uses the SetThreadDescription path below it.
+set(source "${MNM_MINGW_DSP56300}/source/dsp56kBase/threadtools.cpp")
+if(EXISTS "${source}")
+    file(READ "${source}" text)
+    string(REPLACE "\r\n" "\n" text "${text}")
+    string(REPLACE "\t\t__try  //" "#ifdef _MSC_VER\n\t\t__try  //" text "${text}")
+    string(REPLACE "\t}\n\n\t// SetThreadDescription" "#endif\n\t}\n\n\t// SetThreadDescription" text "${text}")
+    file(WRITE "${source}" "${text}")
+endif()
+# The calling convention follows the OS, not the compiler: without this the first generated DSP block
+# crashes when native code calls it.
+foreach(part jitregtypes.h jitstackhelper.cpp)
+    set(source "${MNM_MINGW_DSP56300}/source/dsp56kEmu/${part}")
+    if(EXISTS "${source}")
+        file(READ "${source}" text)
+        string(REPLACE "#ifdef _MSC_VER" "#ifdef _WIN32" text "${text}")
+        file(WRITE "${source}" "${text}")
+    endif()
+endforeach()
+add_compile_options(-fconstexpr-loop-limit=10000000)
+set(DSP56300_DIR "${MNM_MINGW_DSP56300}")
