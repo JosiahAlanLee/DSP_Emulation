@@ -306,7 +306,10 @@ struct Controls {
     bool frameBus=false, frameCrossfade=false;
     uint8_t frameWord=0; // One shared word; each voice maps it over its own complete frames.
     std::array<float,16> position{}, sizeOctaves{}; // position 0..1, log2(sample count)
-    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); sizeOctaves.fill(8); }
+    // A voice's own loop mode, starting direction and interpolation bits, from a stored patch (patch
+    // select). -1 follows loop, reverse and interpBits above.
+    std::array<int8_t,16> loopv,reversev,interpv;
+    Controls() { k1v.fill(1); k2v.fill(1); level.fill(1); startv.fill(0); endv.fill(1); sizeOctaves.fill(8); loopv.fill(-1); reversev.fill(-1); interpv.fill(-1); }
 };
 struct Engine {
     Sample sample,recordBuffer;
@@ -476,8 +479,9 @@ struct Engine {
     // Declick fade length in chip samples (about 1.5 ms at the current chip clock).
     int fadeSamples() const { return std::max(1,int(std::lround(currentRate*0.0015))); }
     void start(Voice& v) {
-        v=Voice(); v.running=true; v.reverse=controls.reverse;
-        bounds(v,int(&v-voices.data())); v.accumulator=v.reverse ? (v.window ? v.end-fracOne : v.end) : v.start;
+        int i=int(&v-voices.data());
+        v=Voice(); v.running=true; v.reverse=controls.reversev[i]<0 ? controls.reverse : controls.reversev[i]>0;
+        bounds(v,i); v.accumulator=v.reverse ? (v.window ? v.end-fracOne : v.end) : v.start;
     }
     void trigger(int channel) {
         int mode=clamp(controls.engineMode,0,2);
@@ -567,17 +571,17 @@ struct Engine {
         }
         currentRate=rate;
         double pitchRate=controls.varispeed ? chipRates[mode] : rate;
-        int bits=clamp(controls.interpBits,0,9);
-        uint32_t mask=bits>=9 ? fracOne-1 : (fracOne-1)&~((1u<<(fracBits-bits))-1);
+        auto interpMask=[](int bits) { bits=clamp(bits,0,9); return bits>=9 ? fracOne-1 : (fracOne-1)&~((1u<<(fracBits-bits))-1); };
+        uint32_t mask=interpMask(controls.interpBits);
         // A signal cable can be removed while its voices remain latched. Read channel pitch safely.
         for(int i=0;i<limit;i++) if(voices[i].running) {
             auto& v=voices[i]; bounds(v,i);
             v.frequency=Voice::pitchIncrement(sample.rate/pitchRate*std::exp2(clamp(double(controls.pitch[i]),-10.0,10.0)));
-            v.interpMask=mask;
+            v.interpMask=controls.interpv[i]<0 ? mask : interpMask(controls.interpv[i]);
             v.k1=uint16_t(uint16_t(clamp(controls.k1v[i],0.f,1.f)*4095)<<4);
             v.k2=uint16_t(uint16_t(clamp(controls.k2v[i],0.f,1.f)*4095)<<4);
             v.volume=levelRegister(controls.level[i],controls.linearLevel);
-            v.filterMode=clamp(controls.filterMode,0,3); v.loop=clamp(controls.loop,0,2);
+            v.filterMode=clamp(controls.filterMode,0,3); v.loop=clamp(controls.loopv[i]<0 ? controls.loop : int(controls.loopv[i]),0,2);
         }
         bool stereo=sample.stereo;
         chipPhase+=rate/hostRate;

@@ -1,5 +1,15 @@
 # OTIS change history
 
+## 2.9.0
+
+- Patch select, the EPS idiom: bits 1 and 2 of the new PATCH input choose, on
+  each hit, the panel or one of three patches stored from it. A patch holds
+  PITCH, START, END, K1, K2, LOOP, REV, INTERP, POSITION and SIZE, with CV
+  added as on the panel. Store, recall and clear them from the menu; they are
+  saved with the patch.
+- PATCH is appended after FRAME BUS, so existing cable ids are unchanged.
+  Unpatched, OTIS plays as 2.8.0 did: the 2.2.0 regression trace is unchanged.
+
 ## 2.8.0
 
 - FRAME BUS selects complete frames from a byte, optionally clocked, without

@@ -24,13 +24,18 @@ RACK_DIR ?= ../../../../deps/Rack-SDK
 SDK_FLAGS = -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include -L$(RACK_DIR) -Wl,-rpath,$(abspath $(RACK_DIR)) -lRack -Wl,--allow-shlib-undefined
 build/frame_bus_module_test: frame_bus_module_test.cpp ../src/OtisSampler.cpp ../src/engine/*.hpp ../../shared/*.hpp ../../bytebus/src/*.cpp ../../bytebus/src/engine/*.hpp | build
 	$(CXX) $(CXXFLAGS) -Wno-unused-parameter -fno-unsafe-math-optimizations $< $(SDK_FLAGS) -o $@
-bus-check: build/frame_bus_module_test
+build/patch_select_module_test: patch_select_module_test.cpp ../src/OtisSampler.cpp ../src/engine/*.hpp ../../shared/*.hpp | build
+	$(CXX) $(CXXFLAGS) -Wno-unused-parameter -fno-unsafe-math-optimizations $< $(SDK_FLAGS) -o $@
+bus-check: build/frame_bus_module_test build/patch_select_module_test
 	cd .. && tests/build/frame_bus_module_test
+	cd .. && tests/build/patch_select_module_test
 bus-sanitize: | build
 	$(CXX) $(CXXFLAGS) -O1 -g -Wno-mismatched-new-delete -fsanitize=address,undefined -fno-omit-frame-pointer frame_bus_test.cpp -o build/frame_bus_asan
 	cd .. && ASAN_OPTIONS=detect_leaks=0 tests/build/frame_bus_asan
 	$(CXX) $(CXXFLAGS) -O1 -g -Wno-unused-parameter -fsanitize=address,undefined -fno-omit-frame-pointer frame_bus_module_test.cpp $(SDK_FLAGS) -o build/frame_bus_module_asan
 	cd .. && ASAN_OPTIONS=detect_leaks=0 tests/build/frame_bus_module_asan
+	$(CXX) $(CXXFLAGS) -O1 -g -Wno-unused-parameter -fsanitize=address,undefined -fno-omit-frame-pointer patch_select_module_test.cpp $(SDK_FLAGS) -o build/patch_select_module_asan
+	cd .. && ASAN_OPTIONS=detect_leaks=0 tests/build/patch_select_module_asan
 test: all
 	cd .. && tests/build/engine_test
 	cd .. && tests/build/snapshot_test

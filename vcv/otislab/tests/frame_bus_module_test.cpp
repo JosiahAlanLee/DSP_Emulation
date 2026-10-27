@@ -31,7 +31,7 @@ static void sample(OtisSampler& m,size_t count=256) {
 }
 static void adapter(std::shared_ptr<const lu::Library> library) {
     auto m=std::make_unique<OtisSampler>(); sample(*m); outputs(*m); m->model=modelOtisSampler;
-    auto a=args(); assert(m->inputs.size()==17 && m->params.size()==20 && m->outputs.size()==4);
+    auto a=args(); assert(m->inputs.size()==18 && m->params.size()==20 && m->outputs.size()==4);
     m->params[OtisSampler::POSITION].setValue(1);
     m->inputs[OtisSampler::POSITION_IN].channels=1; m->inputs[OtisSampler::POSITION_IN].setVoltage(10);
     for(int n=0;n<256;++n) {

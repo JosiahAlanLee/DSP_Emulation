@@ -5,6 +5,9 @@ A mono and stereo sampler for VCV Rack 2 with MAME-derived ES5505 playback arith
 **[Byte-bus frame control and Lookup export](docs/BYTE_BUS.md)** let logic
 sequence TransWave-style frames and turn recorded or reworked frames into byte
 tables. Try the included `examples/OTIS-byte-frames.vcv` stereo patch.
+**[Patch select](docs/MANUAL.md#patch-select)** (2.9) chooses one of four
+stored playback settings per hit from two bus bits, as the EPS's patch-select
+buttons did.
 
 OTIS records audio or loads WAV files. It uses no Ensoniq firmware, operating system or commercial sample library. It is an independent sampling instrument, not a complete EPS-16+ recreation.
 
@@ -17,7 +20,7 @@ OTIS records audio or loads WAV files. It uses no Ensoniq firmware, operating sy
 
 1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all the plugins.
 2. In Rack choose **Help → Open user folder**, then quit Rack.
-3. Copy `OtisLab-2.8.0-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other modules as well to use the sample-sharing and byte-bus links.
+3. Copy `OtisLab-2.9.0-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other modules as well to use the sample-sharing and byte-bus links.
 4. Start Rack.
 
 Exact file names for each platform are in [Getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md#install). Linux has been used live in Rack; the Windows and macOS builds haven't been run inside Rack yet, so please [report](https://github.com/JosiahAlanLee/DSP_Emulation/issues) how they go. To build from source, see the [development guide](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/DEVELOPMENT.md).

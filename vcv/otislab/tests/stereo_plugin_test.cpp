@@ -30,7 +30,7 @@ int main() {
     auto model = plugin.models.front();
     auto make = [&] { auto m = std::unique_ptr<engine::Module>(model->createModule()); m->model = model; return m; };
     auto st = make(), ml = make(), mr = make(), old = make();
-    assert(st->inputs.size() == 17 && st->outputs.size() == 4);   // FRAME BUS appended; earlier cable ids unchanged
+    assert(st->inputs.size() == 18 && st->outputs.size() == 4);   // FRAME BUS and PATCH appended; earlier cable ids unchanged
 
     std::vector<int16_t> L(9000), R(9000);
     uint32_t rng = 3;

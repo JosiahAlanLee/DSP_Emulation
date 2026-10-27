@@ -18,6 +18,10 @@ order at 44.1/48/96 kHz. It also loads the shipped stereo example and verifies
 nonzero, distinct L/R output and the expected frame sequence. The existing
 stereo and mono playback regressions run alongside these additions.
 
+`patch_select_module_test` (2.9, run by `bus-check` and `bus-sanitize`) plays
+stored patches through the real module against a second OTIS whose panel is the
+patch, and checks per-hit latching, clocked selection and patch saving.
+
 `make -C tests test` builds/runs the portable engine tests. Run from the project
 root. `make -C tests sanitize` also builds and executes ASan/UBSan checks.
 
