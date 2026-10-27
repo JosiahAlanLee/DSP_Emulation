@@ -14,11 +14,13 @@ pin() {   # pin DIR URL COMMIT
         fresh=true
         git clone --no-checkout --filter=blob:none "$url" "$dir"
     fi
-    if [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)" != "$want" ]; then
+    # A fresh --no-checkout clone has no working tree even when its HEAD is already the pin (as when
+    # the pin is upstream's tip), so it is always checked out.
+    if [ "$fresh" = true ] || [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)" != "$want" ]; then
         if [ "$fresh" = false ] && [ -n "$(git -C "$dir" status --porcelain)" ]; then
             echo "$dir has changes; refusing to replace them" >&2; exit 1
         fi
-        git -C "$dir" fetch --depth 1 origin "$want"
+        git -C "$dir" cat-file -e "$want^{commit}" 2>/dev/null || git -C "$dir" fetch --depth 1 origin "$want"
         git -C "$dir" checkout --detach "$want"
     fi
 }
