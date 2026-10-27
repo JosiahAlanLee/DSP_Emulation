@@ -4,6 +4,7 @@
 #include "../src/engine/Switch.hpp"
 #include "../src/engine/Pipeline.hpp"
 #include "../src/engine/Counter2.hpp"
+#include "../src/engine/Fan.hpp"
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -607,7 +608,144 @@ static void ratios() {
     }
 }
 
+// Fan (docs/FAN.md): a 5-bit address, counted or taken from BUS IN, routing COM IN to one of 32
+// outputs and one of 32 inputs to COM OUT; GLITCH's overlap and dropout on bit-4 changes.
+static void fanning() {
+    namespace fn = dspemu::fan;
+    // step(): every address, length and direction. In range it walks the cycle; out of range it
+    // returns to the range; EOC is exactly the wrap.
+    for (int length = 1; length <= 32; ++length) for (int a = 0; a < 32; ++a) for (bool down : {false, true}) {
+        bool eoc = false; int next = fn::step(uint8_t(a), length, down, eoc);
+        int top = length - 1;
+        if (!down) {
+            int expect = a + 1 > top ? 0 : a + 1;
+            assert(next == expect && eoc == (a + 1 > top));
+        } else {
+            int expect = (a == 0 || a > top) ? top : a - 1;
+            assert(next == expect && eoc == (a == 0 || a > top));
+        }
+        assert(next >= 0 && next <= top);
+    }
+    // selection(): one channel unless GLITCH is on and bit 4 changed.
+    for (int before = 0; before < 32; ++before) for (int after = 0; after < 32; ++after) {
+        std::array<int, 2> sel{};
+        assert(fn::selection(false, before, after, sel) == 1 && sel[0] == after);
+        int n = fn::selection(true, before, after, sel);
+        if ((before & 16) == (after & 16)) assert(n == 1 && sel[0] == after);
+        else if (after & 16) assert(n == 2 && sel[0] == (after & 15) && sel[1] == after);
+        else assert(n == 0);
+    }
+    // Engine rate counts every sample: the cycle, EOC on the wraps, the DIR gate inverting the switch.
+    for (int length : {1, 2, 5, 16, 17, 32}) for (bool down : {false, true}) for (bool gate : {false, true}) {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Engine; p.length = length; p.down = down;
+        fn::Inputs in; in.dir = gate ? 10.f : 0.f;
+        auto o = f.tick(p, in, 48000); assert(o.loaded && o.address == 0 && !o.clocked && !o.eoc);
+        bool counting = down != gate; int expect = 0, eocs = 0;
+        for (int t = 1; t <= 3 * length; ++t) {
+            o = f.tick(p, in, 48000);
+            bool wrap = counting ? expect == 0 : expect == length - 1;
+            expect = counting ? (expect == 0 ? length - 1 : expect - 1) : (expect + 1) % length;
+            assert(o.advanced && o.address == expect && o.eoc == wrap); eocs += o.eoc;
+        }
+        assert(eocs == 3);
+    }
+    // Routing at every address: COM IN on exactly one output, the selected input on COM OUT;
+    // unpatched COM IN is a 10 V one-hot gate; Hold keeps what each output last carried.
+    {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Engine; fn::Inputs in;
+        for (int ch = 0; ch < 32; ++ch) in.in[ch] = 0.25f * ch - 4;
+        f.tick(p, in, 48000);
+        for (int t = 1; t <= 64; ++t) {
+            auto o = f.tick(p, in, 48000); int a = t % 32;
+            assert(o.address == a && o.selectedCount == 1 && o.com == in.in[a]);
+            for (int ch = 0; ch < 32; ++ch) assert(o.out[ch] == (ch == a ? 10.f : 0.f));
+        }
+        p.unselected = fn::Unselected::Hold; in.comConnected = true;
+        f.clear(); f.tick(p, in, 48000);
+        for (int t = 1; t <= 32; ++t) { in.com = float(t); f.tick(p, in, 48000); }
+        in.com = -1; auto o = f.tick(p, in, 48000);              // address 1 again
+        assert(o.address == 1 && o.out[1] == -1);
+        for (int ch = 0; ch < 32; ++ch) if (ch != 1) assert(o.out[ch] == float(ch == 0 ? 32 : ch));
+        p.unselected = fn::Unselected::Zero; o = f.tick(p, in, 48000);
+        for (int ch = 0; ch < 32; ++ch) assert(o.out[ch] == (ch == 2 ? -1.f : 0.f));
+    }
+    // GLITCH: counting up, 16 -> 17 overlaps out 1 with out 17 and 32 -> 1 drops out for one
+    // sample; counting down, 1 -> 32 overlaps out 16 with out 32 and 17 -> 16 drops out.
+    for (bool down : {false, true}) {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Engine; p.glitch = true; p.down = down;
+        fn::Inputs in; in.comConnected = true; in.com = 3;
+        for (int ch = 0; ch < 32; ++ch) in.in[ch] = float(ch);
+        f.tick(p, in, 48000);
+        int overlaps = 0, dropouts = 0, prev = 0;
+        for (int t = 1; t <= 64; ++t) {
+            auto o = f.tick(p, in, 48000); int a = o.address;
+            bool rise = !(prev & 16) && (a & 16), fall = (prev & 16) && !(a & 16);
+            if (rise) {
+                ++overlaps; assert(o.selectedCount == 2 && o.out[a & 15] == 3 && o.out[a] == 3);
+                assert(o.com == .5f * ((a & 15) + a));
+                assert(down ? (prev == 0 && a == 31) : (prev == 15 && a == 16));
+            } else if (fall) {
+                ++dropouts; assert(o.selectedCount == 0 && o.com == 0);
+                for (float v : o.out) assert(v == 0);
+                assert(down ? (prev == 16 && a == 15) : (prev == 31 && a == 0));
+            } else {
+                assert(o.selectedCount == 1 && o.out[a] == 3 && o.com == a);
+            }
+            prev = a;
+        }
+        assert(overlaps == 2 && dropouts == 2);
+        p.glitch = false;
+        for (int t = 0; t < 64; ++t) assert(f.tick(p, in, 48000).selectedCount == 1);
+    }
+    // BUS IN owns the address: bits 0-4 of its word, its mode and CLK passed through, RESET
+    // ignored; unpatching it publishes the held count.
+    {
+        auto bus = [](uint8_t word, bool clocked = false, bool clk = false, bool rising = false) {
+            bus::Sample s; s.connected = true; s.clocked = clocked; s.clk = clk; s.rising = rising;
+            s.rawWord = word; s.word = word; s.updated = !clocked || rising; return s;
+        };
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Engine; fn::Inputs in;
+        f.tick(p, in, 48000); f.tick(p, in, 48000); f.tick(p, in, 48000);          // count 2
+        for (int w = 0; w < 256; ++w) {
+            in.address = bus(uint8_t(w)); auto o = f.tick(p, in, 48000);
+            assert(o.following && o.address == (w & 31) && !o.clocked && !o.clk && o.out[w & 31] == 10);
+        }
+        in.address = bus(0xe7, true, true, true); auto o = f.tick(p, in, 48000);
+        assert(o.address == 7 && o.clocked && o.clk);
+        in.address = bus(0xe7, true, false, false); o = f.tick(p, in, 48000); assert(o.clocked && !o.clk);
+        in.clock.reset = 10; o = f.tick(p, in, 48000); assert(!o.loaded && o.address == 7);
+        in.clock.reset = 0; in.address = bus::Sample{};
+        o = f.tick(p, in, 48000); assert(!o.following && o.loaded && o.address == 2);
+    }
+    // RESET loads SEED and publishes it; a seed past LENGTH wraps on the next edge, with EOC.
+    {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Jack; p.length = 8; p.seed = 20;
+        fn::Inputs in; in.clock.clockConnected = true;
+        f.tick(p, in, 48000); f.tick(p, in, 48000);
+        in.clock.reset = 10; auto o = f.tick(p, in, 48000); assert(o.loaded && o.address == 20 && o.clk);
+        in.clock.reset = 0; f.tick(p, in, 48000);
+        in.clock.clock = 10; o = f.tick(p, in, 48000); assert(o.advanced && o.eoc && o.address == 0);
+        in.clock.clock = 0; f.tick(p, in, 48000);
+        p.down = true; in.clock.clock = 10; o = f.tick(p, in, 48000); assert(o.eoc && o.address == 7);
+        // Strobes keep their low gap under random clocks, resets and BUS IN changes.
+        std::mt19937 r(9); bool last = false;
+        for (int t = 0; t < 40000; ++t) {
+            in.clock.clock = r() % 2 ? 10.f : 0.f; in.clock.reset = r() % 211 == 0 ? 10.f : 0.f;
+            p.length = 1 + int(r() % 32); in.dir = r() % 97 == 0 ? 10.f : 0.f;
+            auto q = f.tick(p, in, 48000); assert(!(last && q.clk) && q.address < 32); last = q.clk;
+        }
+    }
+    // The internal clock at 44.1/48/96 kHz: 32 Hz with LENGTH 16 wraps twice a second.
+    for (double sr : {44100., 48000., 96000.}) {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 32; p.length = 16;
+        fn::Inputs in; int eocs = 0, edges = 0; std::vector<int> times;
+        for (int t = 0; t < int(sr * 2); ++t) { auto o = f.tick(p, in, sr); eocs += o.eoc; if (o.advanced) { ++edges; times.push_back(t); } }
+        assert(edges >= 63 && edges <= 64 && eocs == edges / 16);
+        for (size_t k = 1; k < times.size(); ++k) assert(std::abs((times[k] - times[k-1]) - sr / 32) <= 1);
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks\n";
 }
