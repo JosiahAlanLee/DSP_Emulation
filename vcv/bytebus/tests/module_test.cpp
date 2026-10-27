@@ -8,6 +8,7 @@
 #include "../src/Register.cpp"
 #include "../src/Counter.cpp"
 #include "../src/Switch.cpp"
+#include "../src/Pipeline.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -465,10 +466,77 @@ static void libraryV2Chains(float sr) {
     }
 }
 
+// Pipeline: a Counter -> Lookup Rhythm pattern word and its copy DELAY publications later (the
+// canon of the kit), through one-sample cables in random order; SPREAD per lane; LOOP from the
+// gate and the button; a looped phrase that survives save and reload; CLEAR and Initialize.
+static std::vector<int> pipelineCanon(std::shared_ptr<const dspemu::lookup::Library> library, float sr, unsigned orderSeed) {
+    namespace lu = dspemu::lookup; using C = ByteCounter; using L = ByteLookup; using P = BytePipeline;
+    using S = ByteSwitch;
+    C c; L l(library); P pl; S sw; connectOutputs(c); connectOutputs(l); connectOutputs(pl); connectOutputs(sw); auto a = args(sr);
+    sw.params[S::MODE].setValue(1); sw.params[S::C_WORD].setValue(0x0f);
+    assert(pl.params.size() == 6 && pl.inputs.size() == 4 && pl.outputs.size() == 2 && pl.lights.size() == 11);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(8); c.inputs[C::CLOCK_IN].channels = 1;
+    l.params[L::FAMILY].setValue(lu::Rhythm); l.params[L::SHAPE].setValue(13);
+    pl.params[P::DELAY].setValue(6); pl.params[P::SPREAD].setValue(1);
+    std::mt19937 order(orderSeed); std::vector<int> pattern, delayed, canon;
+    for (int t = 0; t < 6 * 200; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 6 == 3 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], l.inputs[L::BUS_IN]); copy(l.outputs[L::BUS_OUT], pl.inputs[P::BUS_IN]);
+        copy(pl.outputs[P::BUS_OUT], sw.inputs[S::A_IN]); copy(l.outputs[L::BUS_OUT], sw.inputs[S::B_IN]);
+        Module* modules[] = {&c, &l, &pl, &sw}; std::shuffle(std::begin(modules), std::end(modules), order);
+        for (auto* m : modules) m->process(a);
+        if (l.outputs[L::BUS_OUT].getVoltage(8) == 10) pattern.push_back(word(l.outputs[L::BUS_OUT]));
+        if (pl.outputs[P::CLOCK_OUT].getVoltage() == 10) delayed.push_back(word(pl.outputs[P::BUS_OUT]));
+        if (sw.outputs[S::CLOCK_OUT].getVoltage() == 10) canon.push_back(word(sw.outputs[S::BUS_OUT]));
+    }
+    // The First patch's Switch: lanes 0-3 from the pattern (B), 4-7 from its echo (A), on A's clock.
+    assert(canon.size() + 1 == delayed.size());                     // the last publication is still in the cable
+    for (size_t k = 1; k < canon.size(); ++k) assert(canon[k] == ((pattern[k - 1] & 0x0f) | (delayed[k] & 0xf0)));
+    // Pipeline follows the Lookup's clock (Auto -> bus CLK); its first publication is the 00 history.
+    assert(delayed.size() >= pattern.size() - 1 && pattern.size() > 190);
+    for (size_t k = 1; k < delayed.size(); ++k) {
+        int want = 0;
+        for (int lane = 0; lane < 8; ++lane) { int i = int(k) - 1 - 6 - lane; if (i >= 0 && pattern[i] >> lane & 1) want |= 1 << lane; }
+        assert(delayed[k] == want);
+    }
+    return delayed;
+}
+static void pipelineLoop() {
+    using P = BytePipeline;
+    P pl; connectOutputs(pl); auto a = args(); pl.model = modelPipeline;
+    pl.params[P::CLOCK_MODE].setValue(4); pl.params[P::DELAY].setValue(5);   // Engine rate: every sample
+    std::vector<int> out;
+    for (int t = 0; t < 40; ++t) { putBus(pl.inputs[P::BUS_IN], uint8_t(t * 3)); pl.process(a); }
+    // The LOOP gate closes it; the phrase saved mid-loop restores into a fresh module and goes on alike.
+    pl.inputs[P::LOOP_IN].channels = 1; pl.inputs[P::LOOP_IN].setVoltage(10);
+    for (int t = 0; t < 12; ++t) { putBus(pl.inputs[P::BUS_IN], 0xee); pl.process(a); out.push_back(word(pl.outputs[P::BUS_OUT])); }
+    assert(pl.lights[P::LOOP_LIGHT].getBrightness() == 1);
+    for (int t = 5; t < 12; ++t) assert(out[t] == out[t - 5] && out[t] != 0xee);
+    json_t* saved = pl.toJson(); assert(json_array_size(json_object_get(json_object_get(saved, "data"), "history")) == 128);
+    P r; connectOutputs(r); r.model = modelPipeline; r.fromJson(saved); json_decref(saved);
+    r.params[P::LOOP_BUTTON].setValue(1); r.inputs[P::LOOP_IN].channels = 0;               // the button loops too
+    r.process(a);                                                                          // publishes the restored word
+    assert(r.lights[P::LOOP_LIGHT].getBrightness() == 1);
+    for (int t = 0; t < 15; ++t) {
+        putBus(pl.inputs[P::BUS_IN], 0xee); putBus(r.inputs[P::BUS_IN], 0xee);
+        pl.process(a); r.process(a); assert(word(r.outputs[P::BUS_OUT]) == word(pl.outputs[P::BUS_OUT]));
+    }
+    // A history list shorter than 128 fills the latest stages; values are bounded.
+    json_t* short_ = json_pack("{s:[i,i,i]}", "history", 7, 300, -2); r.dataFromJson(short_); json_decref(short_);
+    r.params[P::LOOP_BUTTON].setValue(0); r.params[P::DELAY].setValue(1); r.process(a);
+    assert(word(r.outputs[P::BUS_OUT]) == 255);       // latest stage -2 -> 00, the one before 300 -> FF: DELAY 1 reads FF
+    // CLEAR empties the history; Initialize restores the controls and an empty history.
+    pl.params[P::CLEAR_BUTTON].setValue(1); pl.process(a); assert(word(pl.outputs[P::BUS_OUT]) == 0);
+    pl.params[P::CLEAR_BUTTON].setValue(0); pl.inputs[P::LOOP_IN].setVoltage(0);
+    for (int t = 0; t < 4; ++t) { putBus(pl.inputs[P::BUS_IN], 9); pl.process(a); assert(word(pl.outputs[P::BUS_OUT]) == 0); }
+    pl.onReset(Module::ResetEvent{}); assert(pl.params[P::DELAY].getValue() == 16);
+    pl.process(a); assert(word(pl.outputs[P::BUS_OUT]) == 0);
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -484,6 +552,9 @@ int main() {
     assert(rhythmChain(library, 44100, 5) == rhythm && rhythmChain(library, 96000, 6) == rhythm);
     auto jumped = jumpChain(library, 48000, 7);
     for (float sr : {44100.f, 48000.f, 96000.f}) libraryV2Chains(sr);
+    auto canon = pipelineCanon(library, 48000, 21);
+    assert(pipelineCanon(library, 44100, 22) == canon && pipelineCanon(library, 96000, 23) == canon);
+    pipelineLoop();
     assert(jumpChain(library, 44100, 8) == jumped && jumpChain(library, 96000, 9) == jumped);
     for (uint8_t seed : {uint8_t(0), uint8_t(0xa5), uint8_t(255)}) {
         auto reference = feedback(48000, seed, 1);
@@ -491,5 +562,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize\n";
 }

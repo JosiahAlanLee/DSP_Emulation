@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -36,6 +36,12 @@
       "name": "Switch",
       "description": "Two byte words in, one out, under a control word: select A or B by a bit, take each bit from A or B, or crossfade; follows A's clock or reclocks on its own.",
       "tags": ["Switch", "Logic", "Mixer", "Polyphonic"]
+    },
+    {
+      "slug": "Pipeline",
+      "name": "Pipeline",
+      "description": "A byte delay line of 1-64 edges with a per-bit spread and a loop that repeats the last DELAY words; the Clocked Register's clock rules.",
+      "tags": ["Delay", "Logic", "Sequencer", "Polyphonic"]
     }
   ]
 }

@@ -2,6 +2,7 @@
 #include "../src/engine/Register.hpp"
 #include "../src/engine/Counter.hpp"
 #include "../src/engine/Switch.hpp"
+#include "../src/engine/Pipeline.hpp"
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -492,7 +493,69 @@ static void switching() {
     }
 }
 
+// Pipeline (docs/PIPELINE.md): a word published DELAY edges after it entered, bit k a further
+// k * SPREAD edges later; LOOP repeats the last DELAY words; RESET clears to 00.
+static void pipelining() {
+    namespace pl = dspemu::pipeline;
+    std::mt19937 rng(21);
+    // Every DELAY and SPREAD against a reference history, at Engine rate with a random input.
+    for (int delay = 1; delay <= 64; ++delay) for (int spread : {0, 1, 3, 8}) {
+        pl::Parameters p; p.mode = ClockMode::Engine; p.delay = delay; p.spread = spread;
+        pl::Pipeline line; pl::Inputs in; in.data.connected = true;
+        std::vector<int> entered;
+        auto first = line.tick(p, in, 48000); assert(first.loaded && !first.advanced && first.word == 0);
+        for (int t = 0; t < 300; ++t) {
+            in.data.rawWord = uint8_t(rng()); entered.push_back(in.data.rawWord);
+            auto o = line.tick(p, in, 48000); assert(o.advanced && !o.clocked);
+            int want = 0, n = int(entered.size()) - 1;
+            for (int k = 0; k < 8; ++k) { int i = n - delay - k * spread; if (i >= 0 && entered[i] >> k & 1) want |= 1 << k; }
+            assert(o.word == want);
+        }
+    }
+    // LOOP repeats the last DELAY words: those already in the delay come out when due, then again
+    // every DELAY edges; opening it lets the input through DELAY edges later.
+    for (int delay : {1, 3, 16, 64}) {
+        pl::Parameters p; p.mode = ClockMode::Engine; p.delay = delay;
+        pl::Pipeline line; pl::Inputs in; in.data.connected = true; line.tick(p, in, 48000);
+        std::vector<int> out;
+        for (int t = 0; t < 200; ++t) { in.data.rawWord = uint8_t(t + 1); out.push_back(line.tick(p, in, 48000).word); }
+        p.loop = true;
+        for (int t = 0; t < 4 * delay; ++t) { in.data.rawWord = 0xee; out.push_back(line.tick(p, in, 48000).word); }
+        for (size_t t = 200; t < out.size(); ++t) assert(out[t] != 0xee && (t < size_t(200 + delay) || out[t] == out[t - delay]));
+        assert(out[200] == 200 - delay + 1);                       // the next word that was due
+        p.loop = false;
+        for (int t = 0; t < delay; ++t) { in.data.rawWord = 0x11; auto w = line.tick(p, in, 48000).word; assert(w == out[out.size() - delay]); out.push_back(w); }
+        assert(line.tick(p, in, 48000).word == 0x11);
+    }
+    // Clocked: the word holds between edges, DELAY changes act on the next edge, RESET clears
+    // (and wins over a simultaneous edge), and strobes keep their low gap.
+    {
+        pl::Parameters p; p.mode = ClockMode::Jack; p.delay = 2; pl::Pipeline line; pl::Inputs in;
+        in.clockConnected = true; in.data.connected = true;
+        line.tick(p, in, 48000); line.tick(p, in, 48000);
+        auto edge = [&](int w) { in.data.rawWord = uint8_t(w); in.clock = 10; auto o = line.tick(p, in, 48000); in.clock = 0; line.tick(p, in, 48000); return o; };
+        edge(5); edge(6); assert(edge(7).word == 5);
+        p.delay = 1; in.data.rawWord = 99; assert(line.tick(p, in, 48000).word == 5);   // no edge: held
+        assert(edge(8).word == 7 && edge(9).word == 8);                                // now one edge late
+        in.reset = 10; in.clock = 10; auto o = line.tick(p, in, 48000); assert(o.loaded && o.cleared && o.word == 0 && !o.advanced);
+        in.reset = 0; in.clock = 0; line.tick(p, in, 48000);
+        assert(edge(1).word == 0 && edge(2).word == 1);
+        std::mt19937 r(3); bool last = false;
+        for (int t = 0; t < 20000; ++t) {
+            in.clock = r() % 2 ? 10.f : 0.f; in.reset = r() % 151 == 0 ? 10.f : 0.f; in.data.rawWord = uint8_t(r());
+            auto q = line.tick(p, in, 48000); assert(!(last && q.clk)); last = q.clk;
+        }
+    }
+    // Internal clock: 16 Hz at 44.1/48/96 kHz, one word per edge.
+    for (double sr : {44100., 48000., 96000.}) {
+        pl::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 16; p.delay = 4;
+        pl::Pipeline line; pl::Inputs in; in.data.connected = true; int advances = 0;
+        for (int t = 0; t < int(sr * 2); ++t) { in.data.rawWord = uint8_t(t / 100); advances += line.tick(p, in, sr).advanced; }
+        assert(advances >= 31 && advances <= 32);
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks\n";
 }

@@ -7,4 +7,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelConverter);
     plugin->addModel(modelCounter);
     plugin->addModel(modelSwitch);
+    plugin->addModel(modelPipeline);
 }
