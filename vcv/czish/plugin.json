@@ -1,7 +1,7 @@
 {
   "slug": "CZishLab",
   "name": "CZishLab",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "license": "BSD-3-Clause",
   "brand": "CZishLab",
   "author": "DSP_Emulation contributors",
@@ -10,14 +10,23 @@
     {
       "slug": "CZish",
       "name": "CZish",
-      "description": "Early eight-voice single-line phase distortion voice based on the uPD933 sound path; provisional CZ DAC and byte-bus word manipulation.",
-      "tags": ["Oscillator", "Polyphonic", "Digital"]
+      "description": "Eight-voice uPD933 phase distortion with paired lines, six eight-step envelopes, single-tone SysEx and encoded-word ByteBus.",
+      "tags": [
+        "Oscillator",
+        "Polyphonic",
+        "Digital"
+      ]
     },
     {
       "slug": "DACStage",
       "name": "DAC Stage",
-      "description": "YM floating-point, provisional CZ and linear converter character with encoded-word byte-bus tap and XOR input.",
-      "tags": ["Waveshaper", "Sample and hold", "Polyphonic", "Utility"]
+      "description": "Yamaha, provisional Casio and linear DAC formats with half-band AA, band-limited HOLD, noise and encoded-word ByteBus.",
+      "tags": [
+        "Waveshaper",
+        "Sample and hold",
+        "Polyphonic",
+        "Utility"
+      ]
     }
   ]
 }

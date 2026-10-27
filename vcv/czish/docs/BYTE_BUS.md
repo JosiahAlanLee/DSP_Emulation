@@ -7,7 +7,7 @@ least-significant bit first; a ninth channel, when present, is CLK.
 ## What the bits mean
 
 BUS OUT is the high eight bits of the **encoded device word after XOR**, before
-analog reconstruction, tone and output gain. DAC Stage sends channel 1's word;
+noise, analog reconstruction, tone and output gain. DAC Stage sends channel 1's word;
 CZish sends its mono chip sum's word. It is not a polyphonic audio bus.
 
 | Profile | Native word | BUS OUT |
@@ -17,6 +17,7 @@ CZish sends its mono chip sum's word. It is not a polyphonic audio bus.
 | Linear, 8–16 bits | Signed two's-complement word | its most significant 8 bits |
 | Linear, 4–7 bits | Signed two's-complement word | left-aligned; unused low bus bits are zero |
 
+Both CZ compander candidates publish their selected range and quantized mantissa.
 The CZ word describes this project's provisional model; it is not asserted to
 be a hardware CZ word. For YM positive input overflow, ymfm's specified
 round-trip returns +32767 even though the maximum encoded word decodes to

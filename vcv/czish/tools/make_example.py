@@ -20,13 +20,15 @@ def patch():
     modules = [
         # 2 Hz unipolar square gates the single-line CZ voice.
         module(1, 'Fundamental', 'LFO', '2.6.2', [0, 0], [1, 0, 1, 0, 0, .5, 0]),
-        module(2, 'CZishLab', 'CZish', version, [9, 0], [0, 0, 64, 2, 200, 2, 0, 1]),
+        module(2, 'CZishLab', 'CZish', version, [9, 0], [0, 0, 127, 2, 200, 4, 0, 1]),
         # Register captures the CZ word at 1 Hz, independently of its bus CLK.
-        module(3, 'ByteBusLab', 'ClockedRegister', byte_version, [25, 0], [3, 0, 0, 0]),
+        module(3, 'ByteBusLab', 'ClockedRegister', byte_version, [39, 0], [3, 0, 0, 0]),
         # Low initial output level: native-word XOR can make sudden changes.
-        module(4, 'CZishLab', 'DACStage', version, [37, 0], [0, 12, 55930.39, 0, 0, -12, 24000, 0, 1]),
-        module(5, 'Core', 'AudioInterface2', '2.6.4', [53, 0], []),
+        module(4, 'CZishLab', 'DACStage', version, [51, 0], [0, 12, 55930.39, 0, 0, -12, 24000, 0, 1]),
+        module(5, 'Core', 'AudioInterface2', '2.6.4', [67, 0], []),
     ]
+    modules[1]['data'] = dict(schema=2)
+    modules[3]['data'] = dict(schema=2)
     connections = [(1, 3, 2, 1), (2, 0, 4, 0), (2, 1, 3, 0),
                    (3, 0, 4, 3), (4, 0, 5, 0), (4, 0, 5, 1)]
     cables = [dict(id=i + 1, outputModuleId=src, outputId=out, inputModuleId=dst,

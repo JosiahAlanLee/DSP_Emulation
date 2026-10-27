@@ -1,8 +1,13 @@
 # DAC stage: period converter character, spec v0.1
 
-Status: **draft contract; early implementation started.** [CZishLab](../vcv/czish)
-implements the word formats and a ByteBus XOR/tap experiment. Its raw HOLD,
-limited AA, and provisional CZ profile are not the full contract below.
+Status: **software v1 implemented in CZishLab 2.1; CZ hardware fitting pending.**
+The [module manual](../vcv/czish) documents the 16 HP implementation, including
+minimum-phase HOLD, half-band AA, two provisional CZ candidates, noise, rounding
+and encoded-word ByteBus XOR/tap. RATE retains the prototype's Hz-based parameter
+for patch compatibility, bounded to ±2 octaves for YM; the effective-rate readout
+shows the result. AA's cascade delay depends on rate. The transparency check in
+§8 uses absolute dBFS, not signal-relative error; see the
+[validation record](../vcv/czish/docs/VALIDATION.md).
 
 Working names: **DAC Stage** for the
 module, `dspemu::dac` for the shared header. Names and slugs are the owner's to

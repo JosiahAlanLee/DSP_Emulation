@@ -13,6 +13,8 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 
 | Panel | Width | GUI details | Generated layout illustration |
 |---|---|---|---|
+| CZish | 30 HP | Line and waveform selectors, six eight-step envelope editor, endpoint selectors, live word/divider display, grouped mono/poly/bus outputs | [CZish](../vcv/czish/docs/Czish-preview.svg) |
+| DAC Stage | 16 HP | Converter selector, rate/bits and bus readouts, noise/tone controls, bit CV, grouped audio/bus outputs | [DAC Stage](../vcv/czish/docs/DacStage-preview.svg) |
 | Clocked Register | 12 HP | Named clock source selector, held-word hex display, separate bus and clock outputs | [Register](../vcv/bytebus/docs/Register-preview.svg) |
 | Lookup | 16 HP | Named family and Map/Rise/Fall selectors, JUMP jack with bit selector, output hex display, grouped bus/audio outputs | [Lookup](../vcv/bytebus/docs/Lookup-preview.svg) |
 | Lookup2 | 16 HP | Named family selector, SHAPE and B WORD knobs, JUMP jack with bit selector and reset, output hex display, A/B/CV/RESET inputs, grouped bus/audio outputs | [Lookup2](../vcv/bytebus/docs/Lookup2-preview.svg) |
@@ -30,8 +32,9 @@ incoming Gorgon sound lock can select a different machine per hit. P1–P8 remai
 raw offsets; machine-specific parameter names are available in the existing
 module menu. The readout gets names from the loaded OS.
 
-The panel update preserves all parameter, port and light IDs, patch data and
-module widths. Existing patches keep their connections and values. Moving the
+The earlier panel update preserves its parameter, port and light IDs, patch data
+and module widths. CZishLab 2.1 separately expands CZish from 16 to 30 HP; its
+existing IDs and cables are preserved and new controls are appended. Existing patches keep their connections and values. Moving the
 controls changes where their cables are drawn.
 
 ## Regenerate artwork
@@ -47,14 +50,15 @@ From the repository root:
 python vcv/bytebus/tools/make_panels.py
 python vcv/machinemodule/tools/make_panel.py
 python vcv/seance/tools/make_panel.py
+python vcv/czish/tools/make_panels.py
 ```
 
-The first three use [the shared panel helper](../vcv/shared/panels/panel.py).
+These use [the shared panel helper](../vcv/shared/panels/panel.py).
 Each component table generates both the artwork and `src/Layout.hpp`, consumed
 by the module widget, plus a component illustration in the plugin's `docs`
 directory. Commit all generated outputs together. The old
 `make_converter_panel.py` entry point regenerates the whole ByteBusLab family.
-An alternate font file can be passed to these three generators with `--font`.
+An alternate font file can be passed to these generators with `--font`.
 The component illustrations are layout aids, not Rack screenshots.
 
 Keep layout namespace imports inside widget constructors. Qualify shared names

@@ -8,6 +8,8 @@ drawn by that project's generator with the seal ornament left off.
 
 | Module | Mark | Meaning |
 |---|---|---|
+| CZish | VII Revision | returns displaced (the phase bends within a cycle and returns at its end) |
+| DAC Stage | V Bottleneck | fails the bypass test (the signal passes through a constrained converter word and clock) |
 | Spoon Bender | VII Revision | returns displaced (each shifted repeat comes back moved) |
 | OTIS | IX Substitutive change | old route struck out (REWORK replaces the loop) |
 | Otis Capture | VIII Additive change | new branch, old kept (a take lands while the replaced one still sounds) |
