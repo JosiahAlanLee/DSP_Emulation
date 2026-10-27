@@ -1287,18 +1287,19 @@ static void rouletting() {
     }
     // The filter against a fine integration of the same equations under a continuously varying
     // ROULETTE CV, at 44.1/48/96 kHz.
+    constexpr double pi = 3.14159265358979323846;   // M_PI is not standard C++ (MinGW hides it)
     for (double sr : {44100., 48000., 96000.}) {
         rl::Roulette r; r.clear(); rl::Parameters p; p.filterOhms = 30e3; p.scale = .1; rl::Inputs in; in.rouletteConnected = true;
         const double rs = 30e3, tau = (rs + rl::R2) * rl::C_FARADS * .1, lead = rl::R2 / (rs + rl::R2);
         double vC = 0, worst = 0; const int fine = 64;
         for (int t = 0; t < int(sr / 2); ++t) {
             double time = t / sr;
-            in.roulette = float(6 + 5 * std::sin(2 * M_PI * 7 * time));
+            in.roulette = float(6 + 5 * std::sin(2 * pi * 7 * time));
             auto o = r.tick(p, in, sr);
             double u = in.roulette / 12.;
             worst = std::max(worst, std::abs(o.vcoin - (vC + (u - vC) * lead)));
             for (int k = 0; k < fine; ++k) {
-                double uk = (6 + 5 * std::sin(2 * M_PI * 7 * (time + k / (sr * fine)))) / 12;
+                double uk = (6 + 5 * std::sin(2 * pi * 7 * (time + k / (sr * fine)))) / 12;
                 vC += (uk - vC) / tau / (sr * fine);
             }
         }
