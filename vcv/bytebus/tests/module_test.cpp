@@ -15,6 +15,7 @@
 #include "../src/Lattice.cpp"
 #include "../src/ParallelSum.cpp"
 #include "../src/Wheel.cpp"
+#include "../src/Roulette.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -1018,10 +1019,107 @@ static std::vector<int> wheelChain(float sr, unsigned orderSeed) {
     return words;
 }
 
+// Roulette with real ports against an engine fed the same inputs: rest, DIVIDE, a spin and coast
+// with one RESULT, TRACK lock, RANGE CV, the edge comparator with another SCALE and FILTER;
+// persistence of the count, result, filter and phase with bounded restore; Initialize.
+static void roulettePorts() {
+    using R = ByteRoulette; namespace rl = dspemu::roulette;
+    auto a = args();
+    R m; m.model = modelRoulette; connectOutputs(m);
+    assert(m.params.size() == 5 && m.inputs.size() == 5 && m.outputs.size() == 5 && m.lights.size() == 14);
+    rl::Roulette ref; ref.clear(); rl::Parameters rp; rl::Inputs ri;
+    int results = 0, counts = 0;
+    auto step = [&](int t) {
+        m.process(a); auto o = ref.tick(rp, ri, 48000);
+        assert(m.outputs[R::LO_OUT].getChannels() == 9 && m.outputs[R::HI_OUT].getChannels() == 9 && m.outputs[R::RESULT_OUT].getChannels() == 9);
+        assert(word(m.outputs[R::LO_OUT]) == o.lo && word(m.outputs[R::HI_OUT]) == o.hi && word(m.outputs[R::RESULT_OUT]) == o.result);
+        assert(m.outputs[R::CLOCK_OUT].getVoltage() == (o.clk ? 10.f : 0.f) && m.outputs[R::LO_OUT].getVoltage(8) == (o.clk ? 10.f : 0.f));
+        assert(m.outputs[R::RESULT_OUT].getVoltage(8) == (o.resultClk ? 10.f : 0.f));
+        assert(m.outputs[R::VCO_OUT].getVoltage() == o.vcoOut && m.frequency.load() == float(o.frequency));
+        for (int k = 0; k < 12; ++k) assert(m.lights[R::BIT_LIGHT + k].getBrightness() == (o.count >> k & 1));
+        results += o.resultClk; counts += o.advanced; (void)t;
+        return o;
+    };
+    for (int t = 0; t < 4800; ++t) { auto o = step(t); assert(o.frequency == 0 && o.count == 0 && o.vcoOut == -5); }
+    // DIVIDE counts its rising edges.
+    m.inputs[R::DIVIDE_IN].channels = 1; ri.divideConnected = true;
+    for (int t = 0; t < 4 * 300; ++t) { float v = t % 4 < 2 ? 10.f : 0.f; m.inputs[R::DIVIDE_IN].setVoltage(v); ri.divide = v; step(t); }
+    assert(counts >= 299 && ref.count == unsigned(counts));
+    m.inputs[R::DIVIDE_IN].channels = 0; ri.divideConnected = false; ri.divide = 0;
+    // A spin and coast at FILTER 100 kOhm: the VCO clocks the count and comes to rest once.
+    m.params[R::FILTER].setValue(100); rp.filterOhms = 100e3;
+    m.inputs[R::ROULETTE_IN].channels = 1; ri.rouletteConnected = true;
+    counts = 0;
+    for (int t = 0; t < 48000 * 2; ++t) { float v = t < 24000 ? 10.f : 0.f; m.inputs[R::ROULETTE_IN].setVoltage(v); ri.roulette = v; step(t); }
+    assert(results == 1 && counts > 500 && m.frequency.load() == 0);
+    m.inputs[R::ROULETTE_IN].channels = 0; ri.rouletteConnected = false;
+    // TRACK at 300 Hz through the XOR: the VCO locks.
+    m.inputs[R::TRACK_IN].channels = 1; ri.trackConnected = true;
+    int rises = 0;
+    for (int t = 0; t < 48000 * 2; ++t) {
+        float v = t % 160 < 80 ? 5.f : -5.f; m.inputs[R::TRACK_IN].setVoltage(v); ri.track = v;
+        auto o = step(t); if (t >= 48000) rises += o.vcoRise;
+    }
+    assert(std::abs(rises - 300) <= 1);
+    // RANGE CV, the edge comparator, SCALE x10 and FILTER 20 kOhm.
+    m.inputs[R::RANGE_CV_IN].channels = 1; m.inputs[R::RANGE_CV_IN].setVoltage(-1); ri.rangeCv = -1;
+    m.params[R::COMPARATOR].setValue(1); rp.comparator = rl::Comparator::Edge;
+    m.params[R::SCALE].setValue(2); rp.scale = 10; m.params[R::FILTER].setValue(20); rp.filterOhms = 20e3;
+    m.params[R::RANGE].setValue(std::log2(5000.f)); rp.rangeHz = std::exp2(std::log2(5000.f));
+    for (int t = 0; t < 48000; ++t) {
+        float v = t % 240 < 120 ? 5.f : -5.f; m.inputs[R::TRACK_IN].setVoltage(v); ri.track = v;
+        auto o = step(t); if (t > 40000) assert(std::abs(o.fMax - 2500) < 1e-2);
+    }
+    // RESET: count 0, published.
+    m.inputs[R::RESET_IN].channels = 1; m.inputs[R::RESET_IN].setVoltage(10); ri.reset = 10;
+    auto o = step(0); assert(o.count == 0 && !o.advanced);
+    m.inputs[R::RESET_IN].setVoltage(0); ri.reset = 0;
+    bool loaded = o.loaded; o = step(0); assert((loaded || o.loaded) && o.count == 0);
+    for (int t = 0; t < 1000; ++t) step(t);
+    // Persistence: count, result, filter and phase; bounded restore; Initialize.
+    m.params[R::SOURCE].setValue(2);
+    unsigned savedCount = m.count.load(), savedResult = m.result.load();
+    double vC = m.savedVc.load(), phase = m.savedPhase.load();
+    json_t* j = m.toJson(); R r; r.model = modelRoulette; connectOutputs(r); r.fromJson(j); json_decref(j);
+    assert(r.params[R::COMPARATOR].getValue() == 1 && r.params[R::SCALE].getValue() == 2 && r.params[R::FILTER].getValue() == 20 && r.params[R::SOURCE].getValue() == 2);
+    assert(r.state.count == savedCount && r.state.result == savedResult && r.state.vC == vC && r.state.phase == phase);
+    r.process(a);
+    assert(r.outputs[R::CLOCK_OUT].getVoltage() == 10 && word(r.outputs[R::RESULT_OUT]) == savedResult);
+    json_t* bad = json_pack("{s:I,s:I,s:f,s:f}", "count", json_int_t(99999), "result", json_int_t(-3), "filter", 7.0, "phase", -0.25);
+    r.dataFromJson(bad); json_decref(bad);
+    assert(r.state.count == 4095 && r.state.result == 0 && r.state.vC == 1 && r.state.phase == .75);
+    r.onReset(Module::ResetEvent{});
+    assert(r.params[R::FILTER].getValue() == 50 && r.params[R::SCALE].getValue() == 1 && r.params[R::COMPARATOR].getValue() == 0 && r.params[R::SOURCE].getValue() == 0);
+    assert(std::abs(r.params[R::RANGE].getValue() - std::log2(2000.f)) < 1e-5);
+    r.process(a); assert(word(r.outputs[R::LO_OUT]) == 0 && r.frequency.load() == 0);
+}
+
+// A Counter's clock into Roulette's DIVIDE: LO follows the Counter's word and HI the same count
+// from bit 4, through one-sample cables in random order, past the 12-bit wrap.
+static std::vector<int> rouletteChain(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using R = ByteRoulette;
+    C c; R m; connectOutputs(c); connectOutputs(m); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.inputs[C::CLOCK_IN].channels = 1; m.inputs[R::DIVIDE_IN].channels = 1;
+    std::mt19937 order(orderSeed); std::vector<int> words; unsigned n = 0;
+    for (int t = 0; t < 6 * 4200; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 6 == 2 ? 10 : 0);
+        m.inputs[R::DIVIDE_IN].setVoltage(c.outputs[C::CLOCK_OUT].getVoltage());
+        if (order() & 1) { c.process(a); m.process(a); } else { m.process(a); c.process(a); }
+        if (m.outputs[R::CLOCK_OUT].getVoltage() == 10) {
+            int lo = word(m.outputs[R::LO_OUT]), hi = word(m.outputs[R::HI_OUT]);
+            if (!words.empty()) { n = (n + 1) & 4095; assert(lo == word(c.outputs[C::BUS_OUT])); }
+            assert(lo == int(n & 255) && hi == int(n >> 4 & 255) && m.count.load() == n);
+            words.push_back(hi << 8 | lo);
+        }
+    }
+    assert(words.size() >= 4150);
+    return words;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); plugin.addModel(modelWheel); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); plugin.addModel(modelWheel); plugin.addModel(modelRoulette); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -1062,6 +1160,9 @@ int main() {
     wheelPorts();
     auto wheeled = wheelChain(48000, 71);
     assert(wheelChain(44100, 72) == wheeled && wheelChain(96000, 73) == wheeled);
+    roulettePorts();
+    auto spun = rouletteChain(48000, 81);
+    assert(rouletteChain(44100, 82) == spun && rouletteChain(96000, 83) == spun);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz; Wheel ports against its engine at Engine rate with capture, LENGTH Off and another window, capture from the jack, persistence of both registers and Initialize, and Counter clock and CARRY -> Wheel capture in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz; Wheel ports against its engine at Engine rate with capture, LENGTH Off and another window, capture from the jack, persistence of both registers and Initialize, and Counter clock and CARRY -> Wheel capture in random order at 44.1/48/96 kHz; Roulette ports against its engine through rest, DIVIDE, a spin and coast with one RESULT, TRACK lock, RANGE CV and the edge comparator, persistence and Initialize, and a Counter -> DIVIDE chain past the 12-bit wrap in random order at 44.1/48/96 kHz\n";
 }

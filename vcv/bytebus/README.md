@@ -1,6 +1,6 @@
 # ByteBusLab
 
-Twelve modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Thirteen modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
@@ -17,8 +17,9 @@ explicit clocking and original table content:
 | **Lattice**, 26 HP | Sixteen steps on a 4 × 4 grid, column from one up/down counter and row from another on its own clock, with the cross-coupled jumps of the Nonlinearcircuits Bindubba (settled or one-pass) or jumps from a byte bus; CV, inverted CV, two slews under CV and sixteen gates. | [Lattice](docs/LATTICE.md) |
 | **Parallel Sum**, 20 HP | An eight-stage shift register, XOR or XNOR feedback from a mask (a knob or a byte bus) plus an injected signal, summed through eight weights into a stepped CV and a zero-mean audio output: a timbre generator, a CV pattern and controllable noise, after the Nonlinearcircuits Burhans Timbre. | [Parallel Sum](docs/PARALLEL_SUM.md) |
 | **Wheel**, 14 HP | A 24-stage noise register that visits every 24-bit state once, and a loop of 1–24 steps that recirculates until CAPTURE refills it from the noise; both read through an eight-stage window as byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo. | [Wheel](docs/WHEEL.md) |
+| **Roulette**, 14 HP | A phase-locked loop driving a 12-bit counter on two overlapping byte buses: a gate spins the VCO up and the loop filter lets it coast to rest, publishing the count at rest on RESULT; or it tracks an input, loosely or tightly, or divides a clock, after the Nonlinearcircuits Wangernumb. | [Roulette](docs/ROULETTE.md) |
 
-Plugin **ByteBusLab**, version **2.15.0**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.16.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -43,7 +44,7 @@ CARRY chains, a Counter → Lookup rhythm and One-shot → Lookup envelopes. Swi
 modes, a Counter A/B commutator and reclocking. Pipeline tests cover every DELAY and
 SPREAD, loops, a saved looped phrase and a Rhythm canon through Switch. Lookup2
 tests cover every (A, B) in Logic and Arithmetic and every Walsh shape; Counter 2
-tests every N/D against the exact formula and a 12-against-16 polymeter; Fan tests every address, length and direction, routing both ways, GLITCH and a Counter → Fan chain. Lattice tests both jump modes against the jam wiring for all 256 states, held and simultaneous jumps, and a Counter → Lattice jump chain. Parallel Sum tests every mask under XOR and XNOR, the original's 729 switch settings, the outputs as a convolution of the bit stream, and a Counter → MASK bus chain. Wheel tests the full 2^24 cycle, every window and loop length, and capture on the beat from a Counter's CARRY. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
+tests every N/D against the exact formula and a 12-against-16 polymeter; Fan tests every address, length and direction, routing both ways, GLITCH and a Counter → Fan chain. Lattice tests both jump modes against the jam wiring for all 256 states, held and simultaneous jumps, and a Counter → Lattice jump chain. Parallel Sum tests every mask under XOR and XNOR, the original's 729 switch settings, the outputs as a convolution of the bit stream, and a Counter → MASK bus chain. Wheel tests the full 2^24 cycle, every window and loop length, and capture on the beat from a Counter's CARRY. Roulette tests the spin and coast against the filter's closed form at three rates, tracking with both comparators, and a Counter → DIVIDE chain. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
 2.8 installed, and `examples/counter-divider.vcv` with ByteBusLab alone.
 
 The [generator](tools/generate_lookup.py) and per-table manifests ship with the

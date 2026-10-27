@@ -8,6 +8,7 @@
 #include "../src/engine/Lattice.hpp"
 #include "../src/engine/ParallelSum.hpp"
 #include "../src/engine/Wheel.hpp"
+#include "../src/engine/Roulette.hpp"
 #include <set>
 #include <array>
 #include <cassert>
@@ -1216,7 +1217,159 @@ static void wheeling() {
     }
 }
 
+static void rouletting() {
+    namespace rl = dspemu::roulette;
+    // The count: each DIVIDE rising edge adds one; bit k is the input divided by 2^(k + 1); LO is
+    // bits 0-7 and HI bits 4-11.
+    {
+        rl::Roulette r; r.clear(); rl::Parameters p; rl::Inputs in; in.divideConnected = true;
+        std::array<int, 12> toggles{}; unsigned last = 0; int edges = 0;
+        for (int t = 0; t < 4 * 8192 + 8; ++t) {
+            in.divide = t % 4 < 2 ? 10.f : 0.f;
+            auto o = r.tick(p, in, 48000);
+            if (o.advanced) {
+                ++edges; assert(o.count == unsigned(edges) % 4096 && o.clk);
+                for (int k = 0; k < 12; ++k) toggles[k] += ((o.count ^ last) >> k) & 1;
+                last = o.count;
+            }
+            assert(o.lo == (o.count & 255) && o.hi == (o.count >> 4 & 255));
+        }
+        assert(edges >= 8192);
+        for (int k = 0; k < 12; ++k) assert(std::abs(toggles[k] - edges / (1 << k)) <= 1);
+    }
+    // The resting state: nothing patched, the VCO stays stopped with its output low. Stopped high,
+    // the XOR's own output moves it on to low, where it rests. Once running from TRACK, the XOR's
+    // own square keeps it going after TRACK is removed when FILTER leaves enough of the
+    // capacitor's charge at VCOIN; at FILTER's minimum it falls back to rest. (Predictions; the
+    // contract lists them for measurement.)
+    {
+        rl::Roulette r; r.clear(); rl::Parameters p; rl::Inputs in;
+        for (int t = 0; t < 48000; ++t) { auto o = r.tick(p, in, 48000); assert(o.frequency == 0 && !o.advanced && o.vcoOut == -5); }
+        r.clear(0, 0, 0, .25); int rises = 0; rl::Output o;
+        for (int t = 0; t < 48000; ++t) { o = r.tick(p, in, 48000); rises += o.vcoRise; }
+        assert(rises == 0 && o.frequency == 0 && !o.vcoBit && r.phase >= .5);
+        for (double filter : {0., 100e3}) {
+            rl::Roulette q; q.clear(); p.filterOhms = filter; rl::Inputs track; track.trackConnected = true;
+            for (int t = 0; t < 48000; ++t) { track.track = t % 160 < 80 ? 5.f : -5.f; q.tick(p, track, 48000); }
+            rises = 0; for (int t = 0; t < 96000; ++t) rises += q.tick(p, in, 48000).vcoRise;
+            assert(filter == 0 ? rises == 0 : rises > 500);
+        }
+    }
+    // The spin and the coast: ROULETTE at 10 V for one second, then 0 V. VCOIN follows the closed
+    // form of the lead-lag filter, and the VCO stops when the closed form says, at every rate;
+    // RESULT publishes the count at rest once.
+    for (double filter : {0., 50e3, 100e3}) {
+        std::vector<double> stops;
+        for (double sr : {44100., 48000., 96000.}) {
+            rl::Roulette r; r.clear(); rl::Parameters p; p.filterOhms = filter; rl::Inputs in; in.rouletteConnected = true;
+            const double u = 10 / 12., tau = (filter + rl::R2) * rl::C_FARADS, lead = rl::R2 / (filter + rl::R2);
+            int n1 = int(sr), stopAt = -1, results = 0, counts = 0; uint8_t resultWord = 0; unsigned countAtStop = 0;
+            bool lastResult = false;
+            for (int t = 0; t < int(3 * sr); ++t) {
+                in.roulette = t < n1 ? 10.f : 0.f;
+                auto o = r.tick(p, in, sr);
+                double time = t / sr, vC, vcoin;
+                if (t < n1) { vC = u * (1 - std::exp(-time / tau)); vcoin = vC + (u - vC) * lead; }
+                else { double v1 = u * (1 - std::exp(-1. / tau)); vC = v1 * std::exp(-(time - 1) / tau); vcoin = vC * (1 - lead); }
+                assert(std::abs(o.vcoin - vcoin) < 1e-9);
+                counts += o.advanced;
+                if (o.stopped) { assert(stopAt < 0); stopAt = t; countAtStop = o.count; }
+                if (o.resultClk) { assert(!lastResult); ++results; resultWord = o.result; }
+                lastResult = o.resultClk;
+            }
+            assert(stopAt >= n1 && results == 1 && resultWord == (countAtStop & 255) && counts > 1000);
+            double v1 = u * (1 - std::exp(-1. / tau));
+            double expected = filter == 0 ? 0 : tau * std::log(v1 * (1 - lead) / rl::STOP);
+            assert(std::abs((stopAt - n1) / sr - expected) <= 1.5 / sr);
+            stops.push_back((stopAt - n1) / sr);
+        }
+        if (filter == 100e3) assert(stops[0] > 1.15 && stops[0] < 1.2);          // about 1.2 s
+    }
+    // The filter against a fine integration of the same equations under a continuously varying
+    // ROULETTE CV, at 44.1/48/96 kHz.
+    for (double sr : {44100., 48000., 96000.}) {
+        rl::Roulette r; r.clear(); rl::Parameters p; p.filterOhms = 30e3; p.scale = .1; rl::Inputs in; in.rouletteConnected = true;
+        const double rs = 30e3, tau = (rs + rl::R2) * rl::C_FARADS * .1, lead = rl::R2 / (rs + rl::R2);
+        double vC = 0, worst = 0; const int fine = 64;
+        for (int t = 0; t < int(sr / 2); ++t) {
+            double time = t / sr;
+            in.roulette = float(6 + 5 * std::sin(2 * M_PI * 7 * time));
+            auto o = r.tick(p, in, sr);
+            double u = in.roulette / 12.;
+            worst = std::max(worst, std::abs(o.vcoin - (vC + (u - vC) * lead)));
+            for (int k = 0; k < fine; ++k) {
+                double uk = (6 + 5 * std::sin(2 * M_PI * 7 * (time + k / (sr * fine)))) / 12;
+                vC += (uk - vC) / tau / (sr * fine);
+            }
+        }
+        assert(worst < 2e-3);
+    }
+    // The VCO at its fastest: half the engine rate, every count strobed.
+    for (double sr : {44100., 48000., 96000.}) {
+        rl::Roulette r; r.clear(); rl::Parameters p; p.rangeHz = 20000; p.filterOhms = 0; rl::Inputs in;
+        in.rouletteConnected = true; in.roulette = 12; in.rangeCv = 10;
+        int counts = 0, strobes = 0; bool last = false;
+        for (int t = 0; t < int(sr); ++t) {
+            auto o = r.tick(p, in, sr); assert(!(last && o.clk)); last = o.clk;
+            if (t > sr / 2) { counts += o.advanced; strobes += o.clk; assert(o.frequency == sr / 2); }
+        }
+        assert(counts == strobes && std::abs(counts - sr / 4) <= 2);
+    }
+    // ROULETTE replaces the comparator: TRACK does nothing while it is patched.
+    {
+        rl::Roulette a, b; a.clear(); b.clear(); rl::Parameters p; rl::Inputs ia, ib;
+        ia.rouletteConnected = ib.rouletteConnected = true; ib.trackConnected = true;
+        for (int t = 0; t < 48000; ++t) {
+            ia.roulette = ib.roulette = t % 9000 < 4000 ? 8.f : 0.f; ib.track = t % 37 < 18 ? 5.f : -5.f;
+            auto oa = a.tick(p, ia, 48000), ob = b.tick(p, ib, 48000);
+            assert(oa.vcoin == ob.vcoin && oa.count == ob.count && oa.vcoOut == ob.vcoOut);
+        }
+    }
+    // Tracking: both comparators lock the VCO to TRACK's frequency well inside the range; the
+    // edge comparator also near its top, where the XOR's ripple loses lock.
+    for (double sr : {44100., 48000., 96000.}) for (int cmp = 0; cmp < 2; ++cmp) for (double fin : {50., 300., 1000., 1900.}) {
+        if (cmp == 0 && fin == 1900.) continue;
+        rl::Roulette r; r.clear(); rl::Parameters p; p.comparator = cmp ? rl::Comparator::Edge : rl::Comparator::Xor;
+        rl::Inputs in; in.trackConnected = true; double phase = 0; int rises = 0;
+        for (int t = 0; t < int(sr * 3); ++t) {
+            phase += fin / sr; if (phase >= 1) phase -= 1;
+            in.track = phase < .5 ? 5.f : -5.f;
+            auto o = r.tick(p, in, sr);
+            if (t >= sr) rises += o.vcoRise;
+        }
+        assert(std::abs(rises / 2. - fin) <= 1);
+    }
+    // RANGE CV: one volt an octave on F_MAX after the lag, quick to rise and slow to fall.
+    {
+        rl::Roulette r; r.clear(); rl::Parameters p; p.rangeHz = 1000; rl::Inputs in;
+        in.rangeCv = 2; for (int t = 0; t < 960; ++t) r.tick(p, in, 48000);          // 20 ms: four rise constants
+        auto o = r.tick(p, in, 48000); assert(o.fMax > 3900 && o.fMax < 4000);
+        for (int t = 0; t < 48000; ++t) o = r.tick(p, in, 48000);
+        assert(std::abs(o.fMax - 4000) < 1e-6);
+        in.rangeCv = 0; for (int t = 0; t < 960; ++t) o = r.tick(p, in, 48000);
+        assert(o.fMax > 2450 && o.fMax < 2600);                                         // 2^(2 e^-0.4) kHz
+    }
+    // RESET: count 0 and the VCO restarted low, published once; RESET wins over a DIVIDE edge;
+    // strobes keep their gaps under random DIVIDE edges and resets.
+    {
+        rl::Roulette r; r.clear(77); rl::Parameters p; rl::Inputs in; in.divideConnected = true;
+        r.tick(p, in, 48000); r.tick(p, in, 48000);
+        in.reset = 10; in.divide = 10; auto o = r.tick(p, in, 48000);
+        assert(o.loaded && o.count == 0 && !o.advanced && o.clk);
+        std::mt19937 g(21); bool last = false; unsigned model = 0; bool divideHigh = true, resetHigh = true;
+        for (int t = 0; t < 50000; ++t) {
+            in.divide = g() % 3 ? 0.f : 10.f; in.reset = g() % 500 ? 0.f : 10.f;
+            bool divideRise = in.divide > 1 && !divideHigh, resetRise = in.reset > 1 && !resetHigh;
+            divideHigh = in.divide > 1; resetHigh = in.reset > 1;
+            o = r.tick(p, in, 48000); assert(!(last && o.clk)); last = o.clk;
+            if (resetRise) { model = 0; assert(!o.advanced); }
+            if (o.advanced) { assert(divideRise); model = (model + 1) & 4095; }
+            assert(o.count == model);
+        }
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling(); rouletting();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks; Roulette: counts as exact divisions, the resting state, the spin and coast against the closed form with one RESULT per stop at 44.1/48/96 kHz, the filter against a fine integration, the VCO capped at half the engine rate with every count strobed, ROULETTE replacing the comparator, XOR and edge tracking, RANGE CV and its lag, RESET and strobes under random edges\n";
 }
