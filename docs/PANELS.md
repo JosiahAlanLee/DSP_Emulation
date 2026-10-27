@@ -15,7 +15,7 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 |---|---|---|---|
 | Clocked Register | 12 HP | Named clock source selector, held-word hex display, separate bus and clock outputs | [Register](../vcv/bytebus/docs/Register-preview.svg) |
 | Lookup | 16 HP | Named family and Map/Rise/Fall selectors, output hex display, grouped bus/audio outputs | [Lookup](../vcv/bytebus/docs/Lookup-preview.svg) |
-| Counter | 12 HP | Named clock source selector, INC/MOD/SEED knobs, count hex display, grouped bus, clock and carry outputs | [Counter](../vcv/bytebus/docs/Counter-preview.svg) |
+| Counter | 12 HP | Named clock source and run mode selectors, RATE/INC/MOD/SEED knobs, count hex display, grouped bus, clock and carry outputs | [Counter](../vcv/bytebus/docs/Counter-preview.svg) |
 | Converter | 14 HP | Independent ADC/DAC readouts, gain/offset/range controls, grouped outputs | [Converter](../vcv/bytebus/docs/Converter-preview.svg) |
 | Machinemodule | 18 HP | Local machine ID/name readout, labelled Ready/Link indicators, eight offset/CV pairs, grouped outputs | [Machinemodule](../vcv/machinemodule/docs/Machinemodule-preview.svg) |
 

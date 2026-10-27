@@ -123,7 +123,8 @@ static std::vector<uint8_t> feedback(float sr, uint8_t seed, unsigned orderSeed)
 static void counterPorts() {
     using C = ByteCounter;
     C c; c.model = modelCounter; auto a = args(); connectOutputs(c);
-    assert(c.params.size() == 6 && c.inputs.size() == 3 && c.outputs.size() == 3);
+    assert(c.params.size() == 7 && c.inputs.size() == 3 && c.outputs.size() == 3);
+    assert(c.params[C::RUN_MODE].getValue() == 0); // Loop
     assert(c.params[C::INC].getValue() == 1 && c.params[C::MODULUS].getValue() == 256 && c.params[C::SEED].getValue() == 0);
     // CLOCK jack: INC 5, MOD 12. CARRY pulses on the wrapping edges, with the word clock.
     c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(5); c.params[C::MODULUS].setValue(12);
@@ -162,6 +163,86 @@ static void counterPorts() {
     assert(r.params[C::MODULUS].getValue() == 256 && word(r.outputs[C::BUS_OUT]) == 0);
     json_t* bad = json_pack("{s:I}", "word", json_int_t(-5)); r.dataFromJson(bad); json_decref(bad);
     r.process(a); assert(word(r.outputs[C::BUS_OUT]) == 0);
+}
+
+// Run modes through the module: Pendulum's direction is saved with the patch, a 2.3 patch
+// loads as Loop and up, Initialize restores both, and One-shot holds after one CARRY.
+static void counterRunModes() {
+    using C = ByteCounter;
+    C c; c.model = modelCounter; auto a = args(); connectOutputs(c);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(3); c.params[C::MODULUS].setValue(8);
+    c.params[C::RUN_MODE].setValue(2); c.inputs[C::CLOCK_IN].channels = 1;
+    c.process(a); c.process(a);
+    auto edges = [&](C& m, int n, std::vector<int>& words, std::vector<int>& carries) {
+        for (int k = 0; k < n; ++k) {
+            m.inputs[C::CLOCK_IN].setVoltage(10); m.process(a);
+            words.push_back(word(m.outputs[C::BUS_OUT])); carries.push_back(m.outputs[C::CARRY_OUT].getVoltage() == 10);
+            m.inputs[C::CLOCK_IN].setVoltage(0); m.process(a);
+        }
+    };
+    std::vector<int> words, carries;
+    edges(c, 4, words, carries);
+    assert((words == std::vector<int>{3, 6, 7, 4}) && (carries == std::vector<int>{0, 0, 1, 0}));
+    // Saved while descending: the reload carries on down.
+    json_t* saved = c.toJson();
+    assert(json_is_true(json_object_get(json_object_get(saved, "data"), "down")));
+    C r; r.model = modelCounter; connectOutputs(r); r.fromJson(saved);
+    r.inputs[C::CLOCK_IN].channels = 1; r.process(a); r.process(a);
+    assert(word(r.outputs[C::BUS_OUT]) == 4 && r.params[C::RUN_MODE].getValue() == 2);
+    words.clear(); carries.clear(); edges(r, 4, words, carries);
+    assert((words == std::vector<int>{1, 0, 3, 6}) && (carries == std::vector<int>{0, 1, 0, 0}));
+    // A ByteBusLab 2.3 patch has neither the MODE param nor the direction: Loop, counting up.
+    json_t* params = json_object_get(saved, "params");
+    for (size_t k = 0; k < json_array_size(params); ++k)
+        if (json_integer_value(json_object_get(json_array_get(params, k), "id")) == C::RUN_MODE) json_array_remove(params, k--);
+    json_object_del(json_object_get(saved, "data"), "down");
+    C old; old.model = modelCounter; connectOutputs(old); old.fromJson(saved); json_decref(saved);
+    old.inputs[C::CLOCK_IN].channels = 1; old.process(a); old.process(a);
+    assert(old.params[C::RUN_MODE].getValue() == 0 && word(old.outputs[C::BUS_OUT]) == 4);
+    words.clear(); carries.clear(); edges(old, 2, words, carries);
+    assert((words == std::vector<int>{7, 2}) && (carries == std::vector<int>{0, 1}));
+    old.params[C::RUN_MODE].setValue(2); words.clear(); carries.clear(); edges(old, 3, words, carries);
+    assert((words == std::vector<int>{5, 7, 4}) && (carries == std::vector<int>{0, 1, 0})); // up from 2.3
+    // Initialize: Loop, word 0, direction up.
+    r.onReset(Module::ResetEvent{}); assert(r.params[C::RUN_MODE].getValue() == 0);
+    r.process(a); assert(word(r.outputs[C::BUS_OUT]) == 0 && !(r.published.load() & 0x100));
+    // One-shot: one CARRY on arrival at MOD - 1, then held; RESET restarts it.
+    c.params[C::RUN_MODE].setValue(1); c.params[C::INC].setValue(5); c.params[C::MODULUS].setValue(16);
+    c.inputs[C::RESET_IN].channels = 1; c.inputs[C::RESET_IN].setVoltage(10); c.process(a);
+    c.inputs[C::RESET_IN].setVoltage(0); c.process(a); c.process(a);
+    for (int run = 0; run < 2; ++run) {
+        words.clear(); carries.clear(); edges(c, 6, words, carries);
+        assert((words == std::vector<int>{5, 10, 15, 15, 15, 15}) && (carries == std::vector<int>{0, 0, 1, 0, 0, 0}));
+        c.inputs[C::RESET_IN].setVoltage(10); c.process(a); assert(word(c.outputs[C::BUS_OUT]) == 0);
+        c.inputs[C::RESET_IN].setVoltage(0); c.process(a); c.process(a);
+    }
+}
+
+// Counter (One-shot) -> Lookup (Curve, SHAPE 32): Curve 32 is 255 - n, so the rising one-shot
+// becomes a falling envelope that ends held at zero. Pendulum through it is an inverted triangle.
+static void counterEnvelope(float sr) {
+    namespace lu = dspemu::lookup; using C = ByteCounter;
+    auto library = std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
+    for (int run : {1, 2}) {
+        C c; ByteLookup l(library); connectOutputs(c); connectOutputs(l); auto a = args(sr);
+        c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(40); c.params[C::RUN_MODE].setValue(run);
+        c.inputs[C::CLOCK_IN].channels = 1;
+        l.params[ByteLookup::FAMILY].setValue(lu::Curve); l.params[ByteLookup::SHAPE].setValue(32);
+        std::vector<int> counts, out;
+        for (int t = 0; t < 8 * 16; ++t) {
+            c.inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+            copy(c.outputs[C::BUS_OUT], l.inputs[ByteLookup::BUS_IN]);
+            c.process(a); l.process(a);
+            if (c.outputs[C::CLOCK_OUT].getVoltage() == 10) counts.push_back(word(c.outputs[C::BUS_OUT]));
+            if (l.outputs[ByteLookup::BUS_OUT].getVoltage(8) == 10) out.push_back(word(l.outputs[ByteLookup::BUS_OUT]));
+        }
+        assert(out.size() == counts.size());
+        for (size_t k = 0; k < out.size(); ++k) assert(out[k] == 255 - counts[k]);
+        std::vector<int> want = run == 1 ? std::vector<int>{0, 40, 80, 120, 160, 200, 240, 255, 255}
+                                         : std::vector<int>{0, 40, 80, 120, 160, 200, 240, 255, 215};
+        assert(std::vector<int>(counts.begin(), counts.begin() + 9) == want);
+        if (run == 1) assert(out.back() == 0);
+    }
 }
 
 // Counter CARRY drives a second Counter's CLOCK (a 16-bit count) and a Register that captures
@@ -234,6 +315,8 @@ int main() {
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
+    counterRunModes();
+    for (float sr : {44100.f, 48000.f, 96000.f}) counterEnvelope(sr);
     auto chain = carryChain(48000, 1); assert(carryChain(44100, 2) == chain && carryChain(96000, 3) == chain);
     auto library = std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load("../res/lookup-v1.bin"));
     auto rhythm = rhythmChain(library, 48000, 4);
@@ -244,5 +327,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates in random order at 44.1/48/96 kHz\n";
 }
