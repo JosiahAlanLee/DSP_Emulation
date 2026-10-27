@@ -129,9 +129,9 @@ which sets the one chip clock all voices run at.
 Each voice keeps the patch its last hit chose until its next hit; a change on
 PATCH in between doesn't reach it. A voice follows its patch, not a copy of it:
 turning a knob changes the voices playing the panel, and storing a patch again
-changes the voices playing that patch, including REV. The panel’s REV knob
+changes the voices playing that patch, including REV. The panel's REV knob
 turns only the voices playing the panel. Clearing a stored patch makes its
-voices take the panel’s settings, including REV, at once. With PATCH patched,
+voices take the panel's settings, including REV, at once. With PATCH patched,
 the display shows the patch the last hit chose
 (**PATCH 2**, or **PATCH 2: PANEL** while patch 2 isn't stored).
 

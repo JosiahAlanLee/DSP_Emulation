@@ -3,7 +3,7 @@
 ## 2.11.2
 
 - Re-storing an OTIS patch now applies its REV to voices already playing that
-  patch. Clearing a stored patch applies the panel’s REV to its voices at once.
+  patch. Clearing a stored patch applies the panel's REV to its voices at once.
   New hits still take their direction after any retrigger fade.
 
 ## 2.11.1
