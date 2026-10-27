@@ -98,10 +98,10 @@ each sounding a different set of an instrument's layers, changed between notes
 to vary a part as it played. OTIS does the same with one sample and four sets of
 playback settings.
 
-**PATCH** takes a byte, like FRAME BUS. Bits 1 and 2 (cable channels 1 and 2)
+**PATCH** takes a byte, like FRAME BUS. Bits 0 and 1 (cable channels 1 and 2)
 choose the patch for each hit, read on the same sample as its gate:
 
-| Bit 2 | Bit 1 | Patch |
+| Bit 1 | Bit 0 | Patch |
 |---|---|---|
 | low | low | 0, the panel |
 | low | high | 1 |
@@ -110,7 +110,7 @@ choose the patch for each hit, read on the same sample as its gate:
 
 A ninth channel carries an optional clock, as on FRAME BUS: the choice then
 changes only on its rising edges. The other bit lanes are ignored, and a mono
-cable sets bit 1 alone (patches 0 and 1). Unpatched, every hit plays the panel.
+cable sets bit 0 alone (patches 0 and 1). Unpatched, every hit plays the panel.
 
 Patches 1–3 are stored from the panel, under **Patch select** in the menu:
 
@@ -239,7 +239,7 @@ Pitch and gate channel counts establish the voice count, subject to the selected
 | INT CV | Mono; approximately 1.1 V per interpolation bit. |
 | POS CV | Per-voice; 10 V adds 100% to POSITION. |
 | FRAME BUS | One byte, LSB first; optional clock on channel 9. Selects frames in FRM mode, overriding POSITION/POS CV. |
-| PATCH | One byte, LSB first; optional clock on channel 9. Bits 1 and 2 choose each hit's patch (see [Patch select](#patch-select)). |
+| PATCH | One byte, LSB first; optional clock on channel 9. Bits 0 and 1 choose each hit's patch (see [Patch select](#patch-select)). |
 | SIZE CV | Per-voice; 1 V doubles the window sample count. |
 | AMT CV | Mono; 10 V adds 100% to AMOUNT, latched on REWORK. |
 | TRIG | Mono REWORK trigger; rising at 2 V, rearmed below 0.1 V. |
