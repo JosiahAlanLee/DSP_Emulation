@@ -1027,7 +1027,8 @@ static void roulettePorts() {
     auto a = args();
     R m; m.model = modelRoulette; connectOutputs(m);
     assert(m.params.size() == 5 && m.inputs.size() == 5 && m.outputs.size() == 5 && m.lights.size() == 14);
-    rl::Roulette ref; ref.clear(); rl::Parameters rp; rl::Inputs ri;
+    // The module takes RANGE in float octaves: the reference gets the same value.
+    rl::Roulette ref; ref.clear(); rl::Parameters rp; rp.rangeHz = std::exp2(std::log2(2000.f)); rl::Inputs ri;
     int results = 0, counts = 0;
     auto step = [&](int t) {
         m.process(a); auto o = ref.tick(rp, ri, 48000);
