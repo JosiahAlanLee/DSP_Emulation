@@ -246,15 +246,15 @@ Each module's manual states:
 | Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent; optional explicit ramp follower | **Lookup**: original generated families, JUMP shape steps from a bus bit, and Vastish/OTIS table import; [contract](../vcv/bytebus/docs/LOOKUP.md). **Vastish BUS**: gate-free pre-amp DSP and stateful transforms; [contract](../vcv/vastish/BUS_SPEC.md) |
 | Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**: increment from INC or a bus, modulus, Loop/One-shot/Pendulum, seed and carry, with Register's clock ownership; [contract](../vcv/bytebus/docs/COUNTER.md) |
 | Single-word register | latching, clock source selectable | **Clocked Register**, prototype in [`vcv/bytebus`](../vcv/bytebus) |
-| Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**, new build |
+| Pipeline delay with loop and scramble (Rostock) | latching | **Pipeline**: a 1–64 edge delay, a per-bit SPREAD and a LOOP that repeats the last DELAY words, with Register's clock ownership; [contract](../vcv/bytebus/docs/PIPELINE.md) |
 | Commutator: 2:1 switch, bit poke, reclock (Poczdam) | transparent + reclocker | **Switch**: Select, Bits and Mix of A and B under a control word C; follows A's clock or its own; [contract](../vcv/bytebus/docs/SWITCH.md) |
 | Oscillator emitting a phase word (Berlin) | sender | Any Vastish voice (SAW, NONE chain) through BUS OUT |
 | Spectral activity and band mask (original extension) | frame-clocked sender + held mask input | **Séance Bridge**: eight bands, pre-mask detection, hysteresis and gain slew; [contract](../vcv/seance/docs/BYTE_BUS.md) |
 
-Implemented prototypes: `ByteBus.hpp`, Clocked Register, Counter, Switch, Lookup, Converter,
+Implemented prototypes: `ByteBus.hpp`, Clocked Register, Counter, Switch, Pipeline, Lookup, Converter,
 Vastish bus I/O with optional normalized FUNs, OTIS frame control/export and
 the memoryless Vastish table compiler, and Séance Bridge spectral activity/masking.
-Remaining: Pipeline.
+Every role in the table now has an implementation.
 
 ## 11. Ratified decisions
 
