@@ -74,7 +74,11 @@ int main(){
         // A real Gorgon 2.4 plays a version-3 score into all six tracks.
         modelGorgon->plugin=nullptr;
         Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.4.0";modelGorgon->plugin=&providerPlugin;
+#ifdef _WIN32
+        _putenv_s("HYDRAPY_STUDIO_FILE","C:/nonexistent/monomodule-interop-test");
+#else
         setenv("HYDRAPY_STUDIO_FILE","/nonexistent/monomodule-interop-test",1);
+#endif
         Trace trace;auto rm=std::make_unique<Monomodule>(factory(trace));auto& receiver=*rm;receiver.model=modelMonomodule;ready(receiver);
         auto sm=std::make_unique<Gorgon>();auto& sender=*sm;sender.model=modelGorgon;
         sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
