@@ -33,7 +33,7 @@ static json_t* custom() {
 }
 static void adapter(std::shared_ptr<const lu::Library> library) {
     ByteLookup m(library); outputs(m); m.model = modelLookup; auto a = args();
-    assert(m.params.size()==7 && m.inputs.size()==6 && m.outputs.size()==2);
+    assert(m.params.size()==8 && m.inputs.size()==7 && m.outputs.size()==2 && m.lights.size()==10);
     m.params[ByteLookup::FAMILY].setValue(lu::Curve);
     for (int n=0;n<256;++n) {
         set(m.inputs[ByteLookup::BUS_IN],n); m.process(a);
@@ -96,6 +96,54 @@ static void adapter(std::shared_ptr<const lu::Library> library) {
     tracker.inputs[ByteLookup::RESET_IN].channels=1; tracker.inputs[ByteLookup::RESET_IN].setVoltage(10); tracker.process(a);
     assert(tracker.lights[ByteLookup::LOCK_LIGHT].getBrightness()==0);
 }
+// JUMP through the module: a step applies on its own sample, a gate steps on each rising edge,
+// the selected bit is used, RESET clears and wins, and the steps survive save and reload.
+static void jump(std::shared_ptr<const lu::Library> library,float sr) {
+    ByteLookup m(library); outputs(m); m.model=modelLookup; auto a=args(sr);
+    m.params[ByteLookup::FAMILY].setValue(lu::Walsh); m.params[ByteLookup::SHAPE].setValue(5);
+    auto walsh=[&](int shape,int address) { return library->table(lu::Walsh,shape&63)[address]; };
+    // BUS IN and JUMP clocked together, as from one source. JUMP's first edge only arms.
+    int steps=0; bool armed=false;
+    for (int k=0;k<80;++k) {
+        int address=(k*37)&255, jumpWord=(k%3==0 ? 0x04 : 0x00)|(k%5==0 ? 0x01 : 0x00);
+        for (bool clk : {true,false}) {
+            set(m.inputs[ByteLookup::BUS_IN],address,true,clk); set(m.inputs[ByteLookup::JUMP_IN],jumpWord,true,clk);
+            m.params[ByteLookup::JUMP_BIT].setValue(2); m.process(a);
+            if (clk) {
+                bool step=armed && (jumpWord & 0x04);
+                steps+=step; armed=true;
+                assert(word(m.outputs[ByteLookup::BUS_OUT])==walsh(5+steps,address));
+                if (step) assert(m.lights[ByteLookup::JUMP_LIGHT].getBrightness()>0);
+            }
+        }
+    }
+    assert(steps==26 && m.jumpSteps.load()==26);
+    // A gate (one channel) is bit 0: each rising edge steps, a held gate does not.
+    m.inputs[ByteLookup::JUMP_IN].channels=1; m.inputs[ByteLookup::JUMP_IN].setVoltage(0); m.params[ByteLookup::JUMP_BIT].setValue(0);
+    m.process(a);
+    for (int k=0;k<10;++k) {
+        m.inputs[ByteLookup::JUMP_IN].setVoltage(10); for (int t=0;t<3;++t) m.process(a);
+        m.inputs[ByteLookup::JUMP_IN].setVoltage(0); m.process(a);
+    }
+    assert(m.jumpSteps.load()==36);
+    set(m.inputs[ByteLookup::BUS_IN],77,true,true); m.process(a); set(m.inputs[ByteLookup::BUS_IN],77,true,false); m.process(a);
+    assert(word(m.outputs[ByteLookup::BUS_OUT])==walsh(5+36,77));
+    // Saved and restored; a patch from before 2.5 has none; saved values are bounded.
+    json_t* saved=m.toJson(); assert(json_integer_value(json_object_get(json_object_get(saved,"data"),"jump"))==36);
+    ByteLookup r(library); outputs(r); r.model=modelLookup; r.fromJson(saved);
+    set(r.inputs[ByteLookup::BUS_IN],77,true,true); r.process(a); assert(word(r.outputs[ByteLookup::BUS_OUT])==walsh(5+36,77));
+    json_object_del(json_object_get(saved,"data"),"jump"); r.fromJson(saved); assert(r.jumpSteps.load()==0);
+    json_object_set_new(json_object_get(saved,"data"),"jump",json_integer(999)); r.fromJson(saved); assert(r.jumpSteps.load()==63);
+    json_object_set_new(json_object_get(saved,"data"),"jump",json_integer(-4)); r.fromJson(saved); assert(r.jumpSteps.load()==0);
+    json_decref(saved);
+    // RESET clears the steps, and wins over a step on the same sample. Initialize clears them.
+    m.inputs[ByteLookup::RESET_IN].channels=1;
+    m.inputs[ByteLookup::JUMP_IN].setVoltage(10); m.inputs[ByteLookup::RESET_IN].setVoltage(10); m.process(a);
+    assert(m.jumpSteps.load()==0);
+    m.inputs[ByteLookup::JUMP_IN].setVoltage(0); m.inputs[ByteLookup::RESET_IN].setVoltage(0); m.process(a);
+    m.inputs[ByteLookup::JUMP_IN].setVoltage(10); m.process(a); assert(m.jumpSteps.load()==1);
+    m.onReset(Module::ResetEvent{}); assert(m.jumpSteps.load()==0 && m.params[ByteLookup::JUMP_BIT].getValue()==0);
+}
 static std::vector<uint8_t> feedback(std::shared_ptr<const lu::Library> library,float sr) {
     ClockedRegister r; ByteLookup l(library); outputs(r); outputs(l); auto a=args(sr); std::mt19937 order(17);
     r.params[ClockedRegister::CLOCK_MODE].setValue(1); r.params[ClockedRegister::RESET_WORD].setValue(0xa5);
@@ -122,7 +170,8 @@ int main() {
     auto library=std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
     { ByteLookup packaged; assert(packaged.library->ready && packaged.libraryError.empty()); }
     adapter(library);
+    for (float sr : {44100.f,48000.f,96000.f}) jump(library,sr);
     auto expected=feedback(library,48000); assert(feedback(library,44100)==expected && feedback(library,96000)==expected);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: real Lookup ports/DAC, bus clock holds, phase CV, verified custom import, full patch restore, UI handoff, packaged assets, Register feedback/reset at 44.1/48/96 kHz\n";
+    std::cout << "PASS: real Lookup ports/DAC, bus clock holds, phase CV, verified custom import, full patch restore, UI handoff, packaged assets, Register feedback/reset at 44.1/48/96 kHz, JUMP steps on the same sample, gates, bit choice, RESET priority and persistence\n";
 }

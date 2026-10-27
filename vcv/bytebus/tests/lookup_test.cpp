@@ -1,5 +1,7 @@
 // Portable, exhaustive byte-map tests and an independent actual-Voice compiler reference.
 #include "../src/engine/CompileVastish.hpp"
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
@@ -185,9 +187,75 @@ static void compiler() {
     }
 }
 
+// JUMP (docs/LOOKUP.md, "JUMP"): the BUS TRIG rule on a selected bit, through a real Reader.
+struct Cable {
+    int channels = 0; std::array<float,16> voltage{};
+    int getChannels() { return channels; }
+    float getVoltage(int k) { return voltage[k]; }
+    void setVoltage(float v,int k = 0) { voltage[k] = v; }
+};
+static void put(Cable& c,int word,int channels,bool clk = false) {
+    c.channels = channels; c.voltage = {};
+    for (int k = 0; k < std::min(channels,8); ++k) c.voltage[k] = word >> k & 1 ? 10.f : 0.f;
+    if (channels >= 9) c.voltage[8] = clk ? 10.f : 0.f;
+}
+static void jumps() {
+    // Clocked: the first edge only arms; then each CLK edge with the bit high steps, including a
+    // bit held high across publications and adjacent high words. Low bits and the low half don't.
+    {
+        bus::Reader r; lu::Jump j; Cable c; int steps = 0;
+        auto publish = [&](int word,int bit) {
+            put(c,word,9,true); steps += j.tick(r.process(c),bit);
+            put(c,word,9,false); steps += j.tick(r.process(c),bit);
+        };
+        publish(0x01,0); assert(steps == 0 && j.steps == 0);          // arms; bit already high
+        publish(0x01,0); publish(0x01,0); assert(steps == 2);          // held high: one per publication
+        publish(0x00,0); publish(0xfe,0); assert(steps == 2);          // bit 0 low
+        publish(0x08,3); publish(0x08,3); assert(steps == 4 && j.steps == 4);
+        for (int k = 0; k < 64; ++k) publish(0xff,7);
+        assert(j.steps == 4);                                          // 64 steps is a full turn
+        // Disconnecting keeps the steps; reconnecting arms again.
+        c.channels = 0; j.tick(r.process(c),0); assert(j.steps == 4);
+        publish(0x01,0); assert(j.steps == 4); publish(0x01,0); assert(j.steps == 5);
+    }
+    // Unclocked (eight or fewer channels, or a gate on one): each rising edge of the bit steps. A bit
+    // already high when the cable arrives, or when the selection moves onto it, does not.
+    {
+        bus::Reader r; lu::Jump j; Cable c;
+        put(c,0x01,1); j.tick(r.process(c),0); assert(j.steps == 0);
+        for (int k = 0; k < 10; ++k) j.tick(r.process(c),0);
+        assert(j.steps == 0);
+        for (int k = 0; k < 5; ++k) {
+            put(c,0,1); j.tick(r.process(c),0);
+            put(c,1,1); j.tick(r.process(c),0); j.tick(r.process(c),0);
+        }
+        assert(j.steps == 5);
+        put(c,0x20,8); j.tick(r.process(c),0); assert(j.steps == 5);   // a wider cable, bit 0 low
+        j.tick(r.process(c),5); assert(j.steps == 5);                   // select a high bit: no step
+        put(c,0x00,8); j.tick(r.process(c),5); put(c,0x20,8); j.tick(r.process(c),5); assert(j.steps == 6);
+        // Schmitt thresholds: 0.5 V neither rises nor falls.
+        c.voltage[5] = .5f; j.tick(r.process(c),5); c.voltage[5] = 10.f; j.tick(r.process(c),5); assert(j.steps == 6);
+        // Unclocked to clocked starts over: the new clock's first edge arms.
+        put(c,0x20,9,true); j.tick(r.process(c),5); assert(j.steps == 6);
+        put(c,0x20,9,false); j.tick(r.process(c),5); put(c,0x20,9,true); j.tick(r.process(c),5); assert(j.steps == 7);
+        // And clocked to unclocked seeds: a high bit does not step.
+        put(c,0x20,8); j.tick(r.process(c),5); assert(j.steps == 7);
+    }
+    // A stepped SHAPE is the same table as the knob moved by that many shapes, in every family.
+    {
+        auto library = lu::Library::load("../res/lookup-v1.bin");
+        for (int family : {lu::Harmonic, lu::Fold, lu::Curve, lu::Walsh, lu::Rhythm})
+            for (int knob : {0, 5, 63}) for (int steps : {1, 2, 33}) {
+                lu::Engine a, b; lu::Parameters pa, pb; pa.family = pb.family = family;
+                pa.shape = knob + steps; pb.shape = (knob + steps) % 64;
+                for (int n = 0; n < 256; n += 7) assert(a.tick(library,pa,input(uint8_t(n)),48000).word == b.tick(library,pb,input(uint8_t(n)),48000).word);
+            }
+    }
+}
+
 int main() {
     auto library = lu::Library::load("../res/lookup-v1.bin");
-    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler();
+    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps();
     bool rejected = false; try { lu::Library::load("../res/no-such-library.bin"); } catch (const std::runtime_error&) { rejected = true; }
     assert(rejected);
     lu::Engine engine; lu::Parameters p; auto s = input(73);
@@ -198,5 +266,5 @@ int main() {
         engine.tick(library,p,s,48000);
     }
     assert(allocations.load() == before);
-    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, no runtime allocations\n";
+    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, no runtime allocations\n";
 }
