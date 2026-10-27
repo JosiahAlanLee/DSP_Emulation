@@ -3,6 +3,7 @@
 #include "../src/engine/Kit.hpp"
 #include <cassert>
 #include <iostream>
+#include <memory>
 #include <random>
 
 using namespace otis;
@@ -11,12 +12,15 @@ static std::vector<int16_t> noise(size_t n, unsigned seed) {
     for (auto& x : v) x = int16_t(int(rng() % 40001) - 20000);
     return v;
 }
+// Engines are about 800 KB each, so they live on the heap (Windows gives the main thread 1 MB of stack).
 // Kit voice s (bank) against a standalone Engine holding only that slot's sample, same controls.
 static void sameAsAlone(const std::array<kit::Slot, kit::SLOTS>& slots, int s, float start, bool reverse,
                         float pitch, float k1, float level, int mode, double host) {
     std::vector<int16_t> image; auto layout = kit::pack(slots, image);
-    Engine bank; bank.setHostRate(host); bank.install(image, kit::BANK_RATE, layout.frames, false);
-    Engine alone; alone.setHostRate(host);
+    auto bankPtr = std::make_unique<Engine>(), alonePtr = std::make_unique<Engine>();
+    Engine& bank = *bankPtr; Engine& alone = *alonePtr;
+    bank.setHostRate(host); bank.install(image, kit::BANK_RATE, layout.frames, false);
+    alone.setHostRate(host);
     std::vector<int16_t> own = slots[size_t(s)].pcm; alone.install(own, slots[size_t(s)].rate);
     for (Engine* e : {&bank, &alone}) { e->controls.engineMode = mode; e->controls.declick = false; }
     auto& b = bank.controls; size_t i = size_t(s);
@@ -74,7 +78,8 @@ int main() {
         std::array<kit::Slot, kit::SLOTS> slots; slots[0].pcm.resize(44100 * 3);
         for (size_t n = 0; n < slots[0].pcm.size(); ++n) slots[0].pcm[n] = int16_t(12000 * std::sin(n * .05));
         std::vector<int16_t> image; auto l = kit::pack(slots, image);
-        Engine e; e.setHostRate(48000); e.install(image, kit::BANK_RATE, l.frames, false);
+        auto ePtr = std::make_unique<Engine>(); Engine& e = *ePtr;
+        e.setHostRate(48000); e.install(image, kit::BANK_RATE, l.frames, false);
         e.controls.regionBegin[0] = 0; e.controls.regionEnd[0] = l.end[0]; e.controls.loopv[0] = 0; e.controls.declick = false;
         e.controls.decaySeconds[0] = .5f; e.trigger(0);
         auto rms = [&](int n) { double s = 0; for (int k = 0; k < n; ++k) { float x = e.process(0); s += double(x) * x; } return std::sqrt(s / n); };
@@ -83,7 +88,9 @@ int main() {
         assert(drop > 54 && drop < 66);
         rms(48000); assert(!e.voices[0].running);
         // With decaySeconds 0 the output is bit-identical to an engine that never had the field set.
-        Engine plain, zero; for (Engine* x : {&plain, &zero}) { x->setHostRate(48000); std::vector<int16_t> copy = image; x->install(copy, kit::BANK_RATE, l.frames, false); x->controls.declick = false; }
+        auto plainPtr = std::make_unique<Engine>(), zeroPtr = std::make_unique<Engine>();
+        Engine& plain = *plainPtr; Engine& zero = *zeroPtr;
+        for (Engine* x : {&plain, &zero}) { x->setHostRate(48000); std::vector<int16_t> copy = image; x->install(copy, kit::BANK_RATE, l.frames, false); x->controls.declick = false; }
         zero.controls.decaySeconds[0] = 0; plain.trigger(0); zero.trigger(0);
         for (int n = 0; n < 20000; ++n) assert(plain.process(0) == zero.process(0));
     }
