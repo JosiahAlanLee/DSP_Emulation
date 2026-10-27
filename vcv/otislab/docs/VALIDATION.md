@@ -8,9 +8,10 @@ plays, though PATCH falls right after the hit. Unpatched, or at 0, stored
 patches change nothing, and a patch never stored plays the panel. It checks
 that each voice takes its patch on the same sample as its gate, from an
 unclocked or clocked bus, and holds it until its next hit. CV adds to a
-patch, REV turns only the panel's voices, and storing again reaches the voices
-on that patch. It also checks saving, restoring and clamping malformed patch
-data, recall to the panel, clear, and Initialize. The test also runs under
+patch, the panel's REV knob turns only the panel's voices, and storing again
+(including REV) reaches the voices on that patch. Clearing a patch takes the
+panel's REV at once; a new hit takes its direction after any retrigger fade.
+It also checks saving, restoring and clamping malformed patch data, recall to the panel, clear, and Initialize. The test also runs under
 ASan/UBSan.
 
 The legacy trace still matches the 2.2.0 engine byte for byte. All earlier

@@ -48,7 +48,7 @@ static void same(OtisSampler& x,OtisSampler& y,int word,int samples=30000) {
 }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.9.0"; plugin.addModel(modelOtisSampler);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.2"; plugin.addModel(modelOtisSampler);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Unpatched, or patched at 0, stored patches change nothing: the panel plays.
@@ -91,6 +91,35 @@ int main() {
         m->params[OtisSampler::START].setValue(.1f); m->process(a);
         assert(c.startv[0]==.5f && c.startv[1]==.1f);
     }
+    {   // Re-storing REV turns only that patch's voices; clearing takes the panel's REV.
+        auto m=makeOtis(); panel(*m,B);
+        m->params[OtisSampler::LOOP].setValue(1); // avoid ping-pong direction changes
+        m->storePatch(1,m->panelPatch()); m->storePatch(2,m->panelPatch());
+        gate(*m,0,false,3); m->process(a);
+        for(int i=0;i<3;++i) {
+            bus(m->inputs[OtisSampler::PATCH_IN],uint8_t(i));
+            gate(*m,i,true,3); m->process(a);
+        }
+        m->params[OtisSampler::REVERSE].setValue(1); m->process(a);
+        assert(m->engine.voices[0].reverse && !m->engine.voices[1].reverse && !m->engine.voices[2].reverse);
+        m->storePatch(1,m->panelPatch()); m->process(a);
+        assert(m->engine.voices[0].reverse && m->engine.voices[1].reverse && !m->engine.voices[2].reverse);
+        m->params[OtisSampler::REVERSE].setValue(0); m->storePatch(1,m->panelPatch()); m->process(a);
+        assert(!m->engine.voices[0].reverse && !m->engine.voices[1].reverse && !m->engine.voices[2].reverse);
+        m->params[OtisSampler::REVERSE].setValue(1); m->process(a);
+        m->storePatch(1,std::nullopt); m->process(a);
+        assert(m->engine.voices[0].reverse && m->engine.voices[1].reverse && !m->engine.voices[2].reverse);
+        m->params[OtisSampler::REVERSE].setValue(0); m->process(a);
+        assert(!m->engine.voices[0].reverse && !m->engine.voices[1].reverse && !m->engine.voices[2].reverse);
+        // A hit changing patches leaves the fading old note's direction alone.
+        m->params[OtisSampler::REVERSE].setValue(1); m->storePatch(2,m->panelPatch());
+        m->params[OtisSampler::REVERSE].setValue(0);
+        gate(*m,1,false,3); m->process(a);
+        bus(m->inputs[OtisSampler::PATCH_IN],2); gate(*m,1,true,3); m->process(a);
+        assert(m->engine.voices[1].restartAfterFade && !m->engine.voices[1].reverse);
+        for(int i=0;i<200;++i) m->process(a);
+        assert(!m->engine.voices[1].restartAfterFade && m->engine.voices[1].reverse);
+    }
     {   // Clocked: a hit takes the word latched at the last CLK edge, not the bit lines' current state.
         auto m=makeOtis(); panel(*m,A); m->storePatch(2,m->panelPatch()); panel(*m,B);
         auto& c=m->engine.controls;
@@ -123,5 +152,5 @@ int main() {
         q->storePatch(1,q->panelPatch()); Module::ResetEvent e; q->onReset(e); assert(!q->storedPatch(1));
     }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: patch select per hit (same sample, clocked, held per voice), stored patch = its panel sample for sample, unpatched unchanged, CV on top, REV on panel voices only, saved/clamped/recalled/cleared\n";
+    std::cout<<"PASS: patch select per hit (same sample, clocked, held per voice), stored patch = its panel sample for sample, unpatched unchanged, CV on top, REV on panel voices only, saved/clamped/recalled/cleared, live stored REV and clear, retrigger direction\n";
 }
