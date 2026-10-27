@@ -50,6 +50,9 @@ OCTAVE affects both lines.
    been reached. Without a sustain, the envelope is a one-shot. A retrigger
    restarts phase and envelopes from zero.
 
+RATE/LEVEL edits retarget an active segment on the control cadence without
+restarting its phase or current level.
+
 The sustain/retrigger policy and the key-follow curves are a firmware-free
 implementation, awaiting hardware timing comparison. The documented MIDI
 conversion rules supply the envelope rate/level codes; DCO level 66 is +1 octave.

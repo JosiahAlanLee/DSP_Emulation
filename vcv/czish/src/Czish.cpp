@@ -61,7 +61,7 @@ struct CzishModule : Module {
     };
     enum Inputs { VOCT, GATE, DCW_CV, XOR_BUS, VIB_CV, BEND_CV, NUM_INPUTS };
     enum Outputs { AUDIO, BUS_OUT, POLY_AUDIO, NUM_OUTPUTS };
-    enum Lights { OVERFLOW, NUM_LIGHTS };
+    enum Lights { OVERFLOW_LIGHT, NUM_LIGHTS };
     dspemu::cz::VoiceEngine engine;
     dspemu::bus::Reader reader;
     dspemu::bus::Writer writer;
@@ -157,7 +157,7 @@ struct CzishModule : Module {
         configOutput(AUDIO, "Mono sum through provisional CZ DAC");
         configOutput(BUS_OUT, "Encoded summed DAC high byte after XOR; clock safely divided");
         configOutput(POLY_AUDIO, "Independent note outputs; paired lines sum per note; extension");
-        configLight(OVERFLOW, "Input channels exceed active line mode");
+        configLight(OVERFLOW_LIGHT, "Input channels exceed active line mode");
     }
     static float finite(float x, float fallback = 0) { return std::isfinite(x) ? x : fallback; }
     int integer(int id, int lo, int hi) {
@@ -289,8 +289,9 @@ struct CzishModule : Module {
         auto &tap = engine.output.tap;
         writer.write(outputs[BUS_OUT], tap.word, true, tap.clk);
         displayed.store(unsigned(tap.word) | (tap.divider << 8), std::memory_order_relaxed);
-        lights[OVERFLOW].setBrightness(std::max(inputs[VOCT].getChannels(), inputs[GATE].getChannels()) >
-                                       dspemu::cz::noteLimit(cachedTone));
+        lights[OVERFLOW_LIGHT].setBrightness(
+            std::max(inputs[VOCT].getChannels(), inputs[GATE].getChannels()) >
+            dspemu::cz::noteLimit(cachedTone));
     }
     json_t *dataToJson() override {
         auto *j = json_object();
@@ -561,7 +562,7 @@ struct CzishWidget : ModuleWidget {
         const Vec outs[] = {POS(AUDIO), POS(BUS_OUT), POS(POLY_AUDIO)};
         for (int i = 0; i < 3; ++i)
             addOutput(createOutputCentered<DarkPJ301MPort>(outs[i], m, i));
-        addChild(createLightCentered<SmallLight<RedLight>>(POS(OVERFLOW), m, CzishModule::OVERFLOW));
+        addChild(createLightCentered<SmallLight<RedLight>>(POS(OVERFLOW), m, CzishModule::OVERFLOW_LIGHT));
 #undef POS
     }
     void appendContextMenu(Menu *menu) override {

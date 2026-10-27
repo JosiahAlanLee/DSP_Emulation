@@ -40,7 +40,7 @@ No scanned manual text or manufacturer tones are redistributed here.
 - Linear floor and nearest rounding, Casio range/mask invariants, clock rate
   and compulsory low clock samples, including fast RATE changes.
 - Single and paired line allocation, all pair modulation targets, second-wave
-  selection, envelope sustain/end, early release and retrigger, octave/detune,
+  selection, envelope sustain/end, early release and retrigger, live segment edits without phase reset, octave/detune,
   vibrato delay and DCW/key-follow bounds. V/OCT is checked across eight octaves
   to the chip's quantized pitch table tolerance.
 - Manual-derived SysEx anchors, 300 randomized tone round-trips in both nibble

@@ -286,6 +286,16 @@ class VoiceEngine {
                 uint16_t code = pitchRegister(float(volts), t.tuning);
                 if (chip.voice[n].pitch != code)
                     chip.write(uint8_t(0x60 + n), code);
+                if (control)
+                    for (int e = 0; e < 3; ++e) {
+                        auto &run = runs[n][e];
+                        if (!run.done) {
+                            run.step = std::min(run.step, l.env[e].end);
+                            // Retarget an active segment without restarting phase
+                            // or its current level when a panel/automation edit arrives.
+                            writeSegment(n, line, e, run.step, t, in[slot].pitch);
+                        }
+                    }
                 int base = int(chip.dcw[n].current >> Upd933::dcwShift);
                 double key = std::exp2(-l.dcwKey * std::max(0., pitch * 12.) / 72.);
                 chip.dcwOffset[n] =

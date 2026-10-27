@@ -201,7 +201,7 @@ static void fullModule(float sr) {
     for (int i = 0; i < 2000; ++i)
         m.process(a);
     assert(m.outputs[CzishModule::POLY_AUDIO].getChannels() == 4);
-    assert(m.lights[CzishModule::OVERFLOW].getBrightness() > 0);
+    assert(m.lights[CzishModule::OVERFLOW_LIGHT].getBrightness() > 0);
     for (int n : {0, 2, 4, 6})
         assert(m.engine.chip.voice[n].ringMod);
     m.inputs[CzishModule::VIB_CV].channels = 1;

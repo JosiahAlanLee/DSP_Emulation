@@ -22,6 +22,14 @@ static void envelopes() {
     run(e, in, 1, t, 1000);
     assert(e.runs[0][2].step == 1 && !e.runs[0][2].done);
     assert(e.chip.dca[0].current == uint32_t(60) << 18);
+    auto position = e.chip.voice[0].position, increment = e.chip.voice[0].pitchStep;
+    auto ticks = e.deviceFrames;
+    env.level[1] = 30;
+    run(e, in, 1, t, 1000);
+    assert(e.runs[0][2].step == 1 && e.chip.dca[0].current == (uint32_t(30) << 18));
+    assert(e.chip.voice[0].position == uint32_t(position + (e.deviceFrames - ticks) * increment));
+    env.level[1] = 60;
+    run(e, in, 1, t, 1000);
     in[0].gate = 0;
     run(e, in, 1, t, 1000);
     assert(e.runs[0][2].step == 2 && e.runs[0][2].done && e.chip.dca[0].current == 0);
