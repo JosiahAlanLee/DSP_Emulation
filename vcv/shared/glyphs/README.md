@@ -10,6 +10,7 @@ drawn by that project's generator with the seal ornament left off.
 |---|---|---|
 | Spoon Bender | VII Revision | returns displaced (each shifted repeat comes back moved) |
 | OTIS | IX Substitutive change | old route struck out (REWORK replaces the loop) |
+| Otis Kit | IX Substitutive change | as OTIS: each hit substitutes its slot for whatever the voice was playing |
 | Vastish | X Generative substrate | conditions beneath (the synthesis layer under the chain) |
 | Gorgon ([its own repository](https://github.com/JosiahAlanLee/Gorgon)) | XI Reflexive loop | the map moves it (Rack follows Gorgon's clock and moves it back) |
 | Séance | III Boundary | commons or institution (the frame is a commons the row works inside) |
