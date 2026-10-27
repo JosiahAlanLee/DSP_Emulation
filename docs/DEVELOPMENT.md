@@ -11,7 +11,7 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/otislab | Rack sampler, playback engine, file handling and loop-rework worker. |
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
 | vcv/seance | Rack spectral core and five expanders: portable STFT engine and operations, chain link, modules. |
-| vcv/bytebus | Clocked Register, Counter, Switch, Pipeline, Lookup, Lookup2 and Converter; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
+| vcv/bytebus | Clocked Register, Counter, Counter 2, Switch, Pipeline, Lookup, Lookup2 and Converter; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
 | vcv/shared | Sample-file utilities, versioned sample-sharing interface, byte-bus helpers and panel-glyph sources. |
 
 Build from a complete checkout: plugins include headers from vcv/shared outside their own directories. Generated panels are committed. Regenerating their marks additionally uses the source project described in [the glyph README](../vcv/shared/glyphs/README.md).

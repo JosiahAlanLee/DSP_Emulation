@@ -9,4 +9,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelSwitch);
     plugin->addModel(modelPipeline);
     plugin->addModel(modelLookup2);
+    plugin->addModel(modelCounter2);
 }

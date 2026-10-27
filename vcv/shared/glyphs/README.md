@@ -24,6 +24,7 @@ drawn by that project's generator with the seal ornament left off.
 | Counter | VIII Additive change | new branch, old kept (each edge adds to the held count rather than replacing it) |
 | Switch | IV Centre of decision | authority, contestable (C decides, bit by bit, whether A or B passes) |
 | Pipeline | VII Revision | returns displaced (each word comes back DELAY edges later, its bits SPREAD apart) |
+| Counter 2 | VIII Additive change | as Counter: each edge adds N/D of a cycle to the held phase |
 | Converter | III Boundary | voltage and byte words cross between representations |
 | DrumLab Percussion | X Generative substrate | six synthesis models supply the material for each hit |
 | Machinemodule | X Generative substrate | the drum engine supplies the material for each track |

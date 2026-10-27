@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -48,6 +48,12 @@
       "name": "Lookup2",
       "description": "Two byte words in, one out: all sixteen bit-logic functions, byte arithmetic with mix and ring, a two-input fold and two-word Walsh maps, on A's clock, with JUMP shape steps.",
       "tags": ["Logic", "Waveshaper", "Ring modulator", "Polyphonic"]
+    },
+    {
+      "slug": "Counter2",
+      "name": "Counter 2",
+      "description": "A phase word at N/D of its clock (N 1-16, D 1-64), exact for ever, with carry on each cycle: polymeter and cross rhythms locked to a clock.",
+      "tags": ["Clock modifier", "Logic", "Sequencer", "Polyphonic"]
     }
   ]
 }
