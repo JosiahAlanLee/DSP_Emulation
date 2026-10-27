@@ -244,14 +244,14 @@ disconnection, wrap) and through the module (a step on its own sample, bit
 choice, RESET priority, persistence, Initialize), and a Counter feeding both
 BUS IN and JUMP through one-sample cables in random order gives the expected
 Walsh shape for every count at 44.1/48/96 kHz. Library v2 tests check its
-identity and every table against the engine; the envelope endings, staircase
-levels, Rhythm layout and one-hit nesting of every Density shape; morphs and
-discrete selection; per-library identities in saved patches; One-shot Counter →
-Envelope restarting on each gate; and Counter CARRY → JUMP on Density adding
-one hit per bar for twelve bars. Library v3 tests check its identity, that
-every byte is a ratio word of its grid, ascending in equal zones around 1/1 over
-the shape's span, that the engine never blends two words, even at a fractional
-address, and that Lookup Ratio into Counter 2's RATIO gives the chosen ratio's
-carries through one-sample cables in random order. The audio path performs no
-heap allocations. GUI and physical
-device behavior require separate workstation checks.
+identity and three shapes of every family against the engine; the envelope
+endings, staircase levels, Rhythm layout and one-hit nesting of every Density
+shape; morphs and discrete selection; per-library identities in saved patches;
+One-shot Counter → Envelope restarting on each gate; and Counter CARRY → JUMP
+on Density adding one hit per bar for twelve bars. Library v3 tests check its
+identity, that every byte is a ratio word of its grid, ascending in equal zones
+around 1/1 over the shape's span, that the engine never blends two words, even
+at a fractional address, and that Lookup Ratio into Counter 2's RATIO gives the
+chosen ratio's carries through one-sample cables in random order. The audio
+path performs no heap allocations. GUI and physical device behavior require
+separate workstation checks.
