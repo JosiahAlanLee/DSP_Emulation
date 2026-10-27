@@ -173,6 +173,9 @@ a private JACK server at 48 kHz):
   Musashi/68k and asmjit retain the notices in their source dependencies.
 - Upstream's [Monomodule](https://github.com/shnolk/monomodule) resampler:
   AGPL-3.0, compiled directly from the pinned checkout.
+- `../adapter/`: AGPL-3.0-only, the Rack adapter this plugin shares with the other
+  emulated instruments (worker, queues, renderer, sound-link receiver). Its README
+  draws the AGPL/BSD boundary.
 - `../shared/GorgonSound.hpp`: BSD-3-Clause public message ABI, matching Gorgon's
   `spec/sound-link.hpp`; notice in `docs/GORGON-SOUND-LICENSE.txt`.
 - `../shared/ByteBus.hpp`: BSD-3-Clause byte-bus decoder from DSP_Emulation, used
@@ -181,7 +184,8 @@ a private JACK server at 48 kHz):
 
 `make dist` creates a `.vcvplugin` and a separate corresponding-source archive
 in `dist/`. Distribute them together. The source archive includes the wrapper,
-public ABI, pinned core, required emulator sources and their license notices.
+the shared adapter, public ABI, pinned core, required emulator sources and their
+license notices.
 Firmware and ROM sample data are excluded. To build the source archive without
 Git metadata, configure CMake directly: its dependency revision manifest records
 the pin. Not affiliated with Elektron, Akai or VCV.

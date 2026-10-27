@@ -4,6 +4,7 @@
 #include "engine/Machinedrum.hpp"
 #include "Layout.hpp"
 #include "../../shared/ByteBus.hpp"
+#include "../../adapter/src/RackLink.hpp"
 #include <osdialog.h>
 #include <cstdlib>
 
@@ -46,10 +47,7 @@ struct Machinemodule : Module {
         configOutput(TRACKS,"16 individual tracks after track effects · polyphonic audio");
         leftExpander.producerMessage=&messages[0];leftExpander.consumerMessage=&messages[1];
     }
-    float cv(int input,int lane) {
-        int n=inputs[input].getChannels();if(!n||(n>1&&lane>=n))return 0;
-        return md_rack::finite(inputs[input].getVoltage(n==1?0:lane),-100,100);
-    }
+    float cv(int input,int lane) {return emu_rack::trackCv(inputs[input],lane);}
     void loadFirmware(const std::string& path,bool samples=false) {
         if(path.empty())return;
         {std::lock_guard<std::mutex> guard(pathMutex);if(samples)samplePath=path;else firmwarePath=path;worker.load(firmwarePath,samplePath);}
@@ -84,15 +82,7 @@ struct Machinemodule : Module {
         event.hit=md_rack::capture(lane,sound,selected,velocity,knobs,voltages,params[TEMPO].getValue());
         if(event.hit.velocity)block.append(event);
     }
-    const gorgon_sound::Packet* soundPacket(int64_t now) {
-        Module* provider=leftExpander.module;
-        if(!provider||!provider->model||!provider->model->plugin||provider->model->plugin->slug!="GorgonBridge"||provider->model->slug!="Gorgon")return nullptr;
-        // Exact sender family: older Gorgon has no protocol, future majors need negotiation.
-        const auto& version=provider->model->plugin->version;
-        if(version.rfind("2.",0)!=0)return nullptr;
-        const auto* packet=static_cast<const gorgon_sound::Packet*>(leftExpander.consumerMessage);
-        return packet&&gorgon_sound::valid(*packet,now)?packet:nullptr;
-    }
+    const gorgon_sound::Packet* soundPacket(int64_t now) {return emu_rack::soundPacket(leftExpander.module,leftExpander.consumerMessage,now);}
     void process(const ProcessArgs& args) override {
         outputs[TRACKS].setChannels(16);
         bool ready=worker.ready.load(std::memory_order_acquire);
