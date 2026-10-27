@@ -180,8 +180,11 @@ int main(){
     setenv("HYDRAPY_STUDIO_FILE","/nonexistent/machinemodule-interop-test",1);
 #endif
     for(bool reverse:{false,true}){
-        Trace trace;Machinemodule receiver(factory(trace));receiver.model=modelMachinemodule;ready(receiver);
-        Gorgon sender;sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
+        // On the heap: a Gorgon is about 580 KB, and Windows gives main a 1 MB stack.
+        Trace trace;auto receiverModule=std::make_unique<Machinemodule>(factory(trace));auto& receiver=*receiverModule;
+        receiver.model=modelMachinemodule;ready(receiver);
+        auto senderModule=std::make_unique<Gorgon>();auto& sender=*senderModule;
+        sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
         for(auto& out:sender.outputs)out.channels=1;for(auto& out:receiver.outputs)out.channels=1;
         sender.haveSnapshot=true;auto& s=sender.snapshot;s.score.bpm=120;s.score.sounds[0].machine=16;
         s.score.patterns[0].hit[0][0]=true;s.score.patterns[0].velocity[0][0]=100;
@@ -203,8 +206,11 @@ int main(){
     // gate window closed still opens the landing row's gate. Each must reach the receiver
     // as exactly one hit, after the jump's panic, carrying the landing row's lock.
     for(bool reverse:{false,true}){
-        Trace trace;Machinemodule receiver(factory(trace));receiver.model=modelMachinemodule;ready(receiver);
-        Gorgon sender;sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
+        // On the heap: a Gorgon is about 580 KB, and Windows gives main a 1 MB stack.
+        Trace trace;auto receiverModule=std::make_unique<Machinemodule>(factory(trace));auto& receiver=*receiverModule;
+        receiver.model=modelMachinemodule;ready(receiver);
+        auto senderModule=std::make_unique<Gorgon>();auto& sender=*senderModule;
+        sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
         for(auto& out:sender.outputs)out.channels=1;for(auto& out:receiver.outputs)out.channels=1;
         sender.haveSnapshot=true;auto& s=sender.snapshot;s.score.bpm=120;s.score.sounds[0].machine=16;
         for(int row:{0,4}){s.score.patterns[0].hit[0][row]=true;s.score.patterns[0].velocity[0][row]=100;s.score.patterns[0].locks[0][row].mask=1;}
@@ -233,8 +239,11 @@ int main(){
     // Gorgon 2.4.0 and a version-3 score: lanes 5 and 6 reach tracks 5 and 6 over sound
     // link version 2, each hit with its own lock over the lane's kit sound.
     for(bool reverse:{false,true}){
-        Trace trace;Machinemodule receiver(factory(trace));receiver.model=modelMachinemodule;ready(receiver);
-        Gorgon sender;sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
+        // On the heap: a Gorgon is about 580 KB, and Windows gives main a 1 MB stack.
+        Trace trace;auto receiverModule=std::make_unique<Machinemodule>(factory(trace));auto& receiver=*receiverModule;
+        receiver.model=modelMachinemodule;ready(receiver);
+        auto senderModule=std::make_unique<Gorgon>();auto& sender=*senderModule;
+        sender.model=modelGorgon;sender.rightExpander.module=&receiver;receiver.leftExpander.module=&sender;
         for(auto& out:sender.outputs)out.channels=1;for(auto& out:receiver.outputs)out.channels=1;
         auto score=std::make_shared<gorgon::v3::ScoreV3>();score->bpm=120;score->loop=true;
         gorgon::v3::PatternV3 pattern;pattern.geometry.w=480;pattern.geometry.rows=pattern.geometry.bar=16;pattern.geometry.bars=1;
