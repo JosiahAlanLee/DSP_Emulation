@@ -269,7 +269,150 @@ static void counting() {
     }
 }
 
+// Run modes (docs/COUNTER.md, "Run modes"): One-shot holds at MOD - 1; Pendulum reflects at
+// 0 and MOD - 1, clamping an overshoot, with CARRY on each reflection.
+static void runModes() {
+    namespace ct = dspemu::counter;
+    using ct::RunMode;
+    // Every (word, increment, modulus, direction) through tick, against the contract's cases.
+    {
+        ct::Parameters p; p.mode = ClockMode::Engine; ct::Inputs in; in.data.connected = true;
+        uint64_t holds = 0, reflections = 0;
+        for (int mod = 2; mod <= 256; ++mod) {
+            p.modulus = mod; int top = mod - 1;
+            for (int w = 0; w < 256; ++w) for (int inc = 0; inc < 256; ++inc) {
+                in.data.rawWord = uint8_t(inc);
+                p.run = RunMode::OneShot;
+                {
+                    ct::Counter c; c.clear(uint8_t(w)); c.tick(p, in, 48000);
+                    auto o = c.tick(p, in, 48000);
+                    int want = w + inc < top ? w + inc : top;
+                    assert(o.advanced && o.word == want && o.carry == (want == top && w != top) && !o.down);
+                    holds += o.carry;
+                }
+                p.run = RunMode::Pendulum;
+                for (bool down : {false, true}) {
+                    ct::Counter c; c.clear(uint8_t(w), down); c.tick(p, in, 48000);
+                    auto o = c.tick(p, in, 48000);
+                    int want = w; bool wantDown = down, wantCarry = false;
+                    if (w > top) { want = top; wantDown = wantCarry = true; }
+                    else if (inc == 0) {}
+                    else if (!down && w + inc >= top) { want = top; wantDown = wantCarry = true; }
+                    else if (down && w - inc <= 0) { want = 0; wantDown = false; wantCarry = true; }
+                    else want = down ? w - inc : w + inc;
+                    assert(o.advanced && o.word == want && o.down == wantDown && o.carry == wantCarry);
+                    assert(o.word <= top);
+                    reflections += o.carry;
+                }
+            }
+        }
+        assert(holds > 0 && reflections > 0);
+    }
+    // The roadmap's sequence: MOD 8, increment 3. Pendulum shows each end for one edge.
+    {
+        ct::Parameters p; p.mode = ClockMode::Engine; p.run = RunMode::Pendulum; p.modulus = 8; p.increment = 3;
+        ct::Counter c; ct::Inputs none; c.tick(p, none, 48000);
+        std::vector<int> seen; std::vector<bool> carry;
+        for (int k = 0; k < 9; ++k) { auto o = c.tick(p, none, 48000); seen.push_back(o.word); carry.push_back(o.carry); }
+        assert((seen == std::vector<int>{3, 6, 7, 4, 1, 0, 3, 6, 7}));
+        assert((carry == std::vector<bool>{false, false, true, false, false, true, false, false, true}));
+        // One-shot from the same start: up only, one CARRY, then held whatever the increment.
+        p.run = RunMode::OneShot; c.clear(); c.tick(p, none, 48000); seen.clear(); carry.clear();
+        for (int k = 0; k < 5; ++k) { auto o = c.tick(p, none, 48000); seen.push_back(o.word); carry.push_back(o.carry); }
+        assert((seen == std::vector<int>{3, 6, 7, 7, 7}) && (carry == std::vector<bool>{false, false, true, false, false}));
+        // MOD - k is a large step up, not "down by k".
+        p.modulus = 256; p.increment = 255; c.clear(2); c.tick(p, none, 48000);
+        auto o = c.tick(p, none, 48000); assert(o.word == 255 && o.carry);
+        o = c.tick(p, none, 48000); assert(o.word == 255 && !o.carry);
+    }
+    // Every swing reaches both ends, for every modulus and every increment that fits.
+    for (int mod = 2; mod <= 256; mod += 7) for (int inc = 1; inc < mod; inc += 3) {
+        ct::Parameters p; p.mode = ClockMode::Engine; p.run = RunMode::Pendulum; p.modulus = mod; p.increment = uint8_t(inc);
+        ct::Counter c; ct::Inputs none; c.tick(p, none, 48000);
+        int last = 0, tops = 0, bottoms = 0;
+        for (int k = 0; k < 4 * mod; ++k) {
+            auto o = c.tick(p, none, 48000);
+            assert(o.word != last || mod == 2 || inc == 0);           // no end is shown twice
+            assert(std::abs(int(o.word) - last) <= inc);               // never more than one step
+            assert(o.carry == (o.word == 0 || o.word == mod - 1));     // CARRY exactly at the ends
+            tops += o.word == mod - 1; bottoms += o.word == 0; last = o.word;
+        }
+        assert(tops >= 2 && bottoms >= 1 && std::abs(tops - bottoms) <= 1);
+    }
+    // RESET sets the direction up. MODE changes act on the next edge, from the current word, and
+    // keep the direction: only reflections and RESET/LOAD change it.
+    {
+        ct::Parameters p; p.mode = ClockMode::Jack; p.run = RunMode::Pendulum; p.modulus = 10; p.increment = 4;
+        ct::Counter c; ct::Inputs in; in.clockConnected = true;
+        auto edge = [&] { in.clock = 10; auto o = c.tick(p, in, 48000); in.clock = 0; c.tick(p, in, 48000); return o; };
+        c.tick(p, in, 48000); c.tick(p, in, 48000);
+        assert(edge().word == 4 && edge().word == 8);
+        auto o = edge(); assert(o.word == 9 && o.carry && o.down);
+        p.run = RunMode::Loop; o = edge(); assert(o.word == 3 && o.carry && o.down);   // 13 mod 10
+        p.run = RunMode::Pendulum; o = edge(); assert(o.word == 0 && o.carry && !o.down);
+        o = edge(); assert(o.word == 4 && !o.down);
+        o = edge(); assert(o.word == 8); o = edge(); assert(o.word == 9 && o.down);
+        o = edge(); assert(o.word == 5 && o.down);
+        in.reset = 10; o = c.tick(p, in, 48000); assert(o.loaded && o.word == 0 && !o.down);
+        in.reset = 0; c.tick(p, in, 48000);
+        o = edge(); assert(o.word == 4 && !o.down);
+        // A SEED at the top: the first edge reflects there.
+        p.seed = 9; in.reset = 10; c.tick(p, in, 48000); in.reset = 0; c.tick(p, in, 48000);
+        o = edge(); assert(o.word == 9 && o.carry && o.down); assert(edge().word == 5);
+        // A held word above the top goes to it and turns down, in either direction; with a
+        // 00 increment too. One-shot clamps it the same way; Loop wraps it.
+        for (RunMode run : {RunMode::Pendulum, RunMode::OneShot, RunMode::Loop}) for (bool down : {false, true}) {
+            p.run = run; p.seed = 200; in.reset = 10; c.tick(p, in, 48000); in.reset = 0; c.tick(p, in, 48000);
+            c.down = down; ct::Inputs zero = in; zero.data.connected = true;
+            zero.clock = 10; o = c.tick(p, zero, 48000); c.tick(p, in, 48000);
+            assert(o.carry && o.word == (run == RunMode::Loop ? 200 % 10 : 9));
+            if (run == RunMode::Pendulum) assert(o.down); else assert(o.down == down);
+        }
+    }
+    // A 00 increment holds in both modes, including at an end, and never reflects.
+    {
+        ct::Parameters p; p.mode = ClockMode::Engine; p.modulus = 16; ct::Inputs zero; zero.data.connected = true;
+        for (RunMode run : {RunMode::OneShot, RunMode::Pendulum}) for (int w : {0, 7, 15}) for (bool down : {false, true}) {
+            p.run = run; ct::Counter c; c.clear(uint8_t(w), down); c.tick(p, zero, 48000);
+            for (int k = 0; k < 20; ++k) { auto o = c.tick(p, zero, 48000); assert(o.word == w && !o.carry && o.down == down); }
+        }
+    }
+    // Engine rate follows the same rules every sample: MOD 2 Pendulum carries on every sample.
+    {
+        ct::Parameters p; p.mode = ClockMode::Engine; p.run = RunMode::Pendulum; p.modulus = 2;
+        ct::Counter c; ct::Inputs none; c.tick(p, none, 48000);
+        for (int k = 0; k < 8; ++k) { auto o = c.tick(p, none, 48000); assert(o.carry && o.word == (k % 2 == 0 ? 1 : 0)); }
+    }
+    // One-shot as an envelope: RESET restarts it; each run carries once, at the top, and holds.
+    for (double sr : {44100., 48000., 96000.}) {
+        ct::Parameters p; p.mode = ClockMode::Internal; p.run = RunMode::OneShot; p.rateHz = 1000; p.increment = 16;
+        ct::Counter c; ct::Inputs in; int carries = 0, loads = 0; uint8_t last = 0;
+        for (int t = 0; t < int(sr); ++t) {
+            in.reset = t % int(sr / 10) == 0 ? 10.f : 0.f;
+            auto o = c.tick(p, in, sr);
+            if (o.loaded) { ++loads; last = 0; assert(o.word == 0); }
+            else assert(o.word >= last);
+            carries += o.carry; last = o.word;
+        }
+        assert(loads == 10 && carries == 10);
+    }
+    // Strobe gaps and range under random clocks, resets, increments and mode changes.
+    {
+        std::mt19937 rng(9); ct::Parameters p; p.mode = ClockMode::Jack; p.modulus = 11;
+        ct::Counter c; ct::Inputs in; in.clockConnected = true; bool last = false; int advances = 0, carries = 0;
+        for (int t = 0; t < 40000; ++t) {
+            in.clock = rng() % 2 ? 10.f : 0.f; in.reset = rng() % 211 == 0 ? 10.f : 0.f;
+            if (rng() % 500 == 0) p.run = RunMode(rng() % 3);
+            p.increment = uint8_t(1 + rng() % 255);
+            auto o = c.tick(p, in, 48000);
+            assert(!(last && o.clk) && o.word < 11 && (!o.carry || o.advanced));
+            last = o.clk; advances += o.advanced; carries += o.carry;
+        }
+        assert(advances > 2000 && carries > 200);
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz\n";
 }

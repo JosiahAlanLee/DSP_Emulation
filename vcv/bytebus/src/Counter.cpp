@@ -6,7 +6,7 @@
 #include <atomic>
 
 struct ByteCounter : Module {
-    enum Params { CLOCK_MODE, RATE, INC, MODULUS, SEED, LOAD_BUTTON, NUM_PARAMS };
+    enum Params { CLOCK_MODE, RATE, INC, MODULUS, SEED, LOAD_BUTTON, RUN_MODE, NUM_PARAMS };
     enum Inputs { BUS_IN, CLOCK_IN, RESET_IN, NUM_INPUTS };
     enum Outputs { BUS_OUT, CLOCK_OUT, CARRY_OUT, NUM_OUTPUTS };
     enum Lights { BIT0_LIGHT, BIT1_LIGHT, BIT2_LIGHT, BIT3_LIGHT, BIT4_LIGHT,
@@ -14,7 +14,8 @@ struct ByteCounter : Module {
     dspemu::bus::Reader reader;
     dspemu::bus::Writer writer;
     dspemu::counter::Counter state;
-    std::atomic<unsigned> displayedWord{0};
+    // The published word, with bit 8 set while Pendulum is counting down; saved together.
+    std::atomic<unsigned> published{0};
 
     ByteCounter() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -26,15 +27,16 @@ struct ByteCounter : Module {
         configParam(SEED, 0, 255, 0, "Seed word");
         for (int id : {INC, MODULUS, SEED}) getParamQuantity(id)->snapEnabled = true;
         configButton(LOAD_BUTTON, "Load seed and restart internal clock");
+        configSwitch(RUN_MODE, 0, 2, 0, "Run mode", {"Loop (wrap at MOD)", "One-shot (hold at MOD - 1)", "Pendulum (reflect at 0 and MOD - 1)"});
         configInput(BUS_IN, "Increment byte bus (replaces INC; optional CLK on channel 9)");
         configInput(CLOCK_IN, "Clock (rising edge)");
         configInput(RESET_IN, "Reset (publishes the seed; takes priority over clock)");
         configOutput(BUS_OUT, "Count byte bus (9 channels; 8 in Engine mode)");
         configOutput(CLOCK_OUT, "Published-word clock (one sample pulses)");
-        configOutput(CARRY_OUT, "Carry (one sample pulse on an edge that wraps past the modulus)");
+        configOutput(CARRY_OUT, "Carry (one sample pulse on a wrap, on reaching the One-shot hold, or on a Pendulum reflection)");
     }
     void onReset(const ResetEvent& e) override {
-        Module::onReset(e); reader.reset(); state.clear(); displayedWord.store(0);
+        Module::onReset(e); reader.reset(); state.clear(); published.store(0);
     }
     void process(const ProcessArgs& args) override {
         using namespace dspemu::counter;
@@ -44,6 +46,7 @@ struct ByteCounter : Module {
             return int(std::round(clamp(finite(params[id].getValue(), fallback), lo, hi)));
         };
         p.mode = ClockMode(integer(CLOCK_MODE, 0, 4, 0));
+        p.run = RunMode(integer(RUN_MODE, 0, 2, 0));
         p.rateHz = std::exp2(clamp(finite(params[RATE].getValue(), 3), -3.f, 11.f));
         p.increment = uint8_t(integer(INC, 1, 255, 1));
         p.modulus = integer(MODULUS, 2, 256, 256);
@@ -62,17 +65,21 @@ struct ByteCounter : Module {
         lights[CLOCK_LIGHT].setBrightnessSmooth(out.clk ? 1.f : 0.f, args.sampleTime);
         lights[RESET_LIGHT].setBrightnessSmooth(out.loaded ? 1.f : 0.f, args.sampleTime);
         lights[CARRY_LIGHT].setBrightnessSmooth(out.carry ? 1.f : 0.f, args.sampleTime);
-        displayedWord.store(out.word, std::memory_order_relaxed);
+        published.store(out.word | (out.down ? 0x100u : 0u), std::memory_order_relaxed);
     }
     json_t* dataToJson() override {
         json_t* root = json_object();
-        json_object_set_new(root, "word", json_integer(displayedWord.load(std::memory_order_relaxed)));
+        unsigned state = published.load(std::memory_order_relaxed);
+        json_object_set_new(root, "word", json_integer(state & 0xff));
+        json_object_set_new(root, "down", json_boolean(state & 0x100));
         return root;
     }
     void dataFromJson(json_t* root) override {
         json_t* saved = json_object_get(root, "word");
         int value = json_is_integer(saved) ? int(std::max<json_int_t>(0, std::min<json_int_t>(255, json_integer_value(saved)))) : 0;
-        reader.reset(); state.clear(uint8_t(value)); displayedWord.store(unsigned(value));
+        // 2.3 patches have no direction: Pendulum starts up.
+        bool down = json_is_true(json_object_get(root, "down"));
+        reader.reset(); state.clear(uint8_t(value), down); published.store(unsigned(value) | (down ? 0x100u : 0u));
     }
 };
 
@@ -86,7 +93,7 @@ struct CountDisplay : widget::Widget {
         nvgFontFaceId(args.vg, font->handle); nvgFontSize(args.vg, 16);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         nvgFillColor(args.vg, nvgRGB(143, 220, 196));
-        unsigned word = module ? module->displayedWord.load(std::memory_order_relaxed) : 0;
+        unsigned word = module ? module->published.load(std::memory_order_relaxed) & 0xff : 0;
         nvgText(args.vg, box.size.x / 2, box.size.y / 2, string::f("%02X", word).c_str(), nullptr);
     }
 };
@@ -100,6 +107,9 @@ struct ByteCounterWidget : ModuleWidget {
         auto* source = createParam<dspemu::panel::Choice>(POS(SOURCE), module, ByteCounter::CLOCK_MODE);
         source->box.size = Vec(SOURCE_W, SOURCE_H);
         source->labels = {"AUTO", "JACK", "BUS", "INTERNAL", "ENGINE"}; addParam(source);
+        auto* run = createParam<dspemu::panel::Choice>(POS(MODE), module, ByteCounter::RUN_MODE);
+        run->box.size = Vec(MODE_W, MODE_H);
+        run->labels = {"LOOP", "ONE-SHOT", "PENDULUM"}; addParam(run);
         addParam(createParamCentered<RoundBlackKnob>(POS(RATE), module, ByteCounter::RATE));
         addParam(createParamCentered<RoundBlackSnapKnob>(POS(INC), module, ByteCounter::INC));
         addParam(createParamCentered<RoundBlackSnapKnob>(POS(MOD), module, ByteCounter::MODULUS));

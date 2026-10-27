@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -28,7 +28,7 @@
     {
       "slug": "Counter",
       "name": "Counter",
-      "description": "An 8-bit word that counts: increment from a knob or a byte bus, modulus 2-256, seed, carry, and the Clocked Register's clock rules.",
+      "description": "An 8-bit word that counts: increment from a knob or a byte bus, modulus 2-256, Loop, One-shot or Pendulum, seed, carry, and the Clocked Register's clock rules.",
       "tags": ["Clock modifier", "Logic", "Sequencer", "Polyphonic"]
     }
   ]
