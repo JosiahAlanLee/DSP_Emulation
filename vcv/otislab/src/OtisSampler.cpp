@@ -28,7 +28,7 @@ struct OtisSampler : Module {
     dsp::SchmittTrigger playButton;
     dsp::SchmittTrigger recordGate,mutationGate;
     dspemu::bus::Reader frameReader,patchReader;
-    // Patch select (2.9), the EPS idiom: PATCH's bits 1 and 2, read on each hit, choose the panel (0) or
+    // Patch select (2.9), the EPS idiom: PATCH's bits 0 and 1, read on each hit, choose the panel (0) or
     // one of three patches stored from it. A patch holds the knobs and switches a single voice can play
     // with; CV still adds to it. A patch never stored plays the panel.
     struct Patch { float pitch=0,start=0,end=1,k1=1,k2=1,position=0,size=8,interp=9; int loop=0; bool reverse=false; };
@@ -134,7 +134,7 @@ struct OtisSampler : Module {
         configInput(INTERP_IN,"LAB interpolation CV, 1.1 V per bit added to INTERP");
         configInput(POSITION_IN,"LAB window position / frame selection, polyphonic (0–10 V)");
         configInput(FRAME_BUS_IN,"Byte frame selection in FRM mode (LSB first; optional CLK on channel 9)");
-        configInput(PATCH_IN,"Patch select: bits 1 and 2 choose the panel or a stored patch per hit (optional CLK on channel 9)");
+        configInput(PATCH_IN,"Patch select: bits 0 and 1 choose the panel or a stored patch per hit (optional CLK on channel 9)");
         configInput(SIZE_IN,"LAB window size, polyphonic (1 V doubles sample count)");
         configInput(MUTATE_IN,"Rework selected voice-1 window on rising gate (2 V)");
         configInput(MUTATION_AMOUNT_IN,"Rework amount CV (0–10 V), latched on trigger");
@@ -643,7 +643,7 @@ struct OtisSamplerWidget : ModuleWidget {
         }));
         menu->addChild(createMenuItem("Stop all voices","",[m]() { std::lock_guard<std::mutex> g(m->engineMutex); m->engine.stopAll(); }));
         menu->addChild(createSubmenuItem("Patch select","",[m](Menu* child) {
-            child->addChild(createMenuLabel("PATCH bits 1 and 2, on each hit: 0 = the panel, 1-3 = a stored patch"));
+            child->addChild(createMenuLabel("PATCH bits 0 and 1, on each hit: 0 = the panel, 1-3 = a stored patch"));
             for(int n=1;n<=3;n++) {
                 bool stored=m->storedPatch(n).has_value();
                 child->addChild(new MenuSeparator);
