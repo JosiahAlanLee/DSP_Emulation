@@ -11,8 +11,10 @@
 #include <string>
 
 namespace dspemu::lookup {
-constexpr int FAMILIES = 6, SHAPES = 64, POINTS = 256;
-enum Family { Harmonic, Formant, Fold, Curve, Walsh, Rhythm, Custom };
+constexpr int FAMILIES = 6, V2_FAMILIES = 3, SHAPES = 64, POINTS = 256;
+// Library v2's families follow Custom, so FAMILY values saved before them are unchanged.
+enum Family { Harmonic, Formant, Fold, Curve, Walsh, Rhythm, Custom, Envelope, Sequence, Density };
+inline bool inV2(int family) { return family > Custom; }
 enum class Mode { Map, TrackRising, TrackFalling };
 inline uint64_t hash(const uint8_t* bytes, size_t size) {
     uint64_t h = 14695981039346656037ull;
@@ -27,21 +29,37 @@ inline double wrap(double v, double range) { return v - range * std::floor(v / r
 inline uint8_t rounded(double v) { return uint8_t(std::max(0., std::min(255., std::floor(v + .5)))); }
 using Table = std::array<uint8_t, POINTS>;
 struct Library {
-    std::array<uint8_t, FAMILIES * SHAPES * POINTS> data{};
-    bool ready = false;
+    std::array<uint8_t, (FAMILIES + V2_FAMILIES) * SHAPES * POINTS> data{};
+    bool ready = false, readyV2 = false;
     static Library load(const std::string& path) {
         std::ifstream file(path, std::ios::binary);
         std::array<char, 12> header{}; Library library;
         if (!file.read(header.data(), header.size()) || std::string(header.data(), 8) != "BBLOOK01" ||
             uint8_t(header[8]) != FAMILIES || uint8_t(header[9]) != SHAPES || header[10] != 0 || header[11] != 1)
             throw std::runtime_error("Missing or unsupported Lookup v1 library");
-        if (!file.read(reinterpret_cast<char*>(library.data.data()), library.data.size()) || file.peek() != EOF ||
-            hash(library.data.data(), library.data.size()) != LIBRARY_HASH)
+        constexpr size_t size = FAMILIES * SHAPES * POINTS;
+        if (!file.read(reinterpret_cast<char*>(library.data.data()), size) || file.peek() != EOF ||
+            hash(library.data.data(), size) != LIBRARY_HASH)
             throw std::runtime_error("Lookup v1 library fingerprint mismatch");
         library.ready = true; return library;
     }
+    // Library v2 (Envelope, Sequence, Density), a separate identity; v1 is unchanged by it.
+    void loadV2(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        std::array<char, 12> header{};
+        if (!file.read(header.data(), header.size()) || std::string(header.data(), 8) != "BBLOOK02" ||
+            uint8_t(header[8]) != V2_FAMILIES || uint8_t(header[9]) != SHAPES || header[10] != 0 || header[11] != 2)
+            throw std::runtime_error("Missing or unsupported Lookup v2 library");
+        constexpr size_t offset = FAMILIES * SHAPES * POINTS, size = V2_FAMILIES * SHAPES * POINTS;
+        if (!file.read(reinterpret_cast<char*>(data.data() + offset), size) || file.peek() != EOF ||
+            hash(data.data() + offset, size) != LIBRARY_V2_HASH)
+            throw std::runtime_error("Lookup v2 library fingerprint mismatch");
+        readyV2 = true;
+    }
+    bool has(int family) const { return inV2(family) ? readyV2 : ready; }
     const uint8_t* table(int family, int shape) const {
-        return data.data() + (family * SHAPES + shape) * POINTS;
+        int index = inV2(family) ? family - 1 : family;   // Custom has no stored table
+        return data.data() + (index * SHAPES + shape) * POINTS;
     }
 };
 
@@ -144,7 +162,7 @@ inline uint8_t evaluate(const Library& library, const Parameters& p, double addr
         double amount = .5 - .5 * std::cos(2 * 3.14159265358979323846 * wrap(p.shape, 64.) / 64.);
         return rounded((1 - amount) * identity + amount * value);
     }
-    if (!library.ready) return 128;
+    if (!library.has(p.family)) return 128;
     if (p.family == Walsh) return library.table(Walsh, selected)[int(address) ^ p.seed];
     if (p.family == Rhythm) {
         int a = int(address), step = a / 8;
@@ -155,6 +173,8 @@ inline uint8_t evaluate(const Library& library, const Parameters& p, double addr
                 word ^= uint8_t(1u << lane);
         return word;
     }
+    // Density's tables already carry Rhythm's low half-step; each shape is one more hit.
+    if (p.family == Density) return library.table(Density, selected)[int(address)];
     double shape = wrap(p.shape, 64.); int a = int(shape), b = (a + 1) & 63;
     double mixAmount = shape - a;
     return rounded((1 - mixAmount) * point(library.table(p.family, a), address) +
@@ -166,7 +186,7 @@ struct Engine {
     uint8_t held = 128; int lastFamily = -1; Mode lastMode = Mode::Map;
     void reset() { follower.reset(); selector = {}; held = 128; lastFamily = -1; }
     Output tick(const Library& library, Parameters p, const bus::Sample& input, double sampleRate, bool resetFollower = false, const Table* custom = nullptr) {
-        p.family = std::max(0, std::min(int(Custom), p.family));
+        p.family = std::max(0, std::min(int(Density), p.family));
         if (!std::isfinite(p.shape)) p.shape = 0;
         if (!std::isfinite(p.phase)) p.phase = 0;
         bool tracking = p.mode != Mode::Map;

@@ -417,6 +417,54 @@ static void reclock(float sr) {
     assert(strobes >= int(sr / 4 / 997) - 1);
 }
 
+// Library v2 in patches. Counter (One-shot, RESET from a gate) -> Lookup Envelope is an envelope
+// generator: each gate restarts the table from address 00 and it ends held at its last byte.
+// Counter -> Lookup Density with the Counter's CARRY into JUMP is a build-up: one hit more per bar.
+static void libraryV2Chains(float sr) {
+    namespace lu = dspemu::lookup; using C = ByteCounter; using L = ByteLookup;
+    auto library = std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
+    library->loadV2("../res/lookup-v2.bin");
+    {
+        C c; L l(library); connectOutputs(c); connectOutputs(l); auto a = args(sr);
+        c.params[C::CLOCK_MODE].setValue(1); c.params[C::RUN_MODE].setValue(1); c.params[C::INC].setValue(24);
+        c.inputs[C::CLOCK_IN].channels = c.inputs[C::RESET_IN].channels = 1;
+        l.params[L::FAMILY].setValue(lu::Envelope); l.params[L::SHAPE].setValue(3);
+        const uint8_t* env = library->table(lu::Envelope, 3);
+        std::vector<int> out; int resets = 0;
+        for (int t = 0; t < 8 * 64; ++t) {
+            c.inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+            c.inputs[C::RESET_IN].setVoltage(t % 160 == 0 ? 10 : 0);
+            copy(c.outputs[C::BUS_OUT], l.inputs[L::BUS_IN]);
+            c.process(a); l.process(a);
+            if (l.outputs[L::BUS_OUT].getVoltage(8) == 10) {
+                int count = inputWord(l.inputs[L::BUS_IN]);
+                assert(word(l.outputs[L::BUS_OUT]) == env[count]);
+                out.push_back(word(l.outputs[L::BUS_OUT])); resets += count == 0;
+            }
+        }
+        assert(resets >= 3 && env[0] == 255 && env[255] == 0);
+        assert(std::count(out.begin(), out.end(), 0) > 10);                 // each run ends held at 00
+    }
+    {
+        C c; L l(library); connectOutputs(c); connectOutputs(l); auto a = args(sr);
+        c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(8); c.inputs[C::CLOCK_IN].channels = 1;
+        l.params[L::FAMILY].setValue(lu::Density);
+        std::vector<int> hits(12, 0); int bar = 0;
+        for (int t = 0; t < 4 * 32 * 12 + 2; ++t) {
+            c.inputs[C::CLOCK_IN].setVoltage(t % 4 == 2 ? 10 : 0);
+            copy(c.outputs[C::BUS_OUT], l.inputs[L::BUS_IN]); copy(c.outputs[C::CARRY_OUT], l.inputs[L::JUMP_IN]);
+            c.process(a); l.process(a);
+            if (l.outputs[L::BUS_OUT].getVoltage(8) == 10) {
+                int count = inputWord(l.inputs[L::BUS_IN]);
+                if (count == 0 && t > 4) ++bar;
+                if (bar < 12) for (int k = 0; k < 8; ++k) hits[bar] += word(l.outputs[L::BUS_OUT]) >> k & 1;
+            }
+        }
+        for (int k = 0; k < 12; ++k) assert(hits[k] == 4 + k);
+        assert(l.jumpSteps.load() == 12);
+    }
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
@@ -435,6 +483,7 @@ int main() {
     auto rhythm = rhythmChain(library, 48000, 4);
     assert(rhythmChain(library, 44100, 5) == rhythm && rhythmChain(library, 96000, 6) == rhythm);
     auto jumped = jumpChain(library, 48000, 7);
+    for (float sr : {44100.f, 48000.f, 96000.f}) libraryV2Chains(sr);
     assert(jumpChain(library, 44100, 8) == jumped && jumpChain(library, 96000, 9) == jumped);
     for (uint8_t seed : {uint8_t(0), uint8_t(0xa5), uint8_t(255)}) {
         auto reference = feedback(48000, seed, 1);
@@ -442,5 +491,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz\n";
 }

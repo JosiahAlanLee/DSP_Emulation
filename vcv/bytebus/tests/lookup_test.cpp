@@ -8,7 +8,10 @@
 #include <iostream>
 #include <limits>
 #include <new>
+#include <fstream>
+#include <iterator>
 #include <set>
+#include <vector>
 
 static std::atomic<size_t> allocations{0};
 void* operator new(std::size_t n) { ++allocations; if (void* p = std::malloc(n)) return p; throw std::bad_alloc(); }
@@ -253,9 +256,44 @@ static void jumps() {
     }
 }
 
+// Library v2 (docs/LOOKUP.md): Envelope, Sequence and Density follow Custom; each reads its own
+// table; Density is discrete like Rhythm; without v2 they are neutral and v1 is untouched.
+static void libraryV2() {
+    auto library = lu::Library::load("../res/lookup-v1.bin");
+    assert(library.ready && !library.readyV2);
+    { lu::Engine e; lu::Parameters p; p.family = lu::Envelope; assert(e.tick(library,p,input(40),48000).word == 128); }
+    auto v1 = library.data;
+    library.loadV2("../res/lookup-v2.bin"); assert(library.readyV2);
+    assert(std::equal(v1.begin(), v1.begin() + lu::FAMILIES * lu::SHAPES * lu::POINTS, library.data.begin()));
+    bool rejected = false; try { lu::Library other; other.loadV2("../res/lookup-v1.bin"); } catch (const std::runtime_error&) { rejected = true; }
+    assert(rejected);
+    std::ifstream file("../res/lookup-v2.bin", std::ios::binary); std::vector<char> raw((std::istreambuf_iterator<char>(file)), {});
+    for (int family : {lu::Envelope, lu::Sequence, lu::Density}) for (int shape : {0, 17, 63}) {
+        const uint8_t* stored = reinterpret_cast<const uint8_t*>(raw.data()) + 12 + ((family - lu::Envelope) * 64 + shape) * 256;
+        lu::Engine e; lu::Parameters p; p.family = family; p.shape = shape;
+        for (int n = 0; n < 256; ++n) assert(e.tick(library,p,input(uint8_t(n)),48000).word == stored[n]);
+    }
+    // Numeric morph for Envelope and Sequence: halfway between two shapes is between their bytes.
+    {
+        lu::Engine e; lu::Parameters p; p.family = lu::Envelope; p.shape = 2.5;
+        for (int n = 0; n < 256; n += 5) {
+            int a = library.table(lu::Envelope,2)[n], b = library.table(lu::Envelope,3)[n], v = e.tick(library,p,input(uint8_t(n)),48000).word;
+            assert(v >= std::min(a,b) && v <= std::max(a,b));
+        }
+    }
+    // Density is discrete with Rhythm's hysteresis: 10.4 reads shape 10, never a blend.
+    {
+        lu::Engine e; lu::Parameters p; p.family = lu::Density; p.shape = 10.4;
+        for (int n = 0; n < 256; ++n) assert(e.tick(library,p,input(uint8_t(n)),48000).word == library.table(lu::Density,10)[n]);
+        p.shape = 10.6; assert(e.tick(library,p,input(0),48000).word == library.table(lu::Density,11)[0]);
+    }
+    // FAMILY beyond Density clamps to it.
+    { lu::Engine e; lu::Parameters p; p.family = 42; p.shape = 5; assert(e.tick(library,p,input(0),48000).word == library.table(lu::Density,5)[0]); }
+}
+
 int main() {
     auto library = lu::Library::load("../res/lookup-v1.bin");
-    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps();
+    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2();
     bool rejected = false; try { lu::Library::load("../res/no-such-library.bin"); } catch (const std::runtime_error&) { rejected = true; }
     assert(rejected);
     lu::Engine engine; lu::Parameters p; auto s = input(73);
@@ -266,5 +304,5 @@ int main() {
         engine.tick(library,p,s,48000);
     }
     assert(allocations.load() == before);
-    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, no runtime allocations\n";
+    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, no runtime allocations\n";
 }
