@@ -5,6 +5,7 @@
 #include "../src/engine/Pipeline.hpp"
 #include "../src/engine/Counter2.hpp"
 #include "../src/engine/Fan.hpp"
+#include "../src/engine/Lattice.hpp"
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -745,7 +746,151 @@ static void fanning() {
     }
 }
 
+// Lattice (docs/LATTICE.md): two 4-bit counters on a 4 x 4 grid; jumps against the Bindubba's
+// jam wiring settled (Follow) and taken once (Load); V normalled to H's wrap; strobes.
+static void latticing() {
+    namespace lt = dspemu::lattice;
+    // The schematic's jam wiring as bit equations. Main (H): J1 <- own Q3, J2 <- own Q4,
+    // J3 <- V.Q1, J4 <- V.Q2. Second (V): J1 <- own Q4, J2 <- own Q3, J3 <- H.Q1, J4 <- H.Q2.
+    auto jamH = [](int h, int v) { return (h >> 2 & 1) | (h >> 3 & 1) << 1 | (v & 1) << 2 | (v >> 1 & 1) << 3; };
+    auto jamV = [](int h, int v) { return (v >> 3 & 1) | (v >> 2 & 1) << 1 | (h & 1) << 2 | (h >> 1 & 1) << 3; };
+    for (int h = 0; h < 16; ++h) for (int v = 0; v < 16; ++v) {
+        // A transparent preset held: iterate Q = J until nothing changes.
+        int hs = h; for (int k = 0; k < 8; ++k) hs = jamH(hs, v);
+        int vs = v; for (int k = 0; k < 8; ++k) vs = jamV(h, vs);
+        assert(jamH(hs, v) == hs && jamV(h, vs) == vs);
+        assert(lt::followH(uint8_t(v)) == hs && lt::followV(uint8_t(h)) == vs);
+        assert(lt::loadH(uint8_t(h), uint8_t(v)) == jamH(h, v) && lt::loadV(uint8_t(h), uint8_t(v)) == jamV(h, v));
+        assert(lt::stepOf(uint8_t(lt::followH(uint8_t(v))), uint8_t(v)) % 5 == 0);     // the diagonal
+    }
+    for (int c = 0; c < 16; ++c) for (bool down : {false, true}) {
+        bool wrap = false; int next = lt::count(uint8_t(c), down, wrap);
+        assert(next == (down ? (c + 15) % 16 : (c + 1) % 16) && wrap == (down ? (c & 3) == 0 : (c & 3) == 3));
+    }
+    // With only H clocked, V follows H's position wrap: the plain sequence 0 ... 15.
+    {
+        lt::Lattice l; l.clear(); lt::Parameters p; p.mode = ClockMode::Engine; lt::Inputs in;
+        auto o = l.tick(p, in, 48000); assert(o.loaded && o.step == 0 && !o.clocked);
+        for (int t = 1; t <= 64; ++t) { o = l.tick(p, in, 48000); assert(o.step == t % 16 && o.state == ((t / 4 % 16) << 4 | t % 16)); }
+        // DIR H high: H counts down, its wrap still moves V (up).
+        in.dirH = 10; int h = 0, v = 0; l.clear(); l.tick(p, in, 48000);
+        for (int t = 1; t <= 64; ++t) {
+            bool wrap = (h & 3) == 0; h = (h + 15) % 16; if (wrap) v = (v + 1) % 16;
+            o = l.tick(p, in, 48000); assert(o.state == (v << 4 | h));
+        }
+    }
+    // V CLOCK patched: V moves on its own edges only, down while DIR V is high.
+    {
+        lt::Lattice l; l.clear(); lt::Parameters p; p.mode = ClockMode::Engine; lt::Inputs in; in.vClockConnected = true;
+        l.tick(p, in, 48000);
+        for (int t = 1; t <= 40; ++t) {
+            in.vClock = t % 4 == 0 ? 10.f : 0.f; in.dirV = t > 20 ? 10.f : 0.f;
+            auto o = l.tick(p, in, 48000);
+            int ups = std::min(t, 20) / 4, downs = t > 20 ? t / 4 - 5 : 0;
+            assert((o.state & 15) == t % 16 && (o.state >> 4) == ((ups - downs) % 16 + 16) % 16);
+        }
+    }
+    // Follow: a held JUMP H keeps H on V's position while V clocks, and ignores H's clock; on
+    // release H counts on from there. JUMP V likewise; both held freeze what they took.
+    {
+        lt::Lattice l; l.clear(0x20); lt::Parameters p; p.mode = ClockMode::Jack; lt::Inputs in;
+        in.clock.clockConnected = true; in.vClockConnected = true; l.tick(p, in, 48000); l.tick(p, in, 48000);
+        auto pulse = [&](float lt::Inputs::* line) { in.*line = 10; auto o = l.tick(p, in, 48000); in.*line = 0; l.tick(p, in, 48000); return o; };
+        in.jumpH = 10; auto o = l.tick(p, in, 48000);
+        assert(o.jumped && (o.state & 15) == lt::followH(2) && o.step == 10);
+        for (int k = 0; k < 6; ++k) {
+            in.clock.clock = 10; l.tick(p, in, 48000); in.clock.clock = 0; l.tick(p, in, 48000);   // H's edges: ignored
+            o = pulse(&lt::Inputs::vClock);
+            assert((o.state & 15) == lt::followH(uint8_t(o.state >> 4)) && o.step % 5 == 0);
+        }
+        in.jumpH = 0; uint8_t h = l.h; o = pulse(&lt::Inputs::vClock);
+        in.clock.clock = 10; o = l.tick(p, in, 48000); in.clock.clock = 0; l.tick(p, in, 48000);
+        assert((o.state & 15) == ((h + 1) & 15));
+        in.jumpV = 10; o = l.tick(p, in, 48000); assert((o.state >> 4) == lt::followV(uint8_t(o.state & 15)));
+        uint8_t hBefore = l.h, vBefore = l.v;
+        in.jumpH = 10; o = l.tick(p, in, 48000);
+        assert(l.h == lt::followH(vBefore) && l.v == lt::followV(hBefore));
+        uint8_t frozen = l.state();
+        for (int k = 0; k < 20; ++k) {
+            in.clock.clock = k % 2 ? 10.f : 0.f; in.vClock = k % 3 ? 0.f : 10.f;
+            assert(l.tick(p, in, 48000).state == frozen);
+        }
+    }
+    // Load: rising edges only, the jam values taken once; clocks keep counting.
+    {
+        lt::Lattice l; l.clear(0x9b); lt::Parameters p; p.mode = ClockMode::Jack; p.jump = lt::JumpMode::Load; lt::Inputs in;
+        in.clock.clockConnected = true; l.tick(p, in, 48000); l.tick(p, in, 48000);
+        in.jumpH = 10; auto o = l.tick(p, in, 48000); assert(l.h == lt::loadH(0x0b, 0x09) && l.v == 9);
+        for (int k = 0; k < 5; ++k) assert(l.tick(p, in, 48000).state == o.state);                // held: once
+        in.clock.clock = 10; o = l.tick(p, in, 48000); assert(o.hAdvanced);                         // still counting
+        in.jumpH = 0; in.clock.clock = 0; l.tick(p, in, 48000);
+        uint8_t h = l.h, v = l.v; in.jumpV = 10; in.jumpH = 10; l.tick(p, in, 48000);
+        assert(l.h == lt::loadH(h, v) && l.v == lt::loadV(h, v));
+    }
+    // BUS IN: JUMP H loads bits 0-3 of the raw word, JUMP V bits 4-7, on rising edges.
+    {
+        lt::Lattice l; l.clear(); lt::Parameters p; p.mode = ClockMode::Jack; lt::Inputs in;
+        in.bus.connected = true; in.bus.rawWord = 0xc5; l.tick(p, in, 48000);
+        in.jumpH = 10; l.tick(p, in, 48000); assert(l.h == 5 && l.v == 0);
+        in.bus.rawWord = 0x3a; for (int k = 0; k < 4; ++k) l.tick(p, in, 48000); assert(l.h == 5);
+        in.jumpV = 10; l.tick(p, in, 48000); assert(l.v == 3 && l.h == 5);
+    }
+    // RESET loads SEED (V high nibble, H low) and publishes it; every change is published once,
+    // a strobe never follows a strobe, and close changes are deferred, not lost.
+    {
+        lt::Lattice l; l.clear(); lt::Parameters p; p.mode = ClockMode::Jack; p.seed = 0x6d; lt::Inputs in;
+        in.clock.clockConnected = true; in.vClockConnected = true;
+        l.tick(p, in, 48000); l.tick(p, in, 48000);
+        // RESET wins over a V edge and a jump on its sample; a held Follow jump acts on the next.
+        in.clock.reset = 10; in.vClock = 10; in.jumpH = 10;
+        auto o = l.tick(p, in, 48000); assert(o.loaded && o.state == 0x6d && o.clk && !o.vAdvanced && !o.jumped);
+        in.clock.reset = 0; in.vClock = 0; o = l.tick(p, in, 48000); assert(o.state == (0x60 | lt::followH(6)));
+        in.jumpH = 0; l.clear(0x6d); l.tick(p, in, 48000); l.tick(p, in, 48000);
+        in.clock.clock = 10; o = l.tick(p, in, 48000); assert(o.clk && o.state == 0x6e);
+        in.vClock = 10; o = l.tick(p, in, 48000); assert(!o.clk && o.state == 0x7e);               // deferred
+        o = l.tick(p, in, 48000); assert(o.clk && o.state == 0x7e);
+        o = l.tick(p, in, 48000); assert(!o.clk);
+        std::mt19937 r(5); bool last = false; uint8_t published = l.state();
+        for (int t = 0; t < 50000; ++t) {
+            in.clock.clock = r() % 3 ? 0.f : 10.f; in.vClock = r() % 4 ? 0.f : 10.f;
+            in.jumpH = r() % 50 == 0 ? 10.f : 0.f; in.jumpV = r() % 70 == 0 ? 10.f : 0.f;
+            in.clock.reset = r() % 300 == 0 ? 10.f : 0.f; in.dirH = r() % 9 ? 0.f : 10.f;
+            p.jump = r() % 2 ? lt::JumpMode::Follow : lt::JumpMode::Load;
+            o = l.tick(p, in, 48000); assert(!(last && o.clk)); last = o.clk;
+            if (o.clk) published = o.state;
+        }
+        for (int k = 0; k < 3; ++k) { in = {}; in.clock.clockConnected = true; in.vClockConnected = true; o = l.tick(p, in, 48000); if (o.clk) published = o.state; }
+        assert(published == l.state());
+    }
+    // The internal clock at 44.1/48/96 kHz: 16 Hz steps through all 16 cells once a second.
+    for (double sr : {44100., 48000., 96000.}) {
+        lt::Lattice l; l.clear(); lt::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 16; lt::Inputs in;
+        int edges = 0, strobes = 0;
+        for (int t = 0; t < int(sr); ++t) { auto o = l.tick(p, in, sr); edges += o.hAdvanced; strobes += o.clk; }
+        assert(edges >= 15 && edges <= 16 && strobes == edges + 1);
+    }
+    // Slew: the time constant at a knob, halved by each volt of CV, held within 0.5-500 ms; the
+    // control's rise is quick, its fall slow.
+    assert(lt::Slew::effective(0, 3) == lt::Slew::MIN_TAU && lt::Slew::effective(1, -3) == lt::Slew::MAX_TAU);
+    assert(std::abs(lt::Slew::effective(.5, 2) - lt::Slew::tau(.5) / 4) < 1e-12);
+    for (double sr : {44100., 48000., 96000.}) {
+        for (double knob : {0., .5, 1.}) for (float cv : {-2.f, 0.f, 1.f, 2.f}) {
+            lt::Slew s; s.process(0, float(knob), cv, 1 / sr);
+            for (int t = 0; t < int(sr * .6); ++t) s.process(0, float(knob), cv, 1 / sr);       // settle the control
+            double tau = std::max(lt::Slew::MIN_TAU, std::min(lt::Slew::MAX_TAU, lt::Slew::tau(knob) * std::exp2(-cv)));
+            int n = int(std::round(tau * sr)); float y = 0;
+            for (int t = 0; t < n; ++t) y = s.process(5, float(knob), cv, 1 / sr);
+            assert(n > 0 && std::abs(y - 5 * (1 - std::exp(-n / (tau * sr)))) < .01);
+        }
+        lt::Slew s; s.process(0, .5f, 0, 1 / sr);
+        for (int t = 0; t < int(sr * .02); ++t) s.process(0, .5f, 5, 1 / sr);
+        assert(s.control > 4.8);                                  // 20 ms: four rise constants
+        for (int t = 0; t < int(sr * .02); ++t) s.process(0, .5f, 0, 1 / sr);
+        assert(s.control > 3.2 && s.control < 3.4);              // 20 ms: under half a fall constant
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag\n";
 }

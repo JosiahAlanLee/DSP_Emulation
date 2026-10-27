@@ -12,6 +12,7 @@
 #include "../src/Lookup2.cpp"
 #include "../src/Counter2.cpp"
 #include "../src/Fan.cpp"
+#include "../src/Lattice.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -709,10 +710,133 @@ static std::vector<int> fanChain(float sr, unsigned orderSeed) {
     return steps;
 }
 
+// Lattice with real ports: the normalled 16-step raster at Engine rate, CV ranges, inverted CV,
+// one-hot gates and lights; jumps through the panel in Follow and Load; BUS IN jumps; slew and
+// slew CV; persistence with bounded restore; Initialize.
+static void latticePorts() {
+    using L = ByteLattice; namespace lt = dspemu::lattice;
+    auto a = args();
+    // LOAD with a seed, then the button's low sample.
+    auto press = [&](L& m, int seed) {
+        m.params[L::SEED].setValue(seed); m.params[L::LOAD_BUTTON].setValue(1); m.process(a);
+        m.params[L::LOAD_BUTTON].setValue(0); m.process(a);
+    };
+    L l; l.model = modelLattice; connectOutputs(l);
+    assert(l.params.size() == 24 && l.inputs.size() == 10 && l.outputs.size() == 8 && l.lights.size() == 18);
+    for (int k = 0; k < 16; ++k) l.params[L::STEP + k].setValue(k / 15.f);
+    l.params[L::SOURCE].setValue(3);                                        // Engine: H counts every sample
+    l.process(a);
+    for (int t = 1; t <= 64; ++t) {
+        l.process(a);
+        int step = t & 15, state = (t >> 2 & 15) << 4 | (t & 15);
+        assert(l.outputs[L::BUS_OUT].getChannels() == 8 && word(l.outputs[L::BUS_OUT]) == state);
+        assert(l.published.load() == unsigned(state));
+        float cv = 10 * (step / 15.f);
+        assert(l.outputs[L::CV_OUT].getVoltage() == cv && l.outputs[L::INV_OUT].getVoltage() == -cv);
+        assert(l.outputs[L::STEPS_A_OUT].getChannels() == 8 && l.outputs[L::STEPS_B_OUT].getChannels() == 8);
+        for (int k = 0; k < 16; ++k) {
+            assert(l.outputs[k < 8 ? L::STEPS_A_OUT : L::STEPS_B_OUT].getVoltage(k & 7) == (k == step ? 10.f : 0.f));
+            assert(l.lights[L::STEP_LIGHT + k].getBrightness() == (k == step ? 1.f : 0.f));
+        }
+    }
+    // CV ranges at step 16 (knob 1) and step 1 (knob 0); H CLOCK patched and low: no edges.
+    l.params[L::SOURCE].setValue(1); l.inputs[L::H_CLOCK_IN].channels = 1;
+    for (int range : {1, 2}) {
+        l.params[L::RANGE].setValue(range);
+        press(l, 0xff); assert(l.outputs[L::CV_OUT].getVoltage() == 5.f);
+        press(l, 0x00); assert(l.outputs[L::CV_OUT].getVoltage() == (range == 1 ? 0.f : -5.f));
+    }
+    l.params[L::RANGE].setValue(0);
+    // Jumps through the panel from state 0x36 (V 3, H 6).
+    for (auto& in : {L::JUMP_H_IN, L::JUMP_V_IN}) l.inputs[in].channels = 1;
+    press(l, 0x36);
+    l.inputs[L::JUMP_H_IN].setVoltage(10); l.process(a);                     // Follow: H = 5 x V's position
+    assert(l.published.load() == unsigned(0x30 | lt::followH(3)));
+    l.inputs[L::JUMP_H_IN].setVoltage(0); l.process(a);
+    press(l, 0x36);
+    l.inputs[L::JUMP_V_IN].setVoltage(10); l.process(a);
+    assert(l.published.load() == unsigned(lt::followV(6) << 4 | 6));
+    l.inputs[L::JUMP_V_IN].setVoltage(0); l.process(a);
+    l.params[L::JUMP].setValue(1);                                         // Load: the jam values, once
+    press(l, 0x36);
+    l.inputs[L::JUMP_H_IN].setVoltage(10); l.inputs[L::JUMP_V_IN].setVoltage(10); l.process(a);
+    assert(l.published.load() == unsigned(lt::loadV(6, 3) << 4 | lt::loadH(6, 3)));
+    unsigned held = l.published.load(); l.process(a); assert(l.published.load() == held);
+    l.inputs[L::JUMP_H_IN].setVoltage(0); l.inputs[L::JUMP_V_IN].setVoltage(0); l.process(a);
+    // BUS IN: JUMP V takes bits 4-7, JUMP H bits 0-3.
+    putBus(l.inputs[L::BUS_IN], 0xa7); press(l, 0x36);
+    l.inputs[L::JUMP_V_IN].setVoltage(10); l.process(a); assert(l.published.load() == 0xa6u);
+    l.inputs[L::JUMP_H_IN].setVoltage(10); l.process(a); assert(l.published.load() == 0xa7u);
+    l.inputs[L::JUMP_H_IN].setVoltage(0); l.inputs[L::JUMP_V_IN].setVoltage(0); l.process(a);
+    l.inputs[L::BUS_IN].channels = 0;
+    // Persistence: params and the state; bounded restore; Initialize.
+    l.params[L::RANGE].setValue(2); l.params[L::SLEW_A].setValue(.3f);
+    press(l, 0x5c);
+    json_t* j = l.toJson(); L r; r.model = modelLattice; connectOutputs(r); r.fromJson(j); json_decref(j);
+    assert(r.params[L::JUMP].getValue() == 1 && r.params[L::RANGE].getValue() == 2 && r.params[L::SLEW_A].getValue() == .3f);
+    r.inputs[L::H_CLOCK_IN].channels = 1; r.process(a);
+    assert(word(r.outputs[L::BUS_OUT]) == 0x5c && r.outputs[L::BUS_OUT].getChannels() == 9 && r.outputs[L::CLOCK_OUT].getVoltage() == 10);
+    json_t* bad = json_pack("{s:I}", "state", json_int_t(1000)); r.dataFromJson(bad); json_decref(bad);
+    r.process(a); assert(word(r.outputs[L::BUS_OUT]) == 255);
+    r.onReset(Module::ResetEvent{});
+    assert(r.params[L::JUMP].getValue() == 0 && r.params[L::RANGE].getValue() == 0 && r.params[L::SEED].getValue() == 0);
+    r.process(a); assert(word(r.outputs[L::BUS_OUT]) == 0);
+    // Slew from 0 to 10 V: knob 0 (0.5 ms) arrives within 10 ms; knob 1 (500 ms) is a fiftieth of a
+    // time constant along. Then at a middle knob, 2 V of slew CV quarters the time.
+    {
+        L s; s.model = modelLattice; connectOutputs(s);
+        s.params[L::SOURCE].setValue(1); s.inputs[L::H_CLOCK_IN].channels = 1;
+        s.params[L::STEP + 15].setValue(1); s.params[L::SLEW_A].setValue(0); s.params[L::SLEW_B].setValue(1);
+        for (int t = 0; t < 10; ++t) s.process(a);
+        press(s, 0xff);
+        for (int t = 2; t < 480; ++t) s.process(a);
+        assert(s.outputs[L::CV_OUT].getVoltage() == 10 && s.outputs[L::SLEW_A_OUT].getVoltage() > 9.99f);
+        assert(std::abs(s.outputs[L::SLEW_B_OUT].getVoltage() - 10 * (1 - std::exp(-480 / 24000.))) < .002);
+    }
+    {
+        L s; s.model = modelLattice; connectOutputs(s);
+        s.params[L::SOURCE].setValue(1); s.inputs[L::H_CLOCK_IN].channels = 1;
+        s.params[L::STEP + 15].setValue(1); s.params[L::SLEW_A].setValue(.5f); s.params[L::SLEW_B].setValue(.5f);
+        s.inputs[L::SLEW_B_CV_IN].channels = 1; s.inputs[L::SLEW_B_CV_IN].setVoltage(2);
+        for (int t = 0; t < 48000; ++t) s.process(a);                     // settle the control at step 1
+        press(s, 0xff);
+        int n = int(std::round(lt::Slew::tau(.5) / 4 * 48000));
+        for (int t = 2; t < n; ++t) s.process(a);
+        float slowA = s.outputs[L::SLEW_A_OUT].getVoltage(), fastB = s.outputs[L::SLEW_B_OUT].getVoltage();
+        assert(std::abs(fastB - 10 * (1 - std::exp(-1.))) < .05 && std::abs(slowA - 10 * (1 - std::exp(-.25))) < .05);
+    }
+}
+
+// A Counter (INC 37) into Lattice's BUS IN, its CLK OUT into both jumps, while Lattice's H clock
+// runs on its own: every Counter word lands as Lattice's state, and the clock counts on from it,
+// through one-sample cables in random module order.
+static std::vector<int> latticeChain(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using L = ByteLattice;
+    C c; L l; connectOutputs(c); connectOutputs(l); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::INC].setValue(37); c.inputs[C::CLOCK_IN].channels = 1;
+    l.params[L::SOURCE].setValue(1);
+    for (auto in : {L::H_CLOCK_IN, L::JUMP_H_IN, L::JUMP_V_IN}) l.inputs[in].channels = 1;
+    std::mt19937 order(orderSeed); std::vector<int> states;
+    float jumpBefore = 0;
+    for (int t = 0; t < 96 * 30; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 96 == 40 ? 10 : 0);
+        l.inputs[L::H_CLOCK_IN].setVoltage(t % 16 == 3 ? 10 : 0);
+        copy(c.outputs[C::BUS_OUT], l.inputs[L::BUS_IN]);
+        float jump = c.outputs[C::CLOCK_OUT].getVoltage();
+        l.inputs[L::JUMP_H_IN].setVoltage(jump); l.inputs[L::JUMP_V_IN].setVoltage(jump);
+        if (order() & 1) { c.process(a); l.process(a); } else { l.process(a); c.process(a); }
+        if (jump >= 1 && jumpBefore < 1) assert(l.published.load() == inputWord(l.inputs[L::BUS_IN]));
+        jumpBefore = jump;
+        if (l.outputs[L::CLOCK_OUT].getVoltage() == 10) states.push_back(word(l.outputs[L::BUS_OUT]));
+    }
+    assert(states.size() >= 29 * 6 + 29);
+    return states;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -744,6 +868,9 @@ int main() {
     fanPorts();
     auto fanned = fanChain(48000, 41);
     assert(fanChain(44100, 42) == fanned && fanChain(96000, 43) == fanned);
+    latticePorts();
+    auto latticed = latticeChain(48000, 51);
+    assert(latticeChain(44100, 52) == latticed && latticeChain(96000, 53) == latticed);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz\n";
 }

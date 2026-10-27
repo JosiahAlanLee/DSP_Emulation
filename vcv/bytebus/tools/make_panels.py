@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate ByteBusLab's nine outlined panels, layouts and component previews."""
+"""Generate ByteBusLab's ten outlined panels, layouts and component previews."""
 from pathlib import Path
 import argparse
 import sys
@@ -308,6 +308,51 @@ def fan(font):
     return p
 
 
+def lattice(font):
+    p = Panel(390, font)
+    p.title('Lattice', '4 X 4 GRID / TWO COUNTERS / CROSS-COUPLED JUMPS', 11)
+    for row in range(4):
+        for col in range(4):
+            step = 4 * row + col
+            x, y = 34 + 46 * col, 74 + 44 * row
+            p.component(f'STEP{step}', 'small_knob', x, y)
+            p.component(f'STEP{step}_LIGHT', 'light', x + 17, y - 11)
+            p.text(str(step + 1), x, y + 22, 6, DIM)
+    p.component('STATE', 'readout', 214, 56, 52, 24, '00')
+    p.text('V H', 240, 90, 6, DIM)
+    p.component('JUMP', 'selector', 278, 56, 96, 22, 'FOLLOW')
+    p.text('JUMP', 326, 92, 8)
+    p.component('SOURCE', 'selector', 214, 104, 78, 22, 'AUTO')
+    p.text('H SOURCE', 253, 140, 7)
+    p.component('RANGE', 'selector', 300, 104, 74, 22, '0-10 V')
+    p.text('CV RANGE', 337, 140, 7)
+    for name, x, label in [('RATE', 232, 'RATE'), ('SEED', 284, 'SEED')]:
+        p.component(name, 'knob', x, 168)
+        p.text(label, x, 198)
+    p.text('Hz', 232, 208, 6, DIM)
+    p.component('LOAD', 'button', 334, 168)
+    p.text('LOAD', 334, 198)
+    p.component('RESET_LIGHT', 'light', 356, 168)
+    for name, x, label in [('SLEW_A', 232, 'SLEW A'), ('SLEW_B', 284, 'SLEW B')]:
+        p.component(name, 'small_knob', x, 227)
+        p.text(label, x, 247, 7)
+    p.rule(253)
+    for k, (name, label) in enumerate([('H_CLOCK_IN', 'H CLOCK'), ('V_CLOCK_IN', 'V CLOCK'), ('DIR_H_IN', 'DIR H'),
+                                       ('DIR_V_IN', 'DIR V'), ('JUMP_H_IN', 'JUMP H'), ('JUMP_V_IN', 'JUMP V'),
+                                       ('RESET_IN', 'RESET'), ('BUS_IN', 'BUS IN')]):
+        p.jack(name, 28 + 47.7 * k, 279, label)
+    p.jack('SLEW_A_CV_IN', 28, 320, 'A CV')
+    p.jack('SLEW_B_CV_IN', 75.7, 320, 'B CV')
+    p.block(100, 300, 280, 76)
+    for k, (name, label) in enumerate([('CV_OUT', 'CV'), ('INV_OUT', 'INV'), ('SLEW_A_OUT', 'SLEW A'), ('SLEW_B_OUT', 'SLEW B')]):
+        p.jack(name, 123.4 + 47.7 * k, 320, label, True)
+    for k, (name, label) in enumerate([('BUS_OUT', 'BUS OUT'), ('CLOCK_OUT', 'CLK OUT'), ('STEPS_A_OUT', 'STEPS 1-8'), ('STEPS_B_OUT', 'STEPS 9-16')]):
+        p.jack(name, 123.4 + 47.7 * k, 360, label, True)
+    p.component('CLOCK_LIGHT', 'light', 189, 348)
+    p.text('V = ROW, H = COLUMN', 52, 368, 6, DIM)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
@@ -315,13 +360,13 @@ def main():
     panels = {'reg': register(args.font), 'lookup': lookup(args.font), 'converter': converter(args.font),
               'counter': counter(args.font), 'byte_switch': byte_switch(args.font),
               'pipeline': pipeline(args.font), 'lookup2': lookup2(args.font),
-              'counter2': counter2(args.font), 'fan': fan(args.font)}
+              'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font)}
     for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
                            ('byte_switch', 'Switch'), ('pipeline', 'Pipeline'),
-                           ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan')]:
+                           ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote nine ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote ten ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':
