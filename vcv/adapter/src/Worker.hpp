@@ -14,8 +14,9 @@ template<class L> class Worker {
 public:
     using Factory=std::function<std::unique_ptr<Backend<L>>(const std::string&,const std::string&)>;
     using Output=OutputBlock<L::channels>;
+    using Input=InputBlockOf<L::inputs>;
 private:
-    Queue<InputBlock,16> input;
+    Queue<Input,16> input;
     Queue<Output,16> output;
     Factory factory;
     std::mutex messageMutex;
@@ -29,7 +30,7 @@ private:
     void run() {
         std::unique_ptr<Backend<L>> backend;
         std::unique_ptr<Renderer<L>> renderer;
-        InputBlock work;
+        Input work;
         Output rendered;
         while(running.load(std::memory_order_acquire)){
             std::string path,samples;
@@ -40,7 +41,7 @@ private:
                 try {backend=factory(path,samples);{std::lock_guard<std::mutex> guard(messageMutex);machineList=backend->machines();}renderer=std::make_unique<Renderer<L>>(*backend);ready.store(true,std::memory_order_release);++loaded;status(backend->description());}
                 catch(const std::exception& e){status(std::string("OS load failed: ")+e.what());}
             }
-            const InputBlock* front=input.front();
+            const Input* front=input.front();
             if(!front){std::this_thread::sleep_for(std::chrono::microseconds(250));continue;}
             work=*front;input.pop();
             if(!renderer||work.generation!=requestedGeneration.load(std::memory_order_acquire))continue;
@@ -65,7 +66,7 @@ public:
     std::vector<Machine> machines(){std::lock_guard<std::mutex> guard(messageMutex);return machineList;}
     std::string status(){std::lock_guard<std::mutex> guard(messageMutex);return statusText;}
     void generation(uint64_t value){requestedGeneration.store(value,std::memory_order_release);}
-    bool submit(const InputBlock& block){if(input.push(block))return true;++overflows;return false;}
+    bool submit(const Input& block){if(input.push(block))return true;++overflows;return false;}
     const Output* front() const{return output.front();}
     void pop(){output.pop();}
 };

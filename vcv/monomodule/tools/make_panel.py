@@ -22,8 +22,9 @@ def main():
         p.component(name, 'knob', x, 78)
         p.text(label, x, 108)
     p.component('MACHINE_NAME', 'readout', 18, 117, 234, 20, 'LOCAL 04 / SWAVE SAW')
-    for i, (name, label) in enumerate([('TRIG', 'TRIG'), ('VOCT', 'V/OCT'), ('MACHINE_CV', 'MACHINE CV'), ('RESET', 'RESET')]):
-        p.jack(name, 32 + 69*i, 166, label)
+    for i, (name, label) in enumerate([('TRIG', 'TRIG'), ('VOCT', 'V/OCT'), ('MACHINE_CV', 'MACH CV'), ('RESET', 'RESET'),
+                                       ('INP_A', 'INP A'), ('INP_B', 'INP B')]):
+        p.jack(name, 25 + 44*i, 166, label)
     p.rule(183)
     for i in range(8):
         x, y = 30 + 131*(i%2), 211 + 36*(i//2)

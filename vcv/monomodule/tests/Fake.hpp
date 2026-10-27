@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A deterministic six-track backend: no OS, no emulator. A track sounds its last hit's P1 while its note is
-// held, and records what it was given.
+// held, and records what it was given. Track 6 plays INP A back, for the input path.
 #pragma once
 #include "Renderer.hpp"
 #include <mutex>
@@ -11,9 +11,12 @@ struct Trace {std::mutex mutex;std::vector<Record> events;int resets=0;};
 class Fake:public Backend {
     Trace* trace;
     int64_t frame=0;
-    float level[tracks]={};
+    float level[tracks]={}, inA[nativeFrames]={};
 public:
+    uint8_t settings[emu_rack::trackSettings]={};
     explicit Fake(Trace* sink=nullptr):trace(sink){}
+    void configure(const uint8_t (&s)[emu_rack::trackSettings]) override {std::copy(s,s+emu_rack::trackSettings,settings);}
+    void input(const float* frames) override {for(int f=0;f<nativeFrames;++f)inA[f]=frames[f*inputs];}
     bool fire(const Hit& hit) override {
         level[hit.track]=resolve(hit,{11,22,33,44,55,66,77,88})[0]/127.f;
         if(trace){std::lock_guard<std::mutex> guard(trace->mutex);trace->events.push_back({frame,hit,false});}
@@ -25,9 +28,11 @@ public:
     }
     void panic() override {std::fill(level,level+tracks,0);if(trace){std::lock_guard<std::mutex> guard(trace->mutex);++trace->resets;}}
     void render(float (&out)[nativeFrames][channels]) override {
-        for(auto& sample:out){
+        for(int f=0;f<nativeFrames;++f){
+            auto& sample=out[f];
             std::fill(sample,sample+channels,0);
             for(int t=0;t<tracks;++t){sample[trackLeft+t]=sample[trackRight+t]=level[t];sample[0]+=level[t];sample[1]+=level[t];}
+            sample[trackLeft+5]=inA[f];
         }
         frame+=nativeFrames;
     }
