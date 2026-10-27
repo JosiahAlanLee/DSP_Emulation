@@ -388,4 +388,41 @@ constexpr float AUDIO_OUT_X = 266, AUDIO_OUT_Y = 344;
 constexpr float CLOCK_LIGHT_X = 110, CLOCK_LIGHT_Y = 330;
 } // namespace parallel_sum
 
+namespace wheel {
+constexpr float WIDTH = 210;
+constexpr float LOOP_DISPLAY_X = 12, LOOP_DISPLAY_Y = 56;
+constexpr float LOOP_DISPLAY_W = 52, LOOP_DISPLAY_H = 24;
+constexpr float BIT0_LIGHT_X = 184, BIT0_LIGHT_Y = 64;
+constexpr float BIT1_LIGHT_X = 168, BIT1_LIGHT_Y = 64;
+constexpr float BIT2_LIGHT_X = 152, BIT2_LIGHT_Y = 64;
+constexpr float BIT3_LIGHT_X = 136, BIT3_LIGHT_Y = 64;
+constexpr float BIT4_LIGHT_X = 120, BIT4_LIGHT_Y = 64;
+constexpr float BIT5_LIGHT_X = 104, BIT5_LIGHT_Y = 64;
+constexpr float BIT6_LIGHT_X = 88, BIT6_LIGHT_Y = 64;
+constexpr float BIT7_LIGHT_X = 72, BIT7_LIGHT_Y = 64;
+constexpr float SOURCE_X = 12, SOURCE_Y = 100;
+constexpr float SOURCE_W = 76, SOURCE_H = 22;
+constexpr float STRIDE_X = 96, STRIDE_Y = 100;
+constexpr float STRIDE_W = 40, STRIDE_H = 22;
+constexpr float LOAD_X = 156, LOAD_Y = 111;
+constexpr float RESET_LIGHT_X = 156, RESET_LIGHT_Y = 96;
+constexpr float CAPTURE_X = 188, CAPTURE_Y = 111;
+constexpr float ARMED_LIGHT_X = 188, ARMED_LIGHT_Y = 96;
+constexpr float RATE_X = 30, RATE_Y = 160;
+constexpr float LENGTH_X = 80, LENGTH_Y = 160;
+constexpr float OFFSET_X = 130, OFFSET_Y = 160;
+constexpr float SEED_X = 180, SEED_Y = 160;
+constexpr float CLOCK_IN_X = 35, CLOCK_IN_Y = 236;
+constexpr float RESET_IN_X = 81.5, RESET_IN_Y = 236;
+constexpr float CAPTURE_IN_X = 128, CAPTURE_IN_Y = 236;
+constexpr float LOOP_OUT_X = 35, LOOP_OUT_Y = 292;
+constexpr float FREE_OUT_X = 81.5, FREE_OUT_Y = 292;
+constexpr float CLOCK_OUT_X = 128, CLOCK_OUT_Y = 292;
+constexpr float U_OUT_X = 174.5, U_OUT_Y = 292;
+constexpr float CLOCK_LIGHT_X = 146, CLOCK_LIGHT_Y = 280;
+constexpr float G_OUT_X = 35, G_OUT_Y = 350;
+constexpr float LOOP_GATE_OUT_X = 81.5, LOOP_GATE_OUT_Y = 350;
+constexpr float NOISE_GATE_OUT_X = 128, NOISE_GATE_OUT_Y = 350;
+} // namespace wheel
+
 } // namespace bytebus_layout

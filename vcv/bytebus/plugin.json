@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -72,6 +72,12 @@
       "name": "Parallel Sum",
       "description": "An eight-stage shift register with selectable XOR/XNOR feedback taps and an injected signal, its stages summed through eight weights into a CV and an audio output, after the Nonlinearcircuits Burhans Timbre.",
       "tags": ["Sequencer", "Noise", "Random", "Logic", "Polyphonic"]
+    },
+    {
+      "slug": "Wheel",
+      "name": "Wheel",
+      "description": "A 24-stage noise register that visits every state once, and a loop register of 1-24 steps that captures from it on demand, read through a window as two byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo.",
+      "tags": ["Random", "Noise", "Sample and hold", "Sequencer", "Polyphonic"]
     }
   ]
 }

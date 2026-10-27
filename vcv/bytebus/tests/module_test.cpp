@@ -14,6 +14,7 @@
 #include "../src/Fan.cpp"
 #include "../src/Lattice.cpp"
 #include "../src/ParallelSum.cpp"
+#include "../src/Wheel.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -936,10 +937,91 @@ static std::vector<int> parallelSumChain(float sr, unsigned orderSeed) {
     return words;
 }
 
+// Wheel with real ports against an engine fed the same controls: both buses, U, G and the gates
+// at Engine rate, a capture from the button, LENGTH Off, another window; capture from the jack;
+// persistence of both registers with bounded restore; Initialize.
+static void wheelPorts() {
+    using W = ByteWheel; namespace wh = dspemu::wheel;
+    auto a = args();
+    W w; w.model = modelWheel; connectOutputs(w);
+    assert(w.params.size() == 8 && w.inputs.size() == 3 && w.outputs.size() == 7 && w.lights.size() == 11);
+    w.params[W::SOURCE].setValue(3); w.params[W::SEED].setValue(0x5e);
+    wh::Wheel ref; ref.clear(); wh::Parameters rp; rp.mode = wh::ClockMode::Engine; rp.seed = 0x5e; wh::Inputs ri;
+    w.params[W::LOAD_BUTTON].setValue(1); ri.clock.resetButton = true;
+    for (int t = 0; t < 400; ++t) {
+        if (t == 1) { w.params[W::LOAD_BUTTON].setValue(0); ri.clock.resetButton = false; }
+        if (t == 40) { w.params[W::CAPTURE_BUTTON].setValue(1); ri.captureButton = true; }
+        if (t == 41) { w.params[W::CAPTURE_BUTTON].setValue(0); ri.captureButton = false; }
+        if (t == 150) { w.params[W::LENGTH].setValue(0); rp.length = 0; }
+        if (t == 250) { w.params[W::STRIDE].setValue(2); w.params[W::OFFSET].setValue(5); rp.stride = 3; rp.offset = 5; }
+        w.process(a); auto o = ref.tick(rp, ri, 48000);
+        int lw = word(w.outputs[W::LOOP_OUT]), fw = word(w.outputs[W::FREE_OUT]);
+        assert(w.outputs[W::LOOP_OUT].getChannels() == 8 && w.outputs[W::FREE_OUT].getChannels() == 8);
+        assert(lw == o.loopWord && fw == o.freeWord && w.savedFree.load() == o.free && w.savedLoop.load() == o.loop);
+        assert(w.outputs[W::U_OUT].getVoltage() == (lw - 128) * 5.f / 128.f);
+        assert(w.outputs[W::G_OUT].getVoltage() == (__builtin_popcount(unsigned(lw)) - 4) * 1.25f);
+        assert(w.outputs[W::LOOP_GATE_OUT].getVoltage() == (o.loop & 1 ? 10.f : 0.f) && w.outputs[W::NOISE_GATE_OUT].getVoltage() == (o.free & 1 ? 10.f : 0.f));
+        for (int k = 0; k < 8; ++k) assert(w.lights[W::BIT_LIGHT + k].getBrightness() == (lw >> k & 1));
+        if (t == 0) assert(o.free == 0x5e5e5e && o.loop == 0x5e5e5e);
+        if (t == 40) assert(o.captured && o.loop == o.free);
+    }
+    // Capture from the jack, on the CLOCK jack: armed until the next edge.
+    w.params[W::SOURCE].setValue(1); w.inputs[W::CLOCK_IN].channels = 1; w.inputs[W::CAPTURE_IN].channels = 1;
+    w.params[W::LENGTH].setValue(8);
+    for (int t = 0; t < 4; ++t) w.process(a);
+    w.inputs[W::CAPTURE_IN].setVoltage(10); w.process(a); w.inputs[W::CAPTURE_IN].setVoltage(0);
+    assert(w.lights[W::ARMED_LIGHT].getBrightness() == 1 && w.savedLoop.load() != w.savedFree.load());
+    for (int t = 0; t < 3; ++t) w.process(a);
+    w.inputs[W::CLOCK_IN].setVoltage(10); w.process(a);
+    assert(w.lights[W::ARMED_LIGHT].getBrightness() == 0 && w.savedLoop.load() == w.savedFree.load());
+    assert(w.outputs[W::CLOCK_OUT].getVoltage() == 10 && w.outputs[W::LOOP_OUT].getChannels() == 9);
+    assert(word(w.outputs[W::LOOP_OUT]) == word(w.outputs[W::FREE_OUT]));
+    w.inputs[W::CLOCK_IN].setVoltage(0); w.process(a);
+    // Persistence: both registers and the controls; bounded restore; Initialize.
+    uint32_t freeState = w.savedFree.load(), loopState = w.savedLoop.load();
+    json_t* j = w.toJson(); W r; r.model = modelWheel; connectOutputs(r); r.fromJson(j); json_decref(j);
+    assert(r.params[W::LENGTH].getValue() == 8 && r.params[W::STRIDE].getValue() == 2 && r.params[W::OFFSET].getValue() == 5);
+    r.inputs[W::CLOCK_IN].channels = 1; r.process(a);
+    assert(r.savedFree.load() == freeState && r.savedLoop.load() == loopState);
+    assert(word(r.outputs[W::LOOP_OUT]) == wh::window(loopState, 5, 3) && word(r.outputs[W::FREE_OUT]) == wh::window(freeState, 5, 3));
+    assert(r.outputs[W::CLOCK_OUT].getVoltage() == 10);
+    json_t* bad = json_pack("{s:I,s:I}", "free", json_int_t(1) << 40, "loop", json_int_t(-5)); r.dataFromJson(bad); json_decref(bad);
+    r.process(a); assert(r.savedFree.load() == wh::ALL && r.savedLoop.load() == 0);
+    r.onReset(Module::ResetEvent{});
+    assert(r.params[W::LENGTH].getValue() == 16 && r.params[W::STRIDE].getValue() == 0 && r.params[W::OFFSET].getValue() == 0 && r.params[W::SEED].getValue() == 0);
+    r.process(a); assert(r.savedFree.load() == 0 && word(r.outputs[W::LOOP_OUT]) == 0);
+}
+
+// A Counter's clock drives Wheel and its CARRY (MOD 8) captures: every eighth edge LOOP takes FREE,
+// and between captures LOOP recirculates its eight stages, through one-sample cables in random order.
+static std::vector<int> wheelChain(float sr, unsigned orderSeed) {
+    using C = ByteCounter; using W = ByteWheel; namespace wh = dspemu::wheel;
+    C c; W w; connectOutputs(c); connectOutputs(w); auto a = args(sr);
+    c.params[C::CLOCK_MODE].setValue(1); c.params[C::MODULUS].setValue(8); c.inputs[C::CLOCK_IN].channels = 1;
+    w.params[W::SOURCE].setValue(1); w.params[W::LENGTH].setValue(8); w.params[W::SEED].setValue(0x91);
+    w.inputs[W::CLOCK_IN].channels = 1; w.inputs[W::CAPTURE_IN].channels = 1;
+    std::mt19937 order(orderSeed); std::vector<int> words; int captures = 0; uint32_t loopBefore = 0;
+    for (int t = 0; t < 24 * 400; ++t) {
+        c.inputs[C::CLOCK_IN].setVoltage(t % 24 == 3 ? 10 : 0);
+        w.inputs[W::CLOCK_IN].setVoltage(c.outputs[C::CLOCK_OUT].getVoltage());
+        float capture = c.outputs[C::CARRY_OUT].getVoltage();
+        w.inputs[W::CAPTURE_IN].setVoltage(capture);
+        if (order() & 1) { c.process(a); w.process(a); } else { w.process(a); c.process(a); }
+        if (w.outputs[W::CLOCK_OUT].getVoltage() == 10) {
+            uint32_t loop = w.savedLoop.load();
+            if (capture >= 1) { assert(loop == w.savedFree.load()); ++captures; }
+            else if (words.size() > 1) assert(loop == wh::stepLoop(loopBefore, 0, 8));
+            loopBefore = loop; words.push_back(word(w.outputs[W::LOOP_OUT]));
+        }
+    }
+    assert(captures >= 45 && words.size() >= 390);
+    return words;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); plugin.addModel(modelWheel); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -977,6 +1059,9 @@ int main() {
     parallelSumPorts();
     auto summed = parallelSumChain(48000, 61);
     assert(parallelSumChain(44100, 62) == summed && parallelSumChain(96000, 63) == summed);
+    wheelPorts();
+    auto wheeled = wheelChain(48000, 71);
+    assert(wheelChain(44100, 72) == wheeled && wheelChain(96000, 73) == wheeled);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz; Wheel ports against its engine at Engine rate with capture, LENGTH Off and another window, capture from the jack, persistence of both registers and Initialize, and Counter clock and CARRY -> Wheel capture in random order at 44.1/48/96 kHz\n";
 }

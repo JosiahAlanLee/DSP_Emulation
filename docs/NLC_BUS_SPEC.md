@@ -124,6 +124,10 @@ on); the full Burhans paper.
 
 ## 4. Wheel (from Pseudo)
 
+Implemented in ByteBusLab 2.15; the contract is [WHEEL.md](../vcv/bytebus/docs/WHEEL.md),
+which supersedes §4.2–4.3 where they differ. §4.1 and §4.4 remain the record of
+the sources.
+
 ### 4.1 What the sources establish
 
 All from P1 unless noted; the Pseudo build document has not been read.

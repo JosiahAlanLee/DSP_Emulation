@@ -394,6 +394,41 @@ def parallel_sum(font):
     return p
 
 
+def wheel(font):
+    p = Panel(210, font)
+    p.title('Wheel', '24-STAGE LFSR / LOOP / CAPTURE', 11)
+    p.component('LOOP_DISPLAY', 'readout', 12, 56, 52, 24, '00')
+    p.text('LOOP', 38, 92, 7)
+    for k in range(8):
+        x = 184 - 16 * k
+        p.component(f'BIT{k}_LIGHT', 'light', x, 64)
+    p.text('LOOP BITS 8 ... 1', 128, 82, 6, DIM)
+    p.component('SOURCE', 'selector', 12, 100, 76, 22, 'AUTO')
+    p.text('SOURCE', 50, 134, 7)
+    p.component('STRIDE', 'selector', 96, 100, 40, 22, '1')
+    p.text('STRIDE', 116, 134, 7)
+    p.component('LOAD', 'button', 156, 111)
+    p.text('LOAD', 156, 134, 7)
+    p.component('RESET_LIGHT', 'light', 156, 96)
+    p.component('CAPTURE', 'button', 188, 111)
+    p.text('CAPTURE', 188, 134, 7)
+    p.component('ARMED_LIGHT', 'light', 188, 96)
+    for name, x, label in [('RATE', 30, 'RATE'), ('LENGTH', 80, 'LENGTH'), ('OFFSET', 130, 'OFFSET'), ('SEED', 180, 'SEED')]:
+        p.component(name, 'knob', x, 160)
+        p.text(label, x, 190, 7)
+    p.text('Hz', 30, 199, 6, DIM)
+    p.rule(207)
+    for name, x, label in [('CLOCK_IN', 35, 'CLOCK'), ('RESET_IN', 81.5, 'RESET'), ('CAPTURE_IN', 128, 'CAPTURE')]:
+        p.jack(name, x, 236, label)
+    p.block(12, 256, 186, 118)
+    for name, x, label in [('LOOP_OUT', 35, 'LOOP BUS'), ('FREE_OUT', 81.5, 'FREE BUS'), ('CLOCK_OUT', 128, 'CLK OUT'), ('U_OUT', 174.5, 'U')]:
+        p.jack(name, x, 292, label, True)
+    p.component('CLOCK_LIGHT', 'light', 146, 280)
+    for name, x, label in [('G_OUT', 35, 'G'), ('LOOP_GATE_OUT', 81.5, 'LOOP GATE'), ('NOISE_GATE_OUT', 128, 'NOISE')]:
+        p.jack(name, x, 350, label, True)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
@@ -402,14 +437,14 @@ def main():
               'counter': counter(args.font), 'byte_switch': byte_switch(args.font),
               'pipeline': pipeline(args.font), 'lookup2': lookup2(args.font),
               'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font),
-              'parallel_sum': parallel_sum(args.font)}
+              'parallel_sum': parallel_sum(args.font), 'wheel': wheel(args.font)}
     for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
                            ('byte_switch', 'Switch'), ('pipeline', 'Pipeline'),
                            ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice'),
-                           ('parallel_sum', 'ParallelSum')]:
+                           ('parallel_sum', 'ParallelSum'), ('wheel', 'Wheel')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote eleven ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote twelve ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':

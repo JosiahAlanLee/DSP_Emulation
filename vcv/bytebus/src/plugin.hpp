@@ -13,3 +13,4 @@ extern Model* modelCounter2;
 extern Model* modelFan;
 extern Model* modelLattice;
 extern Model* modelParallelSum;
+extern Model* modelWheel;
