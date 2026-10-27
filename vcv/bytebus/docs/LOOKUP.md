@@ -1,10 +1,10 @@
 # Lookup
 
-**ByteBusLab 2.5 · 16 HP · original byte transforms and table authoring**
+**ByteBusLab 2.7 · 16 HP · original byte transforms and table authoring**
 
-Lookup maps an 8-bit address to an 8-bit result. It ships six original families,
+Lookup maps an 8-bit address to an 8-bit result. It ships nine original families,
 each with 64 shapes of 256 bytes, and accepts a custom table compiled from a
-memoryless Vastish patch. Numeric families morph; Walsh and rhythm families
+memoryless Vastish patch. Numeric families morph; Walsh, Rhythm and Density
 select discrete shapes with hysteresis. A raw DAC output makes the result
 audible without another converter.
 
@@ -34,6 +34,9 @@ BUS OUT is neutral 80 and AUDIO is 0 V.
 | Walsh | Parity functions from eight independent binary masks, constructed by reversible row swaps and XOR additions. Every shape and seed is a byte permutation. | Discrete shape; SEED XORs the address, changing bit-plane polarities. |
 | Rhythm | Original 32-step, eight-lane patterns with fixed kick/snare anchors, arithmetic pulse distribution and rotations. | Discrete shape; nonzero SEED toggles one step per lane 2–7; kick/snare anchors persist. |
 | Custom | A verified 256-byte table imported from JSON, embedded when the patch is saved. | Shape 0 = identity, 32 = imported map; other shapes interpolate around that circle. SEED unused. |
+| Envelope | Level over time, for a One-shot Counter's ramp: exponential decays from linear to sharp (0–7), logarithmic decays (8–15), attack then decay with a 2–45% attack (16–23), rises from exponential through linear to logarithmic that end at the top (24–31), full level held 10–80% then a cliff (32–39), two-stage cliffs through a half-level plateau (40–47), 2–5 falling lumps (48–55), and attack-decay-sustain with sustain 0–88% (56–63). The decays end at 00 and the sustains at their level, which a held One-shot keeps. | Numeric circular morph; SEED unused. |
+| Sequence | Stepped CV from a counter's phase: staircases up with 2–16 steps and down with 16–2 (0–15), ridges up and down over 3–16 steps, centred and skewed (16–31), staircases and ridges whose risers fall on Euclidean positions E(3–10, 16) (32–47), and a ball bouncing over 16 or 32 steps, keeping 45–80% of its height per bounce (48–63). | Numeric circular morph; SEED unused. |
+| Density | Rhythm's layout with nested patterns: shape 0 is kick on 0 and 16 and snare on 8 and 24, and each shape adds exactly one hit to the one before, in a fixed order ranked by lane and metric position: closed hat on the beats, then on the 8ths, then kick, open hat, percussion and snare ghosts on beats and 8ths. No shape uses a 16th-note position. Shape 63 has 67 hits. SHAPE is a fill control: more is always a superset. | Discrete shape; SEED unused. 63 wraps to 0, the sparsest. |
 
 The complete generator is [`tools/generate_lookup.py`](../tools/generate_lookup.py).
 It uses the Python standard library and no external table data. The shipped
@@ -43,6 +46,13 @@ the Walsh masks and the measured audio statistics. The generated
 `LibraryIdentity.hpp` pins the runtime fingerprint. Builtins are loaded and
 verified during construction, never generated in `process()`.
 
+Envelope, Sequence and Density are library v2, `res/lookup-v2.bin`: 49,164
+bytes, a 12-byte `BBLOOK02` header plus 48 KiB, from the same generator, with
+`res/lookup-v2.json` recording each table's SHA-256, the Density hit counts and
+the order Density adds hits in. They are FAMILY 7, 8 and 9, after Custom, so a
+FAMILY saved by an earlier version still names the same family. Without v2 they
+are neutral (80) and the v1 families are unaffected.
+
 The functional role reference is the public [Xaoc Jena manual, rev.
 1989/XJ/1.3](https://xaocdevices.com/manuals/xaoc_jena_manual_A4.pdf): byte lookup,
 phase modulation, audio/CV transforms, Walsh functions, rhythm generation and
@@ -50,17 +60,19 @@ ramp following. The formulas, coefficients, table selection, pattern rules,
 clocking and ramp follower here are independently specified. No manufacturer
 tables, firmware, chart traces or hardware captures are generator inputs.
 
-Library v1 is immutable: future content changes need a new library identity.
-Patches save its SHA-256. A patch asking for a different identity produces a
-neutral builtin output and a context-menu diagnostic; embedded custom tables
-remain available. The runtime checks the shipped bytes against a versioned
+Library v1 is immutable: future content changes need a new library identity,
+as v2 is. Patches save both SHA-256s. A patch asking for a different identity
+produces a neutral output from that library's families only, with a
+context-menu diagnostic; embedded custom tables remain available. A patch from
+before 2.7 names no v2 library and plays v2's families normally if switched to
+them. The runtime checks the shipped bytes against a versioned
 FNV-1a fingerprint; SHA-256 is checked by the generator/asset tests.
 
 ## Controls
 
 | Control | Behavior |
 |---|---|
-| FAMILY | Harmonic, Formant, Fold, Curve, Walsh, Rhythm, Custom. FAMILY CV adds one family per volt and clamps to the ends. |
+| FAMILY | Harmonic, Formant, Fold, Curve, Walsh, Rhythm, Custom, Envelope, Sequence, Density. FAMILY CV adds one family per volt and clamps to the ends, 0 and 9. |
 | SHAPE | Circular 0–64; 64 returns to 0. SHAPE CV adds 64 positions per 10 V, and JUMP adds its steps. |
 | PHASE | ±1 cycle, added to the address modulo 256. PHASE CV adds one cycle per volt, including negative modulation. |
 | PATTERN SEED | Integer 0–255, used by Walsh and Rhythm only. Its effect depends only on the current settings/address, not a running random state. |
@@ -224,5 +236,10 @@ adjacent high bits, gates, Schmitt thresholds, clocked/unclocked changes,
 disconnection, wrap) and through the module (a step on its own sample, bit
 choice, RESET priority, persistence, Initialize), and a Counter feeding both
 BUS IN and JUMP through one-sample cables in random order gives the expected
-Walsh shape for every count at 44.1/48/96 kHz. The audio path performs no heap allocations. GUI and physical
+Walsh shape for every count at 44.1/48/96 kHz. Library v2 tests check its
+identity and every table against the engine; the envelope endings, staircase
+levels, Rhythm layout and one-hit nesting of every Density shape; morphs and
+discrete selection; per-library identities in saved patches; One-shot Counter →
+Envelope restarting on each gate; and Counter CARRY → JUMP on Density adding
+one hit per bar for twelve bars. The audio path performs no heap allocations. GUI and physical
 device behavior require separate workstation checks.

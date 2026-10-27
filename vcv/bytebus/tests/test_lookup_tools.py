@@ -51,6 +51,53 @@ class Tools(unittest.TestCase):
             table = raw[12+index*256:12+(index+1)*256]
             self.assertEqual(record["sha256"],hashlib.sha256(table).hexdigest())
         self.assertEqual(len(manifest["tables"]),384)
+    def test_library_v2(self):
+        # v2 is its own identity; v1 above stays byte-identical.
+        manifest = json.loads((ROOT/"res/lookup-v2.json").read_text())
+        raw = (ROOT/"res/lookup-v2.bin").read_bytes()
+        self.assertEqual(manifest["sha256"],hashlib.sha256(raw).hexdigest())
+        self.assertEqual(manifest["sha256"],"6dca9a367a321379f3ceea33ab27c96a2c02b3d8b109c4bd6d7f89a8a9873b04")
+        self.assertEqual(raw[:12],b"BBLOOK02"+bytes([3,64,0,2]))
+        self.assertEqual(len(raw),12+3*64*256)
+        self.assertEqual(manifest["families"],["Envelope","Sequence","Density"])
+        tables = {}
+        for index,record in enumerate(manifest["tables"]):
+            table = raw[12+index*256:12+(index+1)*256]
+            self.assertEqual(record["sha256"],hashlib.sha256(table).hexdigest())
+            tables[record["family"],record["shape"]] = table
+        self.assertEqual(len(tables),192)
+        # Envelope: the decays (groups 0-2, 4-6) end at 00; the rises (group 3) end at FF;
+        # the sustains (group 7) end at their sustain level, rising with the shape.
+        for shape in range(64):
+            env, group = tables["Envelope",shape], shape//8
+            if group in (0,1,2,4,5,6): self.assertEqual(env[255],0,shape)
+            if group == 3: self.assertEqual((env[0],env[255]),(0,255),shape)
+            if group in (0,1,4,5): self.assertEqual(env[0],255,shape)
+        sustains = [tables["Envelope",56+k][255] for k in range(8)]
+        self.assertEqual(sustains,sorted(sustains)); self.assertEqual(sustains[0],0)
+        # Sequence: piecewise constant; staircases have their step count of levels.
+        for shape in range(64):
+            runs = 1+sum(a!=b for a,b in zip(tables["Sequence",shape],tables["Sequence",shape][1:]))
+            self.assertLessEqual(runs,32,shape)
+        for k,count in enumerate([2,3,4,5,6,8,12,16]):
+            self.assertEqual(len(set(tables["Sequence",k])),count)
+            self.assertEqual(list(tables["Sequence",k]),sorted(tables["Sequence",k]))
+            self.assertEqual(list(tables["Sequence",15-k]),sorted(tables["Sequence",15-k],reverse=True))
+        # Density: Rhythm's layout (hits high for four of eight addresses), and each shape is the
+        # previous one plus exactly one hit, so SHAPE is a fill control.
+        previous = None
+        for shape in range(64):
+            table = tables["Density",shape]
+            for n in range(256):
+                if n%8 >= 4: self.assertEqual(table[n],0)
+                else: self.assertEqual(table[n],table[n-n%8])
+            hits = {(lane,n//8) for n in range(0,256,8) for lane in range(8) if table[n]>>lane&1}
+            self.assertEqual(len(hits),4+shape)
+            self.assertEqual(manifest["tables"][128+shape]["hits"],4+shape)
+            if previous is not None:
+                self.assertTrue(previous < hits and len(hits-previous) == 1, shape)
+            previous = hits
+        self.assertTrue({(0,0),(0,16),(1,8),(1,24)} <= previous)
     def test_sine_recipe_and_frozen_provenance(self):
         table = self.run_compile(self.write("sine.json",self.recipe))
         self.assertEqual([table["values"][n] for n in (0,64,128,192)],[128,0,128,255])
