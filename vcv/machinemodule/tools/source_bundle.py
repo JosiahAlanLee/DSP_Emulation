@@ -26,6 +26,8 @@ def add_tree(tar, source, target):
 
 with tarfile.open(name, 'w:gz') as tar:
     add_tree(tar, ROOT, Path('MachinemoduleRack/vcv/machinemodule'))
+    # The shared adapter this plugin is built from (AGPL-3.0-only, vcv/adapter/README.md).
+    add_tree(tar, ROOT.parent/'adapter', Path('MachinemoduleRack/vcv/adapter'))
     for header in ['GorgonSound.hpp', 'ByteBus.hpp']:
         tar.add(ROOT.parent/'shared'/header, arcname=f'MachinemoduleRack/vcv/shared/{header}')
     # Panel sources use the same palette, outline writer and twelve marks as the

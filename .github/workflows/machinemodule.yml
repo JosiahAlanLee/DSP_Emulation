@@ -2,9 +2,9 @@ name: Machinemodule Rack platforms
 on:
   push:
     branches: [main]
-    paths: ['vcv/machinemodule/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/bytebus/src/**', 'vcv/bytebus/res/**', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/machinemodule.yml']
+    paths: ['vcv/machinemodule/**', 'vcv/adapter/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/bytebus/src/**', 'vcv/bytebus/res/**', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/machinemodule.yml']
   pull_request:
-    paths: ['vcv/machinemodule/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/bytebus/src/**', 'vcv/bytebus/res/**', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/machinemodule.yml']
+    paths: ['vcv/machinemodule/**', 'vcv/adapter/**', 'vcv/shared/GorgonSound.hpp', 'vcv/shared/ByteBus.hpp', 'vcv/bytebus/src/**', 'vcv/bytebus/res/**', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/machinemodule.yml']
   workflow_dispatch:
 permissions:
   contents: read
