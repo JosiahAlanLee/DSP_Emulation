@@ -7,6 +7,7 @@
 #include "../src/engine/Fan.hpp"
 #include "../src/engine/Lattice.hpp"
 #include "../src/engine/ParallelSum.hpp"
+#include "../src/engine/Wheel.hpp"
 #include <set>
 #include <array>
 #include <cassert>
@@ -1108,7 +1109,114 @@ static void parallelSumming() {
     }
 }
 
+static void wheeling() {
+    namespace wh = dspemu::wheel;
+    // FREE: every 24-bit state once in 2^24 steps; without the escape, the same taps are maximal.
+    {
+        std::vector<bool> seen(1u << 24);
+        uint32_t r = 0; std::array<uint32_t, 9> gauss{};
+        for (uint32_t n = 0; n < (1u << 24); ++n) {
+            assert(!seen[r]); seen[r] = true;
+            ++gauss[__builtin_popcount(wh::window(r, 5, 3))];
+            r = wh::stepFree(r);
+        }
+        assert(r == 0);
+        // Any eight distinct stages take every byte equally often: G is exactly binomial.
+        const uint32_t binomial[] = {1, 8, 28, 56, 70, 56, 28, 8, 1};
+        for (int k = 0; k <= 8; ++k) assert(gauss[k] == binomial[k] << 16);
+        auto plain = [](uint32_t x) { return (x << 1 | ((x >> 23 ^ x >> 22 ^ x >> 21 ^ x >> 16) & 1)) & wh::ALL; };
+        uint32_t x = 1, n = 0;
+        do { x = plain(x); ++n; } while (x != 1);
+        assert(n == (1u << 24) - 1);
+        for (uint32_t y = 1; y < 4096; ++y) assert(((y & 0x7fffff) == 0) || wh::stepFree(y) == plain(y));
+        assert(wh::stepFree(0x800000) == 0 && wh::stepFree(0) == 1);
+    }
+    // The window, for every OFFSET and STRIDE, against stage-by-stage reads.
+    {
+        std::mt19937 r(4);
+        for (int t = 0; t < 200; ++t) {
+            uint32_t x = r() & wh::ALL;
+            for (int offset = 0; offset < 24; ++offset) for (int stride = 1; stride <= 3; ++stride) {
+                uint8_t w = wh::window(x, offset, stride);
+                for (int k = 0; k < 8; ++k) assert((w >> k & 1) == (x >> ((offset + stride * k) % 24) & 1));
+            }
+        }
+        assert(wh::dac(0) == -5 && wh::dac(128) == 0 && wh::dac(255) == 127 * 5.f / 128 && wh::gauss(0) == -5 && wh::gauss(255) == 5 && wh::gauss(0x0f) == 0);
+    }
+    // LOOP: LENGTH L recirculates; a single bit gives LOOP GATE a period of exactly L, and after 24
+    // edges the whole register repeats every L. Off continues FREE: one 48-stage line.
+    for (int length = 0; length <= 24; ++length) {
+        wh::Wheel w; w.clear(0x123456, 1); wh::Parameters p; p.mode = ClockMode::Engine; p.length = length; wh::Inputs in;
+        w.tick(p, in, 48000);
+        std::vector<uint32_t> loops, frees{w.free};
+        std::vector<int> gates;
+        for (int t = 0; t < 200; ++t) { auto o = w.tick(p, in, 48000); loops.push_back(o.loop); frees.push_back(o.free); gates.push_back(o.loopGate); }
+        if (length) {
+            int period = 1; while (period < 200 && !std::equal(gates.begin() + period, gates.end(), gates.begin())) ++period;
+            assert(period == length);
+            for (size_t t = 24; t + length < loops.size(); ++t) assert(loops[t + length] == loops[t]);
+        } else {
+            // After t + 1 edges, LOOP stage j holds FREE's stage 23 from j edges earlier: the line's
+            // stage 24 + j.
+            for (size_t t = 30; t < loops.size(); ++t)
+                for (int j = 0; j < 24; ++j) assert((loops[t] >> j & 1) == (frees[t - j] >> 23 & 1));
+        }
+    }
+    // CAPTURE arms; the next acquisition edge shifts FREE, then copies it into LOOP. RESET wins
+    // over an armed capture's edge, which then lands on the next acquisition.
+    {
+        wh::Wheel w; w.clear(); wh::Parameters p; p.mode = ClockMode::Jack; p.seed = 0x3c; wh::Inputs in;
+        in.clock.clockConnected = true;
+        in.clock.reset = 10; auto o = w.tick(p, in, 48000);
+        assert(o.loaded && o.free == 0x3c3c3c && o.loop == 0x3c3c3c && o.loopWord == 0x3c);
+        in.clock.reset = 0; w.tick(p, in, 48000);
+        for (int k = 0; k < 40; ++k) { in.clock.clock = k % 2 ? 0.f : 10.f; w.tick(p, in, 48000); }
+        assert(w.loop != w.free);
+        in.capture = 10; o = w.tick(p, in, 48000); assert(o.armed && !o.captured && w.loop != w.free);
+        in.capture = 0; for (int k = 0; k < 3; ++k) assert(w.tick(p, in, 48000).armed);
+        uint32_t before = w.free;
+        in.clock.clock = 10; o = w.tick(p, in, 48000);
+        assert(o.captured && !o.armed && o.free == wh::stepFree(before) && o.loop == o.free);
+        in.clock.clock = 0; w.tick(p, in, 48000);
+        in.clock.clock = 10; o = w.tick(p, in, 48000); uint32_t once = wh::stepFree(before);
+        assert(!o.captured && o.free == wh::stepFree(once) && o.loop == wh::stepLoop(once, once, 16));
+        in.clock.clock = 0; w.tick(p, in, 48000);
+        in.captureButton = true; w.tick(p, in, 48000); in.captureButton = false;
+        in.clock.reset = 10; in.clock.clock = 10; o = w.tick(p, in, 48000);
+        assert(o.loaded && !o.advanced && o.armed && o.loop == 0x3c3c3c);
+        in.clock.reset = 0; in.clock.clock = 0; w.tick(p, in, 48000);
+        in.clock.clock = 10; o = w.tick(p, in, 48000);
+        assert(o.captured && o.loop == wh::stepFree(0x3c3c3c));
+    }
+    // RESET replays: the same words after every reset, under random clocks; one-sample strobes,
+    // never two in a row.
+    {
+        wh::Wheel w; w.clear(); wh::Parameters p; p.mode = ClockMode::Jack; p.seed = 0xa7; p.length = 11; p.stride = 2; p.offset = 3;
+        wh::Inputs in; in.clock.clockConnected = true;
+        std::vector<std::vector<uint8_t>> runs;
+        std::mt19937 r(12); bool last = false;
+        for (int run = 0; run < 4; ++run) {
+            in.clock.reset = 10; in.clock.clock = 0;
+            auto o = w.tick(p, in, 48000); assert(!(last && o.clk)); last = o.clk; in.clock.reset = 0;
+            std::vector<uint8_t> words;
+            for (int t = 0; t < 5000; ++t) {
+                in.clock.clock = r() % 3 ? 0.f : 10.f;
+                o = w.tick(p, in, 48000); assert(!(last && o.clk)); last = o.clk;
+                if (o.advanced) { words.push_back(o.loopWord); words.push_back(o.freeWord); }
+            }
+            assert(words.size() >= 1200); words.resize(1200); runs.push_back(words);
+        }
+        for (auto& run : runs) assert(run == runs[0]);
+    }
+    // The internal clock at 44.1/48/96 kHz.
+    for (double sr : {44100., 48000., 96000.}) {
+        wh::Wheel w; w.clear(); wh::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 200; wh::Inputs in;
+        int edges = 0; for (int t = 0; t < int(sr); ++t) edges += w.tick(p, in, sr).advanced;
+        assert(edges >= 199 && edges <= 200);
+    }
+}
+
 int main() {
-    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming();
-    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks\n";
+    conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling();
+    std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks\n";
 }
