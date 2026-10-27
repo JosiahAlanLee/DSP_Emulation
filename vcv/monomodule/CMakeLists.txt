@@ -32,6 +32,10 @@ endif()
 set(MNM_DSP56300_DIR "${DSP56300_DIR}" CACHE PATH "" FORCE)
 set(MNM_BUILD_TESTS OFF)
 include("${CORE_DIR}/cmake/dsp56300.cmake")
+if(MINGW)
+    # Expose declarations for APIs which MmuHelper already resolves dynamically, as Machinemodule does.
+    target_compile_definitions(dsp56kBase PRIVATE _WIN32_WINNT=0x0a00 NTDDI_VERSION=0x0a000005)
+endif()
 
 # The parts of Monomodule's engine a Rack voice needs: the OS decoder, the DSP harness and the host model.
 # The resampler comes through the shared adapter's bridge, compiled once. The pinned headers use size_t
