@@ -23,8 +23,7 @@ sounding keeps the take it started with.
    starts on the first clock pulse at or after ARM and lasts LENGTH beats of
    pulses. Without CLOCK it starts at once and lasts LENGTH beats at **TEMPO**.
 4. **REC** is high while the take runs, and **DONE** pulses (1 ms) when it ends.
-   The kit receives the end one sample later and installs the take after
-   processing that sample's hits; subsequent hits play it.
+   The slot plays the take from its next hit.
 
 **GAIN** scales what is recorded, 0–200%.
 
@@ -42,8 +41,10 @@ sounding keeps the take it started with.
   sample on. KIT uses the kit's output on the receiving sample, one sample later;
   IN + KIT sums those two signals. SLOT is read when the kit receives the start;
   SOURCE and GAIN are read throughout the take. LENGTH, PPQN and TEMPO set the
-  duration when Capture starts. Changing whether CLOCK is patched mid-take
-  switches between the pulse and sample countdowns, which do not advance together.
+  duration when Capture starts. A take started with CLOCK ends on pulses while
+  CLOCK remains patched. If CLOCK is removed, it ends at its TEMPO duration
+  measured from the start (at once if that duration has already elapsed). A
+  take started without CLOCK ignores a clock patched part-way.
 - ARM while a take is running does nothing; it cannot restart a take part-way.
 - Clock pulses per beat (1, 2, 4, 8, 12 or 24) are in the context menu and saved
   with the patch.
@@ -58,14 +59,12 @@ offset, as for a loaded WAV, so it plays back at its recorded pitch at TUNE 0.
 - **Free memory** is every part of memory that is not a slot's current take, not
   a replaced take still sounding, and not being saved. A take is written into the
   longest such stretch. The display's ROOM shows how long a take can be, or, while
-  one is recording, how much more it can hold. Idle ROOM refreshes about every
-  1,024 kit samples and does not subtract save pins; allocation does.
+  one is recording, how much more it can hold.
 - **When a take ends** the kit makes it its slot's take on receiving the end,
   after that sample's hits. Takes shorter than two frames are discarded. A hit
   on that slot that started earlier keeps playing the replaced take to its end, or until the next
-  hit. On that hit the voice switches to the current take's memory region
-  before its 1.5 ms retrigger fade and restart, and frees the replaced region.
-  Every other slot is untouched throughout.
+  hit. Known limit: during the 1.5 ms fade before a retrigger, the voice already
+  reads the new take. Every other slot is untouched throughout.
 - **No room:** a take that cannot start (no free stretch of two frames) is not
   made; the slot keeps its take. REC still stays high for the requested duration
   and DONE pulses at its end; **NO ROOM** appears once REC and ARMED are off.
@@ -75,8 +74,9 @@ offset, as for a loaded WAV, so it plays back at its recorded pitch at TUNE 0.
 - **Moving Capture away** mid-take ends the take there.
 - **Compact the bank** (Otis Kit's menu) packs every slot, takes included, back
   into one run of memory, which joins the free stretches. It stops sounding hits
-  and discards the audio recorded so far, as loading a WAV does. If REC is
-  still high, the remaining tail starts a new take on the next kit sample.
+  and drops a take in progress, as loading a WAV does. Nothing more is recorded
+  until Capture ends that request and starts a new take; REC and DONE keep
+  their timing.
 
 ## Saving
 
@@ -124,7 +124,11 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
   - save and restore of the take's audio, name and rate;
   - resampling the kit at half gain;
   - no room, a cut take, a save during a take, TEMPO length, Capture moved away
-    mid-take, and compaction keeping every take.
+    mid-take, and compaction keeping every completed take;
+  - loading or compacting during a take discards it without recording its tail,
+    with REC and DONE unchanged and the next take recording normally;
+  - CLOCK removed before or after the TEMPO deadline, CLOCK patched during an
+    unclocked take, and a slow clock kept patched past the TEMPO deadline.
 - `tests/plugin_test.cpp`: the compiled plugin has OTIS Sampler, Otis Kit and
   Otis Capture.
 - OTIS Sampler's legacy trace is unchanged.

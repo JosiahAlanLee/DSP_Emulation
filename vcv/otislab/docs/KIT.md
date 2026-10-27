@@ -57,7 +57,8 @@ A light by each slot number flashes on its hits.
 A slot is one voice: a new hit on a slot that is still sounding fades it out
 (OTIS's 1.5 ms declick) and restarts it, as a drum machine's track does, while
 different slots overlap freely. An empty slot ignores its hits. Hits are
-one-shots; a falling gate does not stop them.
+one-shots; a falling gate does not stop them. Known limit: if Capture has
+replaced the take, the retrigger fade already reads the new take.
 
 TUNE, LEVEL, FILTER, DECAY and START act on a sounding hit as they move.
 START changes its playback boundary and can move playback back inside that
@@ -78,8 +79,9 @@ LEVEL CV are held from the hit.
   sound. Off by default.
 - How much of the bank is in use, and **Compact the bank**, which packs every
   slot, takes included, back into one run of memory (it stops sounding hits).
-  If Capture is recording, the in-progress audio is discarded; while REC stays
-  high, its remaining tail starts as a new take on the next kit sample.
+  Loading or compacting during a take discards it; nothing more is recorded
+  until Capture ends that request and starts a new take. REC and DONE keep
+  their timing.
 
 ## Saving and reset
 

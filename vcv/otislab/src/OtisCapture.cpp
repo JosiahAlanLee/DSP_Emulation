@@ -22,7 +22,7 @@ struct OtisCapture : Module {
     otis::kit::CaptureStatus statusBuffers[2];   // owned here; the kit on the left writes them
     dsp::SchmittTrigger clock, armTrigger;
     dsp::PulseGenerator done;
-    bool buttonHigh = false, armed = false, recording = false;
+    bool buttonHigh = false, armed = false, recording = false, takeClocked = false;
     int64_t pulsesLeft = 0, samplesLeft = 0;
     std::atomic<int> ppqn{4};                    // clock pulses per beat
     // For the display (UI thread).
@@ -65,9 +65,11 @@ struct OtisCapture : Module {
         if (!linked) { armed = false; if (recording) stop(); }
         else if (recording) {
             // A take covers the samples from its start pulse up to, not including, the pulse that ends it.
-            if (clocked ? pulse && --pulsesLeft <= 0 : --samplesLeft <= 0) stop();
+            // Keep the tempo fallback measured from the start, even while counting pulses.
+            --samplesLeft;
+            if (takeClocked && clocked ? pulse && --pulsesLeft <= 0 : samplesLeft <= 0) stop();
         } else if (armed && (!clocked || pulse)) {
-            armed = false; recording = true;
+            armed = false; recording = true; takeClocked = clocked;
             pulsesLeft = std::max<int64_t>(1, std::llround(beats * ppqn.load(std::memory_order_relaxed)));
             float tempo = std::isfinite(params[TEMPO].getValue()) ? clamp(params[TEMPO].getValue(), 40.f, 240.f) : 120.f;
             samplesLeft = std::max<int64_t>(1, std::llround(double(beats) * 60 / tempo * args.sampleRate));
@@ -94,7 +96,7 @@ struct OtisCapture : Module {
         }
     }
     void onReset(const ResetEvent& e) override {
-        Module::onReset(e); armed = recording = false; pulsesLeft = samplesLeft = 0; ppqn = 4;
+        Module::onReset(e); armed = recording = takeClocked = false; pulsesLeft = samplesLeft = 0; ppqn = 4;
     }
     json_t* dataToJson() override {
         json_t* root = json_object(); json_object_set_new(root, "ppqn", json_integer(ppqn.load())); return root;
