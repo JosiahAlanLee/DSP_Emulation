@@ -94,3 +94,11 @@ establish all firmware behavior or analog circuitry. See
 [`tests/hardware/README.md`](../tests/hardware/README.md) for repeatable inputs
 and recording metadata. No live audio-device or hardware MIDI test was
 performed in the development container.
+
+The [recording comparison tools](CALIBRATION.md) prepare padded MIDI and exact
+full-sequence float reference WAVs, store chain metadata and file hashes, and
+produce pending/partial measurement reports. Known-signal and real-renderer
+tests cover delay/gain/DC, pitch, burst intervals, 24-bit/stereo input,
+possible clipping and changed reference inputs. Synthetic data checks the
+measurement path; it does not change the unmeasured status above. No fitted
+parameters are written back to the plugin.
