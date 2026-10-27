@@ -31,15 +31,27 @@ never a copy. Not affiliated with Elektron, Akai or VCV.
 | GAIN | Output level. |
 | P1–P8 + CV | Raw offsets to the SYN page, added to each note's locks or the machine's defaults, sampled at the note. The menu lists the selected machine's parameter names. |
 | RESET | A rising edge ends every note. |
+| INP A / INP B | Audio for the FX machines. |
 
 | Output | |
 | --- | --- |
 | LEFT / RIGHT | The main pair, OUT BUS AB, 5 V per full scale. |
 | TRACKS L / TRACKS R | Each track on its own channel, tracks 1–6, left and right. |
 
-**FX machines** (THRU, REVERB, CHORUS, DYNAMIX, RINGMOD, PHASER, FLANGER) process the
-track before them (NEIBOR), as on the hardware; track 1's input is silence. The
-hardware's audio inputs, INP A and INP B, come in the next version.
+**FX machines** (THRU, REVERB, CHORUS, DYNAMIX, RINGMOD, PHASER, FLANGER) process
+audio. Each track's source is under **FX inputs** in the menu, as KIT > ROUTING offers
+on the hardware:
+
+| Source | |
+| --- | --- |
+| NEIBOR | The track before it, as rendered in the same block (track 1 hears silence) |
+| INP A, INP B | The INP A or INP B jack, mono |
+| INP A+B | Both jacks, INP A left and INP B right |
+
+Track 1 starts on INP A+B and tracks 2–6 on NEIBOR, as in Monomodule Six. The choice
+is saved with the patch. INP A and INP B take audio at 5 V per full scale. At any rate
+but 44.1 kHz they cross a converter to the engine's rate and back, which the menu's
+latency includes.
 
 ## Limits of this version
 

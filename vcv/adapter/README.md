@@ -1,19 +1,21 @@
 # The emulated-instrument adapter
 
 The Rack-side plumbing shared by the plugins that run an emulated Elektron instrument
-in Rack: Machinemodule (the Machinedrum) today, the Monomachine next (Gorgon roadmap,
+in Rack: Machinemodule (the Machinedrum) and Monomodule (the Monomachine, Gorgon roadmap
 C2). It holds what doesn't depend on which instrument it is:
 
 | File | What it does |
 | --- | --- |
 | `src/Scheduling.hpp` | Hits, events and the blocks the audio thread hands the worker, the lock-free SPSC queue, Gorgon sound-link reception (`LinkState`), and per-hit control capture (`capture`, `resolve`) |
-| `src/Renderer.hpp` | The worker-side renderer: events onto the emulator's 44.1 kHz native blocks, never early, then converted to Rack's rate |
+| `src/Renderer.hpp` | The worker-side renderer: events onto the emulator's 44.1 kHz native blocks, never early, then converted to Rack's rate; audio inputs converted the other way |
 | `src/Worker.hpp` | The worker thread: loading the OS through a factory, generations, the bounded queues both ways, counters |
 | `src/RackLink.hpp` | The Rack parts: the sound-link packet from a Gorgon on the left, and polyphonic per-track CV |
 | `src/ResamplerCompat.hpp`, `src/ResamplerBridge.cpp` | Compile the core's resampler unmodified |
 
-An instrument supplies a `Layout` (its track and output-channel counts), a `Backend`
-(the emulator: `fire`, `panic`, `render`), and its module and panel.
+An instrument supplies a `Layout` (its track, output-channel and audio-input counts),
+a `Backend` (the emulator: `fire`, `release`, `panic`, `render`, and, if it has inputs or
+per-track settings, `input` and `configure`), and its module and panel. An instrument
+without inputs, like Machinemodule, renders exactly as it did before inputs existed.
 
 ## The license boundary
 
@@ -42,7 +44,7 @@ the owner's decision, made explicitly, not a side effect of this extraction.
 Includes go one way: `vcv/adapter/` may include `vcv/shared/` (BSD into AGPL is
 fine), never the reverse. A BSD plugin must not include anything from here.
 
-**The instruments' own code: `vcv/machinemodule/`, and later the Monomachine's.**
+**The instruments' own code: `vcv/machinemodule/` and `vcv/monomodule/`.**
 Backends that include an emulator core (`Machinedrum.hpp`), firmware decoders,
 sample banks, modules and panels. All AGPL-3.0-only, with their own notices.
 

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Monomachine's instance of the shared adapter (vcv/adapter): six tracks; the stereo mix, then
-// six track lefts and six track rights; 16-frame native blocks, as Monomodule's DSP harness runs.
+// six track lefts and six track rights; 16-frame native blocks, as Monomodule's DSP harness runs; and
+// the hardware's two audio inputs, INP A and INP B, for the FX machines.
 #pragma once
 #include "../../../adapter/src/Scheduling.hpp"
 
 namespace mnm_rack {
-using Layout=emu_rack::Layout<6,14,16>;
-constexpr int tracks=Layout::tracks, channels=Layout::channels, nativeFrames=Layout::nativeFrames;
+using Layout=emu_rack::Layout<6,14,16,2>;
+constexpr int tracks=Layout::tracks, channels=Layout::channels, nativeFrames=Layout::nativeFrames, inputs=Layout::inputs;
 constexpr int trackLeft=2, trackRight=2+tracks;   // first channel of each per-track stereo half
 using emu_rack::params;
 using emu_rack::frames;
@@ -16,7 +17,9 @@ using emu_rack::finite;
 using emu_rack::Edge;
 using emu_rack::Hit;
 using emu_rack::Event;
-using emu_rack::InputBlock;
+using InputBlock=emu_rack::InputBlockOf<inputs>;
+// An FX track's input, as the hardware's KIT > ROUTING names them, in a block's per-track settings.
+enum FxSource : uint8_t { NEIBOR=0, INP_A=1, INP_B=2, INP_AB=3 };
 using emu_rack::LinkState;
 using emu_rack::resolve;
 using OutputBlock=emu_rack::OutputBlock<channels>;

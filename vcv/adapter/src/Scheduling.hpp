@@ -15,10 +15,11 @@ namespace emu_rack {
 static_assert(std::atomic<uint64_t>::is_always_lock_free,"The Rack callback requires lock-free queue counters");
 constexpr int params=8, frames=128, maxEvents=64;
 constexpr int queueLatency=1024; // host samples, independent of Rack's block size
-// An instrument's shape: its tracks, its output channels (the stereo mix, then one per track), and the
-// frames the emulator renders at a time (its voice/control interface).
-template<int Tracks,int Channels,int NativeFrames=32> struct Layout {
-    static constexpr int tracks=Tracks, channels=Channels, nativeFrames=NativeFrames;
+// An instrument's shape: its tracks, its output channels (the stereo mix, then one per track), the
+// frames the emulator renders at a time (its voice/control interface), and the host audio channels it
+// takes in (an FX machine's inputs; none for a drum machine).
+template<int Tracks,int Channels,int NativeFrames=32,int Inputs=0> struct Layout {
+    static constexpr int tracks=Tracks, channels=Channels, nativeFrames=NativeFrames, inputs=Inputs;
 };
 inline float finite(float v, float lo, float hi, float fallback=0) {
     return std::isfinite(v)?std::clamp(v,lo,hi):fallback;
@@ -42,24 +43,34 @@ struct Hit {
 };
 // A hit, a panic, or a release: the gate of hit.track fell, so a pitched instrument ends its note.
 struct Event { uint16_t offset=0; bool panic=false, release=false; Hit hit; };
-struct InputBlock {
+// The block's host audio for an instrument with inputs, one frame per host sample.
+template<int Inputs> struct InputAudio { float samples[frames][Inputs]={}; };
+template<> struct InputAudio<0> {};
+constexpr int trackSettings=16;
+template<int Inputs> struct InputBlockOf {
     uint64_t generation=0;
     int64_t start=0;
     double rate=48000;
     uint16_t count=0;
     bool overflow=false;
     Event events[maxEvents];
+    // Per-track settings the instrument reads with every block, such as an FX track's input source.
+    // Their meaning is the instrument's; a drum machine has none.
+    uint8_t settings[trackSettings]={};
+    InputAudio<Inputs> audio;
     bool append(const Event& event) {
         if (count==maxEvents) {overflow=true;return false;}
         events[count++]=event;return true;
     }
 };
+using InputBlock=InputBlockOf<0>;
 template<int Channels> struct OutputBlock {
     uint64_t generation=0;
     int64_t start=0;
     float samples[frames][Channels]={};
 };
-static_assert(std::is_trivially_copyable<InputBlock>::value,"Event queue must own whole immutable snapshots");
+static_assert(std::is_trivially_copyable<InputBlock>::value&&std::is_trivially_copyable<InputBlockOf<2>>::value,
+              "Event queue must own whole immutable snapshots");
 // Single producer / single consumer, never reset while either thread is alive.
 // Generations invalidate old blocks without racing a queue-index reset.
 template<class T, size_t N> class Queue {

@@ -41,14 +41,20 @@ class Monomachine final:public Backend {
     std::array<std::unique_ptr<mnm::MonoVoice>,tracks> voices;
     std::array<MnmMachine,tracks> current{};
     std::array<bool,tracks> fx{};
+    std::array<uint8_t,tracks> source{};   // FxSource per track
     float left[tracks][nativeFrames]={}, right[tracks][nativeFrames]={}, silence[nativeFrames]={};
+    float inA[nativeFrames]={}, inB[nativeFrames]={};   // INP A and INP B at 44.1 kHz, this block
+    void route(int t) {
+        auto in=source[size_t(t)]==INP_A?mnm::host::FxInput::InpA:source[size_t(t)]==INP_B?mnm::host::FxInput::InpB:
+                source[size_t(t)]==INP_AB?mnm::host::FxInput::InpAB:mnm::host::FxInput::Neighbor;
+        voices[size_t(t)]->host().setRouting(fx[size_t(t)]?mnm::host::dspInputBits(in):0u);
+    }
     void assign(int t,MnmMachine m) {
         auto& host=voices[size_t(t)]->host();
         host.setMachine(m);   // also loads the AMP/FILT/EFX page defaults, as a machine assign does
         current[size_t(t)]=m;fx[size_t(t)]=mnm::host::isFxMachine(m);
-        // An FX machine reads the track before it (NEIBOR) and must be trigged to pass audio.
-        host.setRouting(fx[size_t(t)]?mnm::host::dspInputBits(mnm::host::FxInput::Neighbor):0u);
-        if(fx[size_t(t)])host.noteOn(60);
+        route(t);
+        if(fx[size_t(t)])host.noteOn(60);   // an FX machine must be trigged to pass audio
     }
 public:
     explicit Monomachine(const std::string& path)
@@ -93,15 +99,27 @@ public:
         return true;
     }
     void release(int track) override {if(!fx[size_t(track)])voices[size_t(track)]->host().noteOff();}
+    void configure(const uint8_t (&settings)[emu_rack::trackSettings]) override {
+        for(int t=0;t<tracks;++t){
+            uint8_t s=std::min<uint8_t>(settings[t],INP_AB);
+            if(s!=source[size_t(t)]){source[size_t(t)]=s;route(t);}
+        }
+    }
+    void input(const float* frames) override {
+        for(int f=0;f<nativeFrames;++f){inA[f]=frames[f*inputs];inB[f]=frames[f*inputs+1];}
+    }
     void panic() override {
         for(int t=0;t<tracks;++t){voices[size_t(t)]->host().noteOff();assign(t,MnmMachine::GND);}
     }
-    // Tracks render in index order, so an FX track reads the track before it as rendered this block.
+    // Tracks render in index order, so an FX track on NEIBOR reads the track before it as rendered this
+    // block. On INP A/B the DSP takes INP A as its left input and INP B as its right; the routing bits
+    // choose which it hears, as on the hardware.
     void render(float (&out)[nativeFrames][channels]) override {
         for(int t=0;t<tracks;++t){
             if(fx[size_t(t)]){
-                const float* inL=t?left[t-1]:silence;
-                const float* inR=t?right[t-1]:silence;
+                const bool neighbour=source[size_t(t)]==NEIBOR;
+                const float* inL=neighbour?(t?left[t-1]:silence):inA;
+                const float* inR=neighbour?(t?right[t-1]:silence):inB;
                 voices[size_t(t)]->processFx(inL,inR,left[t],right[t],nativeFrames);
             }
             else voices[size_t(t)]->process(left[t],right[t],nativeFrames);

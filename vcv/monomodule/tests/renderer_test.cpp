@@ -30,5 +30,24 @@ int main(){
     Trace trace;Fake fake(&trace);Renderer renderer(fake);InputBlock b;b.generation=1;b.rate=44100;OutputBlock out;
     Event e;e.release=true;e.hit.track=9;b.append(e);Event quiet;quiet.hit.velocity=0;b.append(quiet);renderer.process(b,out);
     assert(trace.events.empty());
+    // INP A reaches the backend at the native rate and comes back out, delayed by exactly the reported
+    // latency: sample for sample at 44.1 kHz, band-limited at other rates.
+    for(double rate:{44100.,48000.,96000.}){
+        Fake echo;Renderer renderer(echo);InputBlock in;in.generation=1;in.rate=rate;in.settings[2]=INP_B;OutputBlock out;
+        const double hz=440;double worst=0;int64_t lag=-1;
+        for(int b=0;b<60;++b){
+            in.start=b*frames;
+            for(int f=0;f<frames;++f)in.audio.samples[f][0]=float(.5*std::sin(2*M_PI*hz*double(b*frames+f)/rate));
+            renderer.process(in,out);
+            lag=renderer.converterLatency();
+            if(b<10)continue;
+            for(int f=0;f<frames;++f){
+                double want=.5*std::sin(2*M_PI*hz*double(b*frames+f-lag)/rate);
+                worst=std::max(worst,std::abs(out.samples[f][trackLeft+5]-want));
+            }
+        }
+        assert(echo.settings[2]==INP_B&&worst<(rate==44100?1e-6:2e-3));
+        std::cout<<rate<<" Hz: INP A through the engine rate and back, "<<lag<<" samples late, worst error "<<worst<<" passed\n";
+    }
     std::cout<<"renderer_test: Monomachine layout passed\n";
 }

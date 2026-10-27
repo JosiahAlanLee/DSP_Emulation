@@ -12,7 +12,7 @@
 
 struct Monomodule : Module {
     enum Params { MACHINE, TEMPO, GAIN, P1, NUM_PARAMS=P1+8 };
-    enum Inputs { TRIG, VOCT, MACHINE_CV, RESET, P1_CV, NUM_INPUTS=P1_CV+8 };
+    enum Inputs { TRIG, VOCT, MACHINE_CV, RESET, P1_CV, INP_A=P1_CV+8, INP_B, NUM_INPUTS };
     enum Outputs { LEFT, RIGHT, TRACKS_L, TRACKS_R, NUM_OUTPUTS };
     enum Lights { READY, LINK, NUM_LIGHTS };
     mnm_rack::Worker worker;
@@ -28,6 +28,9 @@ struct Monomodule : Module {
     std::atomic<uint64_t> underruns{0},lostEvents{0};
     std::mutex pathMutex;
     std::string firmwarePath;
+    // Each FX track's input (mnm_rack::FxSource), set from the menu. Track 1 has no neighbour, so it
+    // starts on INP A+B, as Monomodule Six's does.
+    std::array<std::atomic<int>,mnm_rack::tracks> fxSource;
 
     explicit Monomodule(mnm_rack::Worker::Factory factory=[](const std::string& path,const std::string&){return std::make_unique<mnm_rack::Monomachine>(path);}):worker(std::move(factory)) {
         config(NUM_PARAMS,NUM_INPUTS,NUM_OUTPUTS,NUM_LIGHTS);
@@ -40,6 +43,9 @@ struct Monomodule : Module {
         configInput(MACHINE_CV,"Machine · 0–10 V spans the 22 machines · overrides the selector when the hit has no machine");
         configInput(RESET,"Panic · rising edge ends every note before simultaneous hits");
         for(int i=0;i<8;++i){configParam(P1+i,-127,127,0,"P"+std::to_string(i+1)+" raw offset (SYN page)");configInput(P1_CV+i,"P"+std::to_string(i+1)+" offset · 10 V = 127 · sampled at each note");}
+        configInput(INP_A,"INP A · audio for FX machines · 5 V = full scale");
+        configInput(INP_B,"INP B · audio for FX machines · 5 V = full scale");
+        for(int t=0;t<mnm_rack::tracks;++t)fxSource[size_t(t)]=t?mnm_rack::NEIBOR:mnm_rack::INP_AB;
         configOutput(LEFT,"Main left (OUT BUS AB) · 5 V per full scale");configOutput(RIGHT,"Main right (OUT BUS AB) · 5 V per full scale");
         configOutput(TRACKS_L,"Tracks 1–6, left · polyphonic audio");configOutput(TRACKS_R,"Tracks 1–6, right · polyphonic audio");
         leftExpander.producerMessage=&messages[0];leftExpander.consumerMessage=&messages[1];
@@ -51,9 +57,17 @@ struct Monomodule : Module {
     }
     json_t* dataToJson() override {
         auto* root=json_object();std::lock_guard<std::mutex> guard(pathMutex);
-        json_object_set_new(root,"firmwarePath",json_string(firmwarePath.c_str()));return root;
+        json_object_set_new(root,"firmwarePath",json_string(firmwarePath.c_str()));
+        auto* sources=json_array();for(auto& s:fxSource)json_array_append_new(sources,json_integer(s.load()));
+        json_object_set_new(root,"fxInputs",sources);return root;
     }
     void dataFromJson(json_t* root) override {
+        json_t* sources=json_object_get(root,"fxInputs");
+        for(int t=0;t<mnm_rack::tracks;++t){
+            json_t* s=json_array_get(sources,size_t(t));
+            int v=json_is_integer(s)?int(json_integer_value(s)):-1;
+            fxSource[size_t(t)]=v>=mnm_rack::NEIBOR&&v<=mnm_rack::INP_AB?v:(t?mnm_rack::NEIBOR:mnm_rack::INP_AB);
+        }
         if(const char* path=json_string_value(json_object_get(root,"firmwarePath")))loadFirmware(path);
     }
     void restart(double rate) {
@@ -116,6 +130,10 @@ struct Monomodule : Module {
             }
         }
         external=patched;
+        // INP A/B travel with the block, sample by sample; the worker converts them to the engine's rate.
+        block.audio.samples[offset][0]=mnm_rack::finite(inputs[INP_A].getVoltage(),-10,10)/5.f;
+        block.audio.samples[offset][1]=mnm_rack::finite(inputs[INP_B].getVoltage(),-10,10)/5.f;
+        for(int t=0;t<mnm_rack::tracks;++t)block.settings[t]=uint8_t(fxSource[size_t(t)].load(std::memory_order_relaxed));
         float sample[mnm_rack::channels]={};
         int64_t wanted=frame-mnm_rack::queueLatency;
         const auto* output=worker.front();
@@ -174,6 +192,8 @@ struct MonomoduleWidget:ModuleWidget {
         auto* name = createWidget<MachineNameDisplay>(POS(MACHINE_NAME));
         name->box.size = Vec(MACHINE_NAME_W,MACHINE_NAME_H); name->module = module; addChild(name);
         const Vec ins[] = {POS(TRIG),POS(VOCT),POS(MACHINE_CV),POS(RESET)};
+        addInput(createInputCentered<PJ301MPort>(POS(INP_A),module,Monomodule::INP_A));
+        addInput(createInputCentered<PJ301MPort>(POS(INP_B),module,Monomodule::INP_B));
         const Vec knobs[] = {POS(P1),POS(P2),POS(P3),POS(P4),POS(P5),POS(P6),POS(P7),POS(P8)};
         const Vec cvs[] = {POS(P1_CV),POS(P2_CV),POS(P3_CV),POS(P4_CV),POS(P5_CV),POS(P6_CV),POS(P7_CV),POS(P8_CV)};
         const Vec outs[] = {POS(LEFT),POS(RIGHT),POS(TRACKS_L),POS(TRACKS_R)};
@@ -205,7 +225,16 @@ struct MonomoduleWidget:ModuleWidget {
         menu->addChild(createMenuLabel("Missed audio blocks: "+std::to_string(module->underruns.load())+" · dropped input blocks: "+std::to_string(module->lostEvents.load())));
         menu->addChild(createMenuLabel("Queue overflows: "+std::to_string(module->worker.overflows.load())+" · coalesced notes: "+std::to_string(module->worker.coalesced.load())));
         menu->addChild(createMenuLabel("Unavailable machine notes: "+std::to_string(module->worker.unavailable.load())));
-        menu->addChild(createMenuLabel("FX machines read the track before them (NEIBOR). P1–P8 + CV latch at each note."));
+        menu->addChild(createSubmenuItem("FX inputs","",[module](Menu* submenu){
+            const char* names[]={"NEIBOR (the track before)","INP A","INP B","INP A+B"};
+            for(int t=0;t<mnm_rack::tracks;++t)
+                submenu->addChild(createSubmenuItem(string::f("Track %d",t+1),names[module->fxSource[size_t(t)].load()],[module,t,names](Menu* sources){
+                    for(int s=mnm_rack::NEIBOR;s<=mnm_rack::INP_AB;++s)
+                        sources->addChild(createCheckMenuItem(names[s],"",[module,t,s]{return module->fxSource[size_t(t)].load()==s;},
+                            [module,t,s]{module->fxSource[size_t(t)]=s;}));
+                }));
+        }));
+        menu->addChild(createMenuLabel("An FX machine hears its FX input. P1–P8 + CV latch at each note."));
     }
 };
 Model* modelMonomodule=createModel<Monomodule,MonomoduleWidget>("Monomodule");

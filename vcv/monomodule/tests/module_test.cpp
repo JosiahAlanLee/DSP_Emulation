@@ -44,6 +44,16 @@ int main(){
             assert(off.native-on.native>=1984&&off.native-on.native<=2016);}
         assert(m.outputs[Monomodule::TRACKS_L].getChannels()==6&&m.outputs[Monomodule::TRACKS_R].getChannels()==6);
         std::cout<<"TRIG: gate on V/OCT's note, held until it falls, on track 3 passed\n";
+        // INP A reaches the engine (the fake plays it back on track 6) after the queue; FX inputs are settings.
+        m.inputs[Monomodule::INP_A].channels=1;m.inputs[Monomodule::INP_A].setVoltage(2.5f);
+        m.fxSource[3]=INP_B;
+        for(int f=6000;f<6000+3000;++f){args.frame=f;m.process(args);if(f%128==127)drain();}
+        assert(std::abs(m.outputs[Monomodule::TRACKS_L].getVoltage(5)-2.5f)<1e-4f);   // 0.5 of full scale, back at 5 V
+        json_t* saved=m.dataToJson();
+        assert(json_integer_value(json_array_get(json_object_get(saved,"fxInputs"),3))==INP_B);
+        assert(json_integer_value(json_array_get(json_object_get(saved,"fxInputs"),0))==INP_AB);
+        json_decref(saved);
+        std::cout<<"INP A into the engine, and FX inputs saved with the patch, passed\n";
     }
     {
         // The sound link: lane 6's note and machine lock, and its release.
