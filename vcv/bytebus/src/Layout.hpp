@@ -341,4 +341,51 @@ constexpr float STEPS_B_OUT_X = 266.5, STEPS_B_OUT_Y = 360;
 constexpr float CLOCK_LIGHT_X = 189, CLOCK_LIGHT_Y = 348;
 } // namespace lattice
 
+namespace parallel_sum {
+constexpr float WIDTH = 300;
+constexpr float WORD_X = 12, WORD_Y = 56;
+constexpr float WORD_W = 56, WORD_H = 24;
+constexpr float MASK_DISPLAY_X = 76, MASK_DISPLAY_Y = 56;
+constexpr float MASK_DISPLAY_W = 56, MASK_DISPLAY_H = 24;
+constexpr float SOURCE_X = 140, SOURCE_Y = 57;
+constexpr float SOURCE_W = 82, SOURCE_H = 22;
+constexpr float SENSE_X = 228, SENSE_Y = 57;
+constexpr float SENSE_W = 60, SENSE_H = 22;
+constexpr float RATE_X = 34, RATE_Y = 124;
+constexpr float MASK_X = 88, MASK_Y = 124;
+constexpr float THRESHOLD_X = 142, THRESHOLD_Y = 124;
+constexpr float SEED_X = 196, SEED_Y = 124;
+constexpr float LOAD_X = 238, LOAD_Y = 124;
+constexpr float RESET_LIGHT_X = 254, RESET_LIGHT_Y = 112;
+constexpr float HOT_X = 276, HOT_Y = 124;
+constexpr float STAGE0_LIGHT_X = 27.5, STAGE0_LIGHT_Y = 190;
+constexpr float W0_X = 27.5, W0_Y = 211;
+constexpr float STAGE1_LIGHT_X = 62.5, STAGE1_LIGHT_Y = 190;
+constexpr float W1_X = 62.5, W1_Y = 211;
+constexpr float STAGE2_LIGHT_X = 97.5, STAGE2_LIGHT_Y = 190;
+constexpr float W2_X = 97.5, W2_Y = 211;
+constexpr float STAGE3_LIGHT_X = 132.5, STAGE3_LIGHT_Y = 190;
+constexpr float W3_X = 132.5, W3_Y = 211;
+constexpr float STAGE4_LIGHT_X = 167.5, STAGE4_LIGHT_Y = 190;
+constexpr float W4_X = 167.5, W4_Y = 211;
+constexpr float STAGE5_LIGHT_X = 202.5, STAGE5_LIGHT_Y = 190;
+constexpr float W5_X = 202.5, W5_Y = 211;
+constexpr float STAGE6_LIGHT_X = 237.5, STAGE6_LIGHT_Y = 190;
+constexpr float W6_X = 237.5, W6_Y = 211;
+constexpr float STAGE7_LIGHT_X = 272.5, STAGE7_LIGHT_Y = 190;
+constexpr float W7_X = 272.5, W7_Y = 211;
+constexpr float CLOCK_IN_X = 34, CLOCK_IN_Y = 278;
+constexpr float RESET_IN_X = 92, RESET_IN_Y = 278;
+constexpr float INJECT_IN_X = 150, INJECT_IN_Y = 278;
+constexpr float MASK_IN_X = 208, MASK_IN_Y = 278;
+constexpr float W_CV_IN_X = 266, W_CV_IN_Y = 278;
+constexpr float INJECT_LIGHT_X = 168, INJECT_LIGHT_Y = 264;
+constexpr float BUS_OUT_X = 34, BUS_OUT_Y = 344;
+constexpr float CLOCK_OUT_X = 92, CLOCK_OUT_Y = 344;
+constexpr float GATE_OUT_X = 150, GATE_OUT_Y = 344;
+constexpr float CV_OUT_X = 208, CV_OUT_Y = 344;
+constexpr float AUDIO_OUT_X = 266, AUDIO_OUT_Y = 344;
+constexpr float CLOCK_LIGHT_X = 110, CLOCK_LIGHT_Y = 330;
+} // namespace parallel_sum
+
 } // namespace bytebus_layout

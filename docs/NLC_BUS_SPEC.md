@@ -224,6 +224,10 @@ None is needed for the Harriot design above; each would change only a default.
 
 ## 5. Parallel Sum (from Burhans Timbre)
 
+Implemented in ByteBusLab 2.14; the contract is [PARALLEL_SUM.md](../vcv/bytebus/docs/PARALLEL_SUM.md),
+which supersedes §5.2–5.3 where they differ. §5.1 and §5.4 remain the record of
+the sources.
+
 ### 5.1 What the sources establish
 
 - **Documented (B1, B4).** Three uses: timbre generator, CV pattern sequencer,

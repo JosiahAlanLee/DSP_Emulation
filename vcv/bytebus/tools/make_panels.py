@@ -353,6 +353,47 @@ def lattice(font):
     return p
 
 
+def parallel_sum(font):
+    p = Panel(300, font)
+    p.title('Parallel Sum', '8-STAGE SHIFT REGISTER / WEIGHTED SUM', 10)
+    p.component('WORD', 'readout', 12, 56, 56, 24, 'B8')
+    p.text('WORD', 40, 92, 7)
+    p.component('MASK_DISPLAY', 'readout', 76, 56, 56, 24, 'B8')
+    p.text('MASK', 104, 92, 7)
+    p.component('SOURCE', 'selector', 140, 57, 82, 22, 'AUTO')
+    p.text('SOURCE', 181, 92, 7)
+    p.component('SENSE', 'selector', 228, 57, 60, 22, 'XNOR')
+    p.text('SENSE', 258, 92, 7)
+    for name, x, label in [('RATE', 34, 'RATE'), ('MASK', 88, 'MASK'), ('THRESHOLD', 142, 'THRESH'), ('SEED', 196, 'SEED')]:
+        p.component(name, 'knob', x, 124)
+        p.text(label, x, 154)
+    p.text('Hz', 34, 164, 6, DIM)
+    p.text('INJECT V', 142, 164, 6, DIM)
+    p.component('LOAD', 'button', 238, 124)
+    p.text('LOAD', 238, 154)
+    p.component('RESET_LIGHT', 'light', 254, 112)
+    p.component('HOT', 'button', 276, 124)
+    p.text('HOT', 276, 154)
+    p.text('STAGE WEIGHTS  (1 = NEWEST)', 150, 178, 6, DIM)
+    for k in range(8):
+        x = 27.5 + 35 * k
+        p.component(f'STAGE{k}_LIGHT', 'light', x, 190)
+        p.component(f'W{k}', 'small_knob', x, 211)
+        p.text(str(k + 1), x, 236, 7)
+    p.rule(247)
+    for name, x, label in [('CLOCK_IN', 34, 'CLOCK'), ('RESET_IN', 92, 'RESET'), ('INJECT_IN', 150, 'INJECT'),
+                           ('MASK_IN', 208, 'MASK BUS'), ('W_CV_IN', 266, 'W CV')]:
+        p.jack(name, x, 278, label)
+    p.component('INJECT_LIGHT', 'light', 168, 264)
+    p.text('POLY 1-8', 266, 299, 6, DIM)
+    p.block(12, 306, 276, 66)
+    for name, x, label in [('BUS_OUT', 34, 'BUS OUT'), ('CLOCK_OUT', 92, 'CLK OUT'), ('GATE_OUT', 150, 'GATE'),
+                           ('CV_OUT', 208, 'CV'), ('AUDIO_OUT', 266, 'AUDIO')]:
+        p.jack(name, x, 344, label, True)
+    p.component('CLOCK_LIGHT', 'light', 110, 330)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
@@ -360,13 +401,15 @@ def main():
     panels = {'reg': register(args.font), 'lookup': lookup(args.font), 'converter': converter(args.font),
               'counter': counter(args.font), 'byte_switch': byte_switch(args.font),
               'pipeline': pipeline(args.font), 'lookup2': lookup2(args.font),
-              'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font)}
+              'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font),
+              'parallel_sum': parallel_sum(args.font)}
     for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
                            ('byte_switch', 'Switch'), ('pipeline', 'Pipeline'),
-                           ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice')]:
+                           ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice'),
+                           ('parallel_sum', 'ParallelSum')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote ten ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote eleven ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':

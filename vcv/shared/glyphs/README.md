@@ -32,6 +32,7 @@ drawn by that project's generator with the seal ornament left off.
 | Converter | III Boundary | voltage and byte words cross between representations |
 | Fan | V Bottleneck | fails the bypass test (one of 32 paths gets through) |
 | Lattice | XI Reflexive loop | the map moves it (each counter's state moves the other through the jumps) |
+| Parallel Sum | X Generative substrate | conditions beneath (the register's bit stream is the material the weights shape) |
 | DrumLab Percussion | X Generative substrate | six synthesis models supply the material for each hit |
 | Machinemodule | X Generative substrate | the drum engine supplies the material for each track |
 

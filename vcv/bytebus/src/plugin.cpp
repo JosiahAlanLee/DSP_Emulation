@@ -12,4 +12,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelCounter2);
     plugin->addModel(modelFan);
     plugin->addModel(modelLattice);
+    plugin->addModel(modelParallelSum);
 }
