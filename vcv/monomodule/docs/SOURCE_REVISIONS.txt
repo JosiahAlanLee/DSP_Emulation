@@ -1,0 +1,2 @@
+monomodule (shnolk, https://github.com/shnolk/monomodule): 23e541021b92d1a5978f36c0a552ac443376df1a
+dsp56300 (https://github.com/dsp56300/dsp56300): c051afad31612c2d2c7a81a7ab23e1c5ac9e61af, with monomodule's ext/patches/0001-dsp56300-mnm.patch

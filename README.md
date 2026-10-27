@@ -61,3 +61,12 @@ validation and current sampling limits.
 DrumLab Percussion, the earlier synthesis prototype, is retired; its directory remains for reference.
 Its dedicated CI builds Windows x64, Linux x64 and both Mac architectures;
 live Machinedrum OS testing has been performed on Linux.
+
+### Monomodule Rack prototype
+
+[`vcv/monomodule`](vcv/monomodule) runs the Monomachine's six tracks on Shnolk's
+[Monomodule](https://github.com/shnolk/monomodule) engine, in a separate AGPL plugin. Gorgon plays it
+through the sound link, a note and its locks per hit; a TRIG and V/OCT cable plays it from anything
+else. A user-supplied OS 1.32B is required. It shares the Rack adapter in [`vcv/adapter`](vcv/adapter)
+with Machinemodule; that README draws the AGPL/BSD boundary. Live testing with the OS has been
+performed on Linux; CI builds the same four platforms.
