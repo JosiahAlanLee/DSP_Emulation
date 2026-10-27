@@ -1,5 +1,6 @@
 // Portable, exhaustive byte-map tests and an independent actual-Voice compiler reference.
 #include "../src/engine/CompileVastish.hpp"
+#include "../src/engine/Lookup2.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -8,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <new>
+#include <random>
 #include <fstream>
 #include <iterator>
 #include <set>
@@ -291,9 +293,75 @@ static void libraryV2() {
     { lu::Engine e; lu::Parameters p; p.family = 42; p.shape = 5; assert(e.tick(library,p,input(0),48000).word == library.table(lu::Density,5)[0]); }
 }
 
+// Lookup2 (docs/LOOKUP2.md): every (A, B) through Logic and Arithmetic against independent
+// references; Walsh linear over GF(2) and one-to-one in each argument; Fold the identity at 0.
+static void twoWords() {
+    namespace l2 = dspemu::lookup2;
+    // Logic: the curated order, each shape a distinct bitwise truth table over (a, b).
+    const int truth[16] = {0b1100, 0b1000, 0b1110, 0b0110, 0b1010, 0b0111, 0b0001, 0b1001,
+                           0b0100, 0b0010, 0b1101, 0b1011, 0b0011, 0b0101, 0b0000, 0b1111}; // bit (2a + b)
+    std::set<int> tables;
+    for (int f = 0; f < 16; ++f) {
+        tables.insert(truth[f]);
+        for (int a = 0; a < 256; ++a) for (int b = 0; b < 256; ++b) {
+            int out = l2::logic(f, uint8_t(a), uint8_t(b));
+            for (int k = 0; k < 8; ++k) assert((out >> k & 1) == (truth[f] >> (2 * (a >> k & 1) + (b >> k & 1)) & 1));
+            assert(l2::logic(f + 16, uint8_t(a), uint8_t(b)) == out);              // four passes around SHAPE
+        }
+    }
+    assert(tables.size() == 16);
+    // Arithmetic against plain-integer and floating references.
+    for (int a = 0; a < 256; ++a) for (int b = 0; b < 256; ++b) {
+        auto clip = [](double v) { return int(std::max(0., std::min(255., v))); };
+        const int want[16] = {
+            (a + b) & 255, clip(a + b - 128), (a - b) & 255, std::abs(a - b), int(std::lround(a * b / 255.)),
+            clip(128 + std::floor((a - 128) * (b - 128) / 128. + .5)), (a + b + 1) / 2, std::max(a, b), std::min(a, b),
+            a > b ? 255 : 0, a == b ? 255 : 0, clip(a + b), clip(a - b), (a * b) & 255, (a * b) >> 8, a % (b + 1)};
+        for (int f = 0; f < 16; ++f) assert(l2::arithmetic(f, uint8_t(a), uint8_t(b)) == want[f]);
+    }
+    // Walsh: shape 0 is A XOR B; every shape is linear and one-to-one in A for each B and in B for each A.
+    l2::Engine e;
+    std::set<std::array<uint16_t, 8>> distinct;
+    std::mt19937 rng(8);
+    for (int s = 0; s < 64; ++s) {
+        distinct.insert(e.masks[s]);
+        auto f = [&](int a, int b) { return e.evaluate(l2::Walsh, s, uint8_t(a), uint8_t(b)); };
+        e.reset();
+        if (s == 0) for (int a = 0; a < 256; ++a) for (int b = 0; b < 256; b += 17) assert(f(a, b) == (a ^ b));
+        for (int fixed = 0; fixed < 256; ++fixed) {
+            std::set<int> byA, byB;
+            for (int v = 0; v < 256; ++v) { byA.insert(f(v, fixed)); byB.insert(f(fixed, v)); }
+            assert(byA.size() == 256 && byB.size() == 256);
+        }
+        for (int k = 0; k < 200; ++k) {
+            int a1 = rng() & 255, a2 = rng() & 255, b1 = rng() & 255, b2 = rng() & 255;
+            assert(f(a1 ^ a2, b1 ^ b2) == (f(a1, b1) ^ f(a2, b2)));
+        }
+    }
+    assert(distinct.size() == 64);
+    // Fold: exactly A at shape 0 (and 64); continuous in SHAPE; B matters elsewhere.
+    for (int a = 0; a < 256; ++a) for (int b = 0; b < 256; b += 5) {
+        assert(l2::fold(0, uint8_t(a), uint8_t(b)) == a && l2::fold(64, uint8_t(a), uint8_t(b)) == a);
+        for (double s = 0; s < 64; s += 1.37) assert(std::abs(int(l2::fold(s, uint8_t(a), uint8_t(b))) - int(l2::fold(s + .01, uint8_t(a), uint8_t(b)))) <= 3);
+    }
+    { int differ = 0; for (int b = 0; b < 256; ++b) differ += l2::fold(32, 100, uint8_t(b)) != l2::fold(32, 100, 128); assert(differ > 100); }
+    // Discrete families select with Lookup's hysteresis: 2.4 reads OR, never a blend.
+    { l2::Engine g; assert(g.evaluate(l2::Logic, 2.4, 0x0f, 0x30) == 0x3f); }
+    // Clocking: A's CLK edge evaluates with B's raw word and the result holds; unclocked A every sample.
+    {
+        l2::Engine g; l2::Parameters p; p.family = l2::Logic; p.shape = 3;
+        bus::Sample a; a.connected = a.clocked = a.rising = a.clk = true; a.rawWord = 0xf0;
+        auto o = g.tick(p, a, 0x0f); assert(o.evaluated && o.word == 0xff && o.clocked && o.clk);
+        a.rising = false; a.rawWord = 0; o = g.tick(p, a, 0x01); assert(!o.evaluated && o.word == 0xff && o.clk);
+        a.clk = false; o = g.tick(p, a, 0x01); assert(o.word == 0xff && !o.clk);
+        bus::Sample u; u.connected = true; u.rawWord = 0x33; o = g.tick(p, u, 0x0f); assert(o.evaluated && o.word == 0x3c && !o.clocked);
+        p.family = 42; o = g.tick(p, u, 0x0f); assert(o.word == g.evaluate(l2::Walsh, 3, 0x33, 0x0f));       // clamped
+    }
+}
+
 int main() {
     auto library = lu::Library::load("../res/lookup-v1.bin");
-    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2();
+    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2(); twoWords();
     bool rejected = false; try { lu::Library::load("../res/no-such-library.bin"); } catch (const std::runtime_error&) { rejected = true; }
     assert(rejected);
     lu::Engine engine; lu::Parameters p; auto s = input(73);
@@ -304,5 +372,5 @@ int main() {
         engine.tick(library,p,s,48000);
     }
     assert(allocations.load() == before);
-    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, no runtime allocations\n";
+    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, Lookup2 Logic/Arithmetic on every (A, B), Walsh linearity and one-to-one shapes, Fold identity and continuity, A-clocked holds, no runtime allocations\n";
 }

@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -42,6 +42,12 @@
       "name": "Pipeline",
       "description": "A byte delay line of 1-64 edges with a per-bit spread and a loop that repeats the last DELAY words; the Clocked Register's clock rules.",
       "tags": ["Delay", "Logic", "Sequencer", "Polyphonic"]
+    },
+    {
+      "slug": "Lookup2",
+      "name": "Lookup2",
+      "description": "Two byte words in, one out: all sixteen bit-logic functions, byte arithmetic with mix and ring, a two-input fold and two-word Walsh maps, on A's clock, with JUMP shape steps.",
+      "tags": ["Logic", "Waveshaper", "Ring modulator", "Polyphonic"]
     }
   ]
 }

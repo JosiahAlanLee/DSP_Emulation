@@ -8,3 +8,4 @@ extern Model* modelConverter;
 extern Model* modelCounter;
 extern Model* modelSwitch;
 extern Model* modelPipeline;
+extern Model* modelLookup2;

@@ -15,6 +15,7 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 |---|---|---|---|
 | Clocked Register | 12 HP | Named clock source selector, held-word hex display, separate bus and clock outputs | [Register](../vcv/bytebus/docs/Register-preview.svg) |
 | Lookup | 16 HP | Named family and Map/Rise/Fall selectors, JUMP jack with bit selector, output hex display, grouped bus/audio outputs | [Lookup](../vcv/bytebus/docs/Lookup-preview.svg) |
+| Lookup2 | 16 HP | Named family selector, SHAPE and B WORD knobs, JUMP jack with bit selector and reset, output hex display, A/B/CV/RESET inputs, grouped bus/audio outputs | [Lookup2](../vcv/bytebus/docs/Lookup2-preview.svg) |
 | Counter | 12 HP | Named clock source and run mode selectors, RATE/INC/MOD/SEED knobs, count hex display, grouped bus, clock and carry outputs | [Counter](../vcv/bytebus/docs/Counter-preview.svg) |
 | Switch | 12 HP | Named clock source, mode and select-bit selectors, RATE/B WORD/C WORD knobs, result hex display, A/B/C/CLOCK inputs, grouped bus and clock outputs | [Switch](../vcv/bytebus/docs/Switch-preview.svg) |
 | Pipeline | 12 HP | Named clock source selector, RATE/DELAY/SPREAD knobs, LOOP latch and CLEAR buttons, output hex display, BUS/CLOCK/RESET/LOOP inputs, grouped bus and clock outputs | [Pipeline](../vcv/bytebus/docs/Pipeline-preview.svg) |

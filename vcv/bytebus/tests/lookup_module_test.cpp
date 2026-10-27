@@ -5,6 +5,7 @@
 #undef PRIVATE
 #include "../src/Register.cpp"
 #include "../src/Lookup.cpp"
+#include "../src/Lookup2.cpp"
 #include <cassert>
 #include <filesystem>
 #include <iostream>
@@ -133,6 +134,37 @@ static void libraryV2Module() {
     json_decref(saved);
 }
 
+// Lookup2 through the module: A passes by default; B WORD, FAMILY CV and SHAPE CV; JUMP steps
+// through the Logic functions; RESET clears them; the steps survive save; Initialize.
+static void lookup2Module() {
+    namespace l2 = dspemu::lookup2; using M = ByteLookup2;
+    M m; outputs(m); m.model=modelLookup2; auto a=args();
+    assert(m.params.size()==5 && m.inputs.size()==6 && m.outputs.size()==2 && m.lights.size()==9);
+    for (int n=0;n<256;n+=7) { set(m.inputs[M::A_IN],n); m.process(a); assert(word(m.outputs[M::BUS_OUT])==n && m.outputs[M::AUDIO_OUT].getVoltage()==dspemu::bus::toVolts(n)); }
+    m.params[M::SHAPE].setValue(1); m.params[M::B_WORD].setValue(0x0f); set(m.inputs[M::A_IN],0x3c); m.process(a);
+    assert(word(m.outputs[M::BUS_OUT])==0x0c);                                                     // AND with B WORD
+    set(m.inputs[M::B_IN],0xf0); m.process(a); assert(word(m.outputs[M::BUS_OUT])==0x30);           // B replaces the word
+    m.inputs[M::FAMILY_CV].channels=1; m.inputs[M::FAMILY_CV].setVoltage(1); m.process(a);          // Arithmetic 1: mix
+    assert(word(m.outputs[M::BUS_OUT])==l2::arithmetic(1,0x3c,0xf0));
+    m.inputs[M::FAMILY_CV].setVoltage(9); m.process(a); assert(word(m.outputs[M::BUS_OUT])==m.engine.evaluate(l2::Walsh,1,0x3c,0xf0));
+    m.inputs[M::FAMILY_CV].channels=0; m.inputs[M::SHAPE_CV].channels=1; m.inputs[M::SHAPE_CV].setVoltage(10./64*2); m.process(a);
+    assert(word(m.outputs[M::BUS_OUT])==(0x3c^0xf0));                                               // Logic 1 + 2 = XOR
+    m.inputs[M::SHAPE_CV].channels=0; m.params[M::SHAPE].setValue(0);
+    // A gate into JUMP walks the sixteen functions; a clocked A holds between its edges.
+    m.inputs[M::JUMP_IN].channels=1; m.inputs[M::JUMP_IN].setVoltage(0); m.process(a);     // connected low: no step
+    for (int f=1;f<=20;++f) {
+        m.inputs[M::JUMP_IN].setVoltage(10); set(m.inputs[M::A_IN],0x3c,true,true); m.process(a);
+        assert(word(m.outputs[M::BUS_OUT])==l2::logic(f,0x3c,0xf0) && m.outputs[M::BUS_OUT].getChannels()==9);
+        m.inputs[M::JUMP_IN].setVoltage(0); set(m.inputs[M::A_IN],0x00,true,false); m.process(a);
+        assert(word(m.outputs[M::BUS_OUT])==l2::logic(f,0x3c,0xf0));
+    }
+    assert(m.jumpSteps.load()==20);
+    json_t* saved=m.toJson(); M r; outputs(r); r.model=modelLookup2; r.fromJson(saved); json_decref(saved);
+    assert(r.jumpSteps.load()==20 && r.params[M::B_WORD].getValue()==0x0f);
+    m.inputs[M::RESET_IN].channels=1; m.inputs[M::RESET_IN].setVoltage(10); m.process(a); assert(m.jumpSteps.load()==0);
+    m.onReset(Module::ResetEvent{}); assert(m.params[M::FAMILY].getValue()==0 && m.params[M::B_WORD].getValue()==0);
+}
+
 static void jump(std::shared_ptr<const lu::Library> library,float sr) {
     ByteLookup m(library); outputs(m); m.model=modelLookup; auto a=args(sr);
     m.params[ByteLookup::FAMILY].setValue(lu::Walsh); m.params[ByteLookup::SHAPE].setValue(5);
@@ -201,13 +233,14 @@ static std::vector<uint8_t> feedback(std::shared_ptr<const lu::Library> library,
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug="ByteBusLab"; plugin.version="2.1.0"; plugin.path=std::filesystem::absolute("..").string();
-    plugin.addModel(modelLookup); plugin.addModel(modelClockedRegister); pluginInstance=&plugin; rack::plugin::plugins.push_back(&plugin);
+    plugin.addModel(modelLookup); plugin.addModel(modelLookup2); plugin.addModel(modelClockedRegister); pluginInstance=&plugin; rack::plugin::plugins.push_back(&plugin);
     auto library=std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
     { ByteLookup packaged; assert(packaged.library->ready && packaged.library->readyV2 && packaged.libraryError.empty()); }
     libraryV2Module();
     adapter(library);
+    lookup2Module();
     for (float sr : {44100.f,48000.f,96000.f}) jump(library,sr);
     auto expected=feedback(library,48000); assert(feedback(library,44100)==expected && feedback(library,96000)==expected);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: real Lookup ports/DAC, bus clock holds, phase CV, verified custom import, full patch restore, UI handoff, packaged assets, Register feedback/reset at 44.1/48/96 kHz, JUMP steps on the same sample, gates, bit choice, RESET priority and persistence, library v2 families, FAMILY CV and per-library identities\n";
+    std::cout << "PASS: real Lookup ports/DAC, bus clock holds, phase CV, verified custom import, full patch restore, UI handoff, packaged assets, Register feedback/reset at 44.1/48/96 kHz, JUMP steps on the same sample, gates, bit choice, RESET priority and persistence, library v2 families, FAMILY CV and per-library identities, Lookup2 ports, words, CVs, JUMP walk and persistence\n";
 }

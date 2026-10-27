@@ -9,6 +9,7 @@
 #include "../src/Counter.cpp"
 #include "../src/Switch.cpp"
 #include "../src/Pipeline.cpp"
+#include "../src/Lookup2.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -533,10 +534,37 @@ static void pipelineLoop() {
     pl.process(a); assert(word(pl.outputs[P::BUS_OUT]) == 0);
 }
 
+// Two Counters into Lookup2 (Logic, XOR) and a third shape stepped by JUMP from the first Counter's
+// CARRY, through one-sample cables in random order: each result is f(A, B) of the words published on
+// A's edge, with B read raw on that sample.
+static std::vector<int> lookup2Chain(float sr, unsigned orderSeed) {
+    namespace l2 = dspemu::lookup2; using C = ByteCounter; using M = ByteLookup2;
+    C ca, cb; M m; connectOutputs(ca); connectOutputs(cb); connectOutputs(m); auto a = args(sr);
+    for (C* c : {&ca, &cb}) { c->params[C::CLOCK_MODE].setValue(1); c->inputs[C::CLOCK_IN].channels = 1; }
+    ca.params[C::INC].setValue(3); ca.params[C::MODULUS].setValue(32); cb.params[C::INC].setValue(11);
+    m.params[M::SHAPE].setValue(3);
+    std::mt19937 order(orderSeed); std::vector<int> out; std::vector<std::array<int, 3>> seen;
+    for (int t = 0; t < 8 * 120; ++t) {
+        for (C* c : {&ca, &cb}) c->inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+        copy(ca.outputs[C::BUS_OUT], m.inputs[M::A_IN]); copy(cb.outputs[C::BUS_OUT], m.inputs[M::B_IN]);
+        copy(ca.outputs[C::CARRY_OUT], m.inputs[M::JUMP_IN]);
+        Module* modules[] = {&ca, &cb, &m}; std::shuffle(std::begin(modules), std::end(modules), order);
+        for (auto* mod : modules) mod->process(a);
+        if (m.outputs[M::BUS_OUT].getVoltage(8) == 10) {
+            out.push_back(word(m.outputs[M::BUS_OUT]));
+            seen.push_back({inputWord(m.inputs[M::A_IN]), inputWord(m.inputs[M::B_IN]), m.jumpSteps.load()});
+        }
+    }
+    assert(out.size() >= 118);
+    for (size_t k = 0; k < out.size(); ++k) assert(out[k] == l2::logic(3 + seen[k][2], uint8_t(seen[k][0]), uint8_t(seen[k][1])));
+    assert(seen.back()[2] > 5);
+    return out;
+}
+
 int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     portsAndState();
     counterPorts();
@@ -555,6 +583,8 @@ int main() {
     auto canon = pipelineCanon(library, 48000, 21);
     assert(pipelineCanon(library, 44100, 22) == canon && pipelineCanon(library, 96000, 23) == canon);
     pipelineLoop();
+    auto twoWords = lookup2Chain(48000, 31);
+    assert(lookup2Chain(44100, 32) == twoWords && lookup2Chain(96000, 33) == twoWords);
     assert(jumpChain(library, 44100, 8) == jumped && jumpChain(library, 96000, 9) == jumped);
     for (uint8_t seed : {uint8_t(0), uint8_t(0xa5), uint8_t(255)}) {
         auto reference = feedback(48000, seed, 1);
@@ -562,5 +592,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz\n";
 }

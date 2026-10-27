@@ -172,4 +172,34 @@ constexpr float CLOCK_OUT_X = 114, CLOCK_OUT_Y = 342;
 constexpr float CLOCK_LIGHT_X = 114, CLOCK_LIGHT_Y = 359;
 } // namespace pipeline
 
+namespace lookup2 {
+constexpr float WIDTH = 240;
+constexpr float BIT0_X = 207, BIT0_Y = 64;
+constexpr float BIT1_X = 182, BIT1_Y = 64;
+constexpr float BIT2_X = 157, BIT2_Y = 64;
+constexpr float BIT3_X = 132, BIT3_Y = 64;
+constexpr float BIT4_X = 107, BIT4_Y = 64;
+constexpr float BIT5_X = 82, BIT5_Y = 64;
+constexpr float BIT6_X = 57, BIT6_Y = 64;
+constexpr float BIT7_X = 32, BIT7_Y = 64;
+constexpr float FAMILY_X = 16, FAMILY_Y = 104;
+constexpr float FAMILY_W = 104, FAMILY_H = 23;
+constexpr float SHAPE_X = 185, SHAPE_Y = 115;
+constexpr float B_WORD_X = 55, B_WORD_Y = 187;
+constexpr float JUMP_IN_X = 120, JUMP_IN_Y = 180;
+constexpr float JUMP_LIGHT_X = 138, JUMP_LIGHT_Y = 160;
+constexpr float JUMP_BIT_X = 96, JUMP_BIT_Y = 198;
+constexpr float JUMP_BIT_W = 48, JUMP_BIT_H = 18;
+constexpr float RESET_X = 185, RESET_Y = 187;
+constexpr float WORD_X = 94, WORD_Y = 236;
+constexpr float WORD_W = 52, WORD_H = 25;
+constexpr float A_IN_X = 28, A_IN_Y = 307;
+constexpr float B_IN_X = 74, B_IN_Y = 307;
+constexpr float FAMILY_CV_X = 120, FAMILY_CV_Y = 307;
+constexpr float SHAPE_CV_X = 166, SHAPE_CV_Y = 307;
+constexpr float RESET_IN_X = 212, RESET_IN_Y = 307;
+constexpr float BUS_OUT_X = 91, BUS_OUT_Y = 353;
+constexpr float AUDIO_OUT_X = 148, AUDIO_OUT_Y = 353;
+} // namespace lookup2
+
 } // namespace bytebus_layout

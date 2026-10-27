@@ -1,6 +1,6 @@
 # ByteBusLab
 
-Six modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Seven modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
@@ -8,11 +8,12 @@ explicit clocking and original table content:
 | **Converter**, 14 HP | Independent ADC/DAC paths, +/-5 or +/-10 V ranges, gain/offset trims and explicit clock policies. | [Converter](docs/CONVERTER.md) |
 | **Clocked Register**, 12 HP | One word of state, selectable clock and reset word; an explicit sampling point for feedback. | [Register](docs/MANUAL.md) |
 | **Lookup**, 16 HP | Nine generated waveform/CV/Walsh/rhythm/envelope/sequence/density families, numeric morphs, ramp tracking, analog or byte input, and a raw DAC output. JUMP steps SHAPE from a bus bit or a gate. Imports original Vastish tables. | [Lookup](docs/LOOKUP.md) |
+| **Lookup2**, 16 HP | Two words in, one out: all sixteen bit-logic functions, byte arithmetic (mix, ring, compare), a two-input fold and two-word Walsh maps, on A's clock, with JUMP. Computed, so no tables. | [Lookup2](docs/LOOKUP2.md) |
 | **Switch**, 12 HP | Two words in, one out, under a control word C: Select A or B by a bit of C, take each bit from A or B, or Mix from A to B. Follows A's clock or reclocks on its own. | [Switch](docs/SWITCH.md) |
 | **Pipeline**, 12 HP | A word returns DELAY (1–64) edges later; SPREAD delays each bit a little more, and LOOP repeats the last DELAY words. The canon of the kit. | [Pipeline](docs/PIPELINE.md) |
 | **Counter**, 12 HP | A word that counts: increment from a knob or a byte bus, modulus 2–256, seed and carry, with Register's clock rules. Loop, One-shot or Pendulum: a divider chain, a ramp that holds, or a triangle. | [Counter](docs/COUNTER.md) |
 
-Plugin **ByteBusLab**, version **2.8.0**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.9.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -35,7 +36,8 @@ gate-free Vastish DSP, and the delayed Converter/Register/Vastish/Lookup/OTIS
 chain. Counter tests cover every word/increment/modulus in all three run modes,
 CARRY chains, a Counter → Lookup rhythm and One-shot → Lookup envelopes. Switch tests cover every (A, B, C) in all three
 modes, a Counter A/B commutator and reclocking. Pipeline tests cover every DELAY and
-SPREAD, loops, a saved looped phrase and a Rhythm canon through Switch. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
+SPREAD, loops, a saved looped phrase and a Rhythm canon through Switch. Lookup2
+tests cover every (A, B) in Logic and Arithmetic and every Walsh shape. Try `examples/byte-bus-io.vcv` with Vastish 2.5 and OTIS
 2.8 installed, and `examples/counter-divider.vcv` with ByteBusLab alone.
 
 The [generator](tools/generate_lookup.py) and per-table manifests ship with the
