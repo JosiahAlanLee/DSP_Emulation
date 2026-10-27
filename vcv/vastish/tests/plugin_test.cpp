@@ -58,10 +58,14 @@ int main() {
         json_t* data=json_object(); json_object_set_new(data,"audioInRange",json_integer(10)); x->dataFromJson(data); json_decref(data);
         auto range=[&] { json_t* d=x->dataToJson(); auto v=json_integer_value(json_object_get(d,"audioInRange")); json_decref(d); return v; };
         assert(range()==10); x->onReset(engine::Module::ResetEvent{}); assert(range()==5);
+        // ...and turns chain mode off.
+        data=json_object(); json_object_set_new(data,"chainFromLeft",json_true()); x->dataFromJson(data); json_decref(data);
+        auto chained=[&] { json_t* d=x->dataToJson(); bool v=json_is_true(json_object_get(d,"chainFromLeft")); json_decref(d); return v; };
+        assert(chained()); x->onReset(engine::Module::ResetEvent{}); assert(!chained());
     }
     // Malformed external CV is contained at the module boundary.
     m->inputs[0].channels=1; m->inputs[1].channels=1; m->inputs[1].setVoltage(10); m->inputs[0].setVoltage(NAN); m->inputs[3].setVoltage(INFINITY);
     for(int i=0;i<1000;++i) { m->process(args); assert(std::isfinite(m->outputs[0].getVoltage())); }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: compiled Rack plugin load, eight-channel pitch/gate, mono velocity/MOD broadcast, disconnect release, patch serialization, 2.5 patch without AUDIO IN range, Initialize range, nonfinite CV containment\n";
+    std::cout<<"PASS: compiled Rack plugin load, eight-channel pitch/gate, mono velocity/MOD broadcast, disconnect release, patch serialization, 2.5 patch without AUDIO IN range, Initialize range and chain, nonfinite CV containment\n";
 }

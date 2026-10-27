@@ -199,6 +199,25 @@ Patching L or R back into AUDIO IN makes an ordinary one-sample feedback loop.
 ByteBusLab cannot compile an AUDIO program into a Lookup table, since its input
 is live audio rather than a byte.
 
+## Chain mode
+
+Place a second Vastish directly to the right of the first and choose **Chain
+from the Vastish on the left** in its context menu. Each of its voices then
+takes the same-numbered voice of the first after that voice's F1–F3 and before
+its AMP, runs it through its own algorithm, F1–F3, AMP and PAN, and plays on the
+first one's notes, velocities and gates; its own V/OCT, GATE and VEL are
+ignored, and its PITCH wave doesn't matter. Its own envelopes, LFOs and FUNs run
+on those notes, so the second Vastish's amp envelope shapes the result, while
+the first one's AMP and PAN apply only to the first one's own L/R. A third
+Vastish to the right of the second, also set to chain, continues it again: nine
+blocks for one voice, the K2600's triple mode.
+
+Take the sound from the last Vastish in the row. Each hop is one sample late,
+like a cable. A gate-free AUDIO voice at the start of the chain stays gate-free
+along it, so the row can process external audio continuously. The menu says
+when there is no Vastish on the left. The setting is saved with the patch, off
+by default. The full rules are in the [contract](CHAIN.md).
+
 ## Use a sample
 
 Choose **Load sample WAV…** from the right-click menu. Loading succeeds before the PITCH selector switches to SAMPLE.

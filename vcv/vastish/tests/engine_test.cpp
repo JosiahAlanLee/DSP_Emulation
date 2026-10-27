@@ -160,5 +160,23 @@ int main() {
             assert(eng.faults==0);
         }
     }
-    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, FUN 3/4 and per-voice AUX, all function endpoints, zero steady-state allocations, AUDIO wave unity and gating, key tracking and every block type\n";
+    // Chain mode: chainAudio replaces the oscillator whatever the wave; a gate-free chained voice is
+    // at unity, otherwise its own amp envelope runs on the gate it is given; non-finite reads 0.
+    {
+        auto p=programs()[0]; p[ALG]=1; p[MASTER]=0; p[F1_TYPE]=p[F2_TYPE]=p[F3_TYPE]=0; p[AMP_ADJ]=0; p[PAN_ADJ]=-1;
+        for(int wave=0;wave<=AUDIO_WAVE;++wave) {
+            p[PITCH_WAVE]=float(wave); Voice v; v.prepare(48000); VoiceInput in; in.chained=in.chainGateFree=true;
+            for(int n=0;n<2000;++n) { in.chainAudio=float(std::sin(.01*n))*1.5f; assert(v.tick(p,in,48000)[0]==in.chainAudio); }
+        }
+        p[PITCH_WAVE]=0; p[AMP_A]=10; p[AMP_D]=0; p[AMP_S]=1;
+        Voice gated; gated.prepare(48000); VoiceInput in; in.chained=true; in.chainAudio=.5f;
+        for(int n=0;n<100;++n) assert(gated.tick(p,in,48000)[0]==0);              // no gate: silent
+        in.gate=true; float first=gated.tick(p,in,48000)[0];
+        for(int n=0;n<1000;++n) gated.tick(p,in,48000);
+        assert(first>0 && first<.01f && std::abs(gated.tick(p,in,48000)[0]-.5f)<1e-6f);
+        Voice bad; bad.prepare(48000); VoiceInput b; b.chained=b.chainGateFree=true; b.chainAudio=std::numeric_limits<float>::quiet_NaN();
+        assert(bad.tick(p,b,48000)[0]==0);
+        b.chainAudio=100; assert(bad.tick(p,b,48000)[0]==16);                   // a safety clamp, far above ±1
+    }
+    std::cout<<"PASS: six algorithms, envelope timing, FUN dependencies, eighteen eight-voice renders, bit-identical idle-voice sleeping, FUN 3/4 and per-voice AUX, all function endpoints, zero steady-state allocations, AUDIO wave unity and gating, key tracking and every block type, chain input\n";
 }

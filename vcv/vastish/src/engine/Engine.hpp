@@ -14,6 +14,10 @@ struct VoiceInput {
     // AUDIO wave: audio is AUDIO IN scaled to ±1. Without a patched gate the voice
     // processes it continuously at unity amp (Live Mode); with one, the amp envelope gates it.
     float audio=0; bool audioConnected=false,gateConnected=false;
+    // Chain mode: the voice continues the same-numbered voice of the Vastish on its left.
+    // chainAudio, that voice after its blocks and before its amp, replaces the oscillator,
+    // and chainGateFree carries whether that voice runs without a gate.
+    bool chained=false,chainGateFree=false; float chainAudio=0;
 };
 // Control-source indices. 0-11 match the Pd patch; 12+ are native additions.
 enum SourceId { SRC_FUN1=5, SRC_FUN2=6, SRC_AMPENV=11, SRC_FUN3=12, SRC_FUN4=13, SRC_AUX1=14,
@@ -125,8 +129,9 @@ struct Voice {
         float pitchControl=control(PITCH_ADJ,p,in.note);
         float x=0,xR=0; bool stereo=false;
         const int wave=choice(p[PITCH_WAVE],AUDIO_WAVE);
-        const bool gateFree=wave==AUDIO_WAVE && in.audioConnected && !in.gateConnected;
-        if(wave==AUDIO_WAVE) x=in.audioConnected && std::isfinite(in.audio) ? clamp(in.audio,-1,1) : 0.f;
+        bool gateFree=wave==AUDIO_WAVE && in.audioConnected && !in.gateConnected;
+        if(in.chained) { x=std::isfinite(in.chainAudio) ? clamp(in.chainAudio,-16,16) : 0.f; gateFree=in.chainGateFree; }
+        else if(wave==AUDIO_WAVE) x=in.audioConnected && std::isfinite(in.audio) ? clamp(in.audio,-1,1) : 0.f;
         else if(wave==BUS_WAVE) x=in.busAConnected ? rotateBus(in.busA,pitchControl) : 0.f;
         else {
         float pitchHz=mtof(clamp(pitchControl,-20,135));
