@@ -289,12 +289,38 @@ static void libraryV2() {
         for (int n = 0; n < 256; ++n) assert(e.tick(library,p,input(uint8_t(n)),48000).word == library.table(lu::Density,10)[n]);
         p.shape = 10.6; assert(e.tick(library,p,input(0),48000).word == library.table(lu::Density,11)[0]);
     }
-    // FAMILY beyond Density clamps to it.
-    { lu::Engine e; lu::Parameters p; p.family = 42; p.shape = 5; assert(e.tick(library,p,input(0),48000).word == library.table(lu::Density,5)[0]); }
+    // FAMILY beyond the last family clamps to it: Ratio since 2.11, neutral here without v3.
+    { lu::Engine e; lu::Parameters p; p.family = 42; p.shape = 5; assert(e.tick(library,p,input(0),48000).word == 128); }
 }
 
 // Lookup2 (docs/LOOKUP2.md): every (A, B) through Logic and Arithmetic against independent
 // references; Walsh linear over GF(2) and one-to-one in each argument; Fold the identity at 0.
+// Library v3 (docs/LOOKUP.md, Ratio): FAMILY 10 reads its own tables; ratio words are never blended,
+// across shapes or across fractional addresses; without v3 it is neutral; v1 and v2 are untouched.
+static void libraryV3() {
+    auto library = lu::Library::load("../res/lookup-v1.bin"); library.loadV2("../res/lookup-v2.bin");
+    { lu::Engine e; lu::Parameters p; p.family = lu::Ratio; assert(e.tick(library,p,input(40),48000).word == 128); }
+    auto before = library.data;
+    library.loadV3("../res/lookup-v3.bin"); assert(library.readyV3);
+    assert(std::equal(before.begin(), before.begin() + (lu::FAMILIES + lu::V2_FAMILIES) * lu::SHAPES * lu::POINTS, library.data.begin()));
+    bool rejected = false; try { lu::Library other; other.loadV3("../res/lookup-v2.bin"); } catch (const std::runtime_error&) { rejected = true; }
+    assert(rejected);
+    std::ifstream file("../res/lookup-v3.bin", std::ios::binary); std::vector<char> raw((std::istreambuf_iterator<char>(file)), {});
+    for (int shape = 0; shape < 64; ++shape) {
+        const uint8_t* stored = reinterpret_cast<const uint8_t*>(raw.data()) + 12 + shape * 256;
+        lu::Engine e; lu::Parameters p; p.family = lu::Ratio; p.shape = shape;
+        for (int n = 0; n < 256; ++n) assert(e.tick(library,p,input(uint8_t(n)),48000).word == stored[n]);
+        // A fractional PHASE moves the address; the result is still one whole word of the table.
+        p.phase = 0.37 / 256;
+        std::set<int> words(stored, stored + 256);
+        for (int n = 0; n < 256; n += 3) assert(words.count(e.tick(library,p,input(uint8_t(n)),48000).word));
+    }
+    // Shape 13.4 reads shape 13, never a blend; ratio words decode to n/d from 1/16 to 16.
+    { lu::Engine e; lu::Parameters p; p.family = lu::Ratio; p.shape = 13.4; assert(e.tick(library,p,input(77),48000).word == library.table(lu::Ratio,13)[77]); }
+    for (int w = 0; w < 256; ++w) assert(lu::ratioN(uint8_t(w)) == (w >> 4) + 1 && lu::ratioD(uint8_t(w)) == (w & 15) + 1);
+    { lu::Engine e; lu::Parameters p; p.family = 99; p.shape = 2; assert(e.tick(library,p,input(0),48000).word == library.table(lu::Ratio,2)[0]); }
+}
+
 static void twoWords() {
     namespace l2 = dspemu::lookup2;
     // Logic: the curated order, each shape a distinct bitwise truth table over (a, b).
@@ -361,7 +387,7 @@ static void twoWords() {
 
 int main() {
     auto library = lu::Library::load("../res/lookup-v1.bin");
-    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2(); twoWords();
+    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2(); libraryV3(); twoWords();
     bool rejected = false; try { lu::Library::load("../res/no-such-library.bin"); } catch (const std::runtime_error&) { rejected = true; }
     assert(rejected);
     lu::Engine engine; lu::Parameters p; auto s = input(73);
@@ -372,5 +398,5 @@ int main() {
         engine.tick(library,p,s,48000);
     }
     assert(allocations.load() == before);
-    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, Lookup2 Logic/Arithmetic on every (A, B), Walsh linearity and one-to-one shapes, Fold identity and continuity, A-clocked holds, no runtime allocations\n";
+    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, library v3 Ratio words never blended, Lookup2 Logic/Arithmetic on every (A, B), Walsh linearity and one-to-one shapes, Fold identity and continuity, A-clocked holds, no runtime allocations\n";
 }

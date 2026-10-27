@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "plugin.hpp"
 #include "engine/Counter2.hpp"
+#include "engine/Lookup.hpp"
 #include "Layout.hpp"
 #include "../../shared/PanelWidgets.hpp"
 #include <atomic>
 
 struct ByteCounter2 : Module {
     enum Params { CLOCK_MODE, RATE, N_PARAM, D_PARAM, SEED, LOAD_BUTTON, NUM_PARAMS };
-    enum Inputs { CLOCK_IN, RESET_IN, NUM_INPUTS };
+    enum Inputs { CLOCK_IN, RESET_IN, RATIO_IN, NUM_INPUTS };   // RATIO appended in 2.11
     enum Outputs { BUS_OUT, CLOCK_OUT, CARRY_OUT, NUM_OUTPUTS };
     enum Lights { BIT0_LIGHT, BIT1_LIGHT, BIT2_LIGHT, BIT3_LIGHT, BIT4_LIGHT,
         BIT5_LIGHT, BIT6_LIGHT, BIT7_LIGHT, CLOCK_LIGHT, RESET_LIGHT, CARRY_LIGHT, NUM_LIGHTS };
     dspemu::bus::Writer writer;
+    dspemu::bus::Reader ratioReader;
     dspemu::counter2::Counter2 state;
     // The accumulator (low 16 bits) and D (above), saved together; the display reads the word.
     std::atomic<uint32_t> published{16u << 16};
@@ -29,6 +31,7 @@ struct ByteCounter2 : Module {
         configButton(LOAD_BUTTON, "Load seed and restart internal clock");
         configInput(CLOCK_IN, "Clock (rising edge)");
         configInput(RESET_IN, "Reset (publishes the seed; takes priority over clock)");
+        configInput(RATIO_IN, "Ratio word: n - 1 in bits 4-7, d - 1 in bits 0-3 (Lookup's Ratio family); replaces N and D");
         configOutput(BUS_OUT, "Phase byte bus (9 channels; 8 in Engine mode)");
         configOutput(CLOCK_OUT, "Published-word clock (one sample pulses)");
         configOutput(CARRY_OUT, "Carry (one sample pulse on an edge that completes a cycle)");
@@ -39,7 +42,7 @@ struct ByteCounter2 : Module {
         return modes[std::max(0, std::min(3, choice))];
     }
     void onReset(const ResetEvent& e) override {
-        Module::onReset(e); state.clear(); published.store(16u << 16);
+        Module::onReset(e); state.clear(); ratioReader.reset(); published.store(16u << 16);
     }
     void process(const ProcessArgs& args) override {
         using namespace dspemu::counter2;
@@ -52,6 +55,10 @@ struct ByteCounter2 : Module {
         p.rateHz = std::exp2(clamp(finite(params[RATE].getValue(), 3), -3.f, 11.f));
         p.n = integer(N_PARAM, 1, 16, 1);
         p.d = integer(D_PARAM, 1, 64, 16);
+        // A patched RATIO replaces the knobs with the ratio word on its data lines (latched on its CLK
+        // when it has one), from 1/16 to 16.
+        auto ratioBus = ratioReader.process(inputs[RATIO_IN]);
+        if (ratioBus.connected) { p.n = dspemu::lookup::ratioN(ratioBus.word); p.d = dspemu::lookup::ratioD(ratioBus.word); }
         p.seed = uint8_t(integer(SEED, 0, 255, 0));
         dspemu::counter2::Inputs in;
         in.clockConnected = inputs[CLOCK_IN].isConnected();
@@ -135,6 +142,7 @@ struct ByteCounter2Widget : ModuleWidget {
         }
         addInput(createInputCentered<PJ301MPort>(POS(CLOCK_IN), module, ByteCounter2::CLOCK_IN));
         addInput(createInputCentered<PJ301MPort>(POS(RESET_IN), module, ByteCounter2::RESET_IN));
+        addInput(createInputCentered<PJ301MPort>(POS(RATIO_IN), module, ByteCounter2::RATIO_IN));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(BUS_OUT), module, ByteCounter2::BUS_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(CLOCK_OUT), module, ByteCounter2::CLOCK_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(CARRY_OUT), module, ByteCounter2::CARRY_OUT));

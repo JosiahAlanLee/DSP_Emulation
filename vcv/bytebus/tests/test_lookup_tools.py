@@ -98,6 +98,39 @@ class Tools(unittest.TestCase):
                 self.assertTrue(previous < hits and len(hits-previous) == 1, shape)
             previous = hits
         self.assertTrue({(0,0),(0,16),(1,8),(1,24)} <= previous)
+    def test_library_v3_ratio(self):
+        # v3 (Ratio): its own identity; every byte a ratio word from its grid, ascending through the
+        # addresses in equal zones, centred on 1/1, over the shape's span; v1 and v2 unchanged.
+        from fractions import Fraction
+        import generate_lookup as g
+        manifest = json.loads((ROOT/"res/lookup-v3.json").read_text())
+        raw = (ROOT/"res/lookup-v3.bin").read_bytes()
+        self.assertEqual(manifest["sha256"],hashlib.sha256(raw).hexdigest())
+        self.assertEqual(manifest["sha256"],"3d269a068061e9a86b0eaaf4c9b4a854a863a3680b39a1814790848e158ab2fd")
+        self.assertEqual(raw[:12],b"BBLOOK03"+bytes([1,64,0,3]))
+        self.assertEqual(len(raw),12+64*256)
+        grids = g.ratio_grids()
+        self.assertEqual(list(grids),["Integers","Odds","Threes","Harmonics","Straight","Triplet","Dotted","All"])
+        self.assertEqual([str(r) for r in grids["Harmonics"]],["1/4","1/3","1/2","2/3","3/4","1","4/3","3/2","2","3","4"])
+        self.assertEqual([str(r) for r in grids["Straight"]],["1/16","1/8","1/4","1/2","1","2","4","8","16"])
+        self.assertTrue(set(grids["Triplet"]) >= {Fraction(3,2),Fraction(3,8),Fraction(12)})
+        self.assertTrue(set(grids["Dotted"]) >= {Fraction(2,3),Fraction(1,12),Fraction(16,3)})
+        self.assertEqual(set(grids["All"]),set().union(*(set(v) for k,v in grids.items() if k!="All")))
+        word = lambda w: Fraction((w>>4)+1,(w&15)+1)
+        for shape in range(64):
+            grid = grids[list(grids)[shape//8]]; span = g.RATIO_SPANS[shape%8]
+            table = raw[12+shape*256:12+(shape+1)*256]
+            self.assertEqual(manifest["tables"][shape]["sha256"],hashlib.sha256(table).hexdigest())
+            values = [word(b) for b in table]
+            self.assertTrue(all(v in grid for v in values),shape)
+            self.assertEqual(values,sorted(values))
+            self.assertIn(Fraction(1),values)
+            distinct = list(dict.fromkeys(values))
+            centre = grid.index(Fraction(1))
+            want = grid if span is None else grid[max(0,centre-span):centre+span+1]
+            self.assertEqual(distinct,want)
+            zones = [values.count(v) for v in distinct]
+            self.assertLessEqual(max(zones)-min(zones),1)                 # equal zones, to a byte
     def test_sine_recipe_and_frozen_provenance(self):
         table = self.run_compile(self.write("sine.json",self.recipe))
         self.assertEqual([table["values"][n] for n in (0,64,128,192)],[128,0,128,255])

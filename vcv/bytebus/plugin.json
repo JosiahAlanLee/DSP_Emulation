@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -22,7 +22,7 @@
     {
       "slug": "Lookup",
       "name": "Lookup",
-      "description": "Original generated harmonic, formant, fold, CV, Walsh, rhythm, envelope, step-sequence and nested-density transforms, with numeric morphing, JUMP shape steps from a bus bit, explicit ramp tracking and custom Vastish table import.",
+      "description": "Original generated harmonic, formant, fold, CV, Walsh, rhythm, envelope, step-sequence, nested-density and ratio-grid transforms, with numeric morphing, JUMP shape steps from a bus bit, explicit ramp tracking and custom Vastish table import.",
       "tags": ["Waveshaper", "Logic", "Polyphonic", "Utility"]
     },
     {
@@ -52,7 +52,7 @@
     {
       "slug": "Counter2",
       "name": "Counter 2",
-      "description": "A phase word at N/D of its clock (N 1-16, D 1-64), exact for ever, with carry on each cycle: polymeter and cross rhythms locked to a clock.",
+      "description": "A phase word at N/D of its clock (N 1-16, D 1-64, or a ratio word on RATIO), exact for ever, with carry on each cycle: polymeter and cross rhythms locked to a clock.",
       "tags": ["Clock modifier", "Logic", "Sequencer", "Polyphonic"]
     }
   ]

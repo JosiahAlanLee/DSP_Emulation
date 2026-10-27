@@ -32,7 +32,7 @@ struct ByteLookup : Module {
     std::atomic<int> jumpSteps{0}; // jump.steps, for saving from the UI thread
     dspemu::bus::Gate resetGate; bool resetButtonHigh = false;
     std::atomic<unsigned> displayedWord{128};
-    std::atomic<bool> libraryMismatch{false}, libraryV2Mismatch{false};
+    std::atomic<bool> libraryMismatch{false}, libraryV2Mismatch{false}, libraryV3Mismatch{false};
     std::atomic<LookupTableSlot*> pending{nullptr}, retired{nullptr};
     LookupTableSlot* live = nullptr; // Audio thread.
     LookupTableSlot* uiTable = nullptr; // Latest published slot; UI thread.
@@ -40,7 +40,7 @@ struct ByteLookup : Module {
 
     explicit ByteLookup(std::shared_ptr<const dspemu::lookup::Library> supplied = {}) : library(std::move(supplied)) {
         config(NUM_PARAMS,NUM_INPUTS,NUM_OUTPUTS,NUM_LIGHTS);
-        configSwitch(FAMILY,0,9,0,"Family",{"Harmonic","Formant","Fold","Curve","Walsh","Rhythm","Custom","Envelope","Sequence","Density"});
+        configSwitch(FAMILY,0,10,0,"Family",{"Harmonic","Formant","Fold","Curve","Walsh","Rhythm","Custom","Envelope","Sequence","Density","Ratio"});
         configParam(SHAPE,0,64,0,"Shape (circular)");
         configParam(PHASE,-1,1,0,"Phase"," cycles");
         configParam(SEED,0,255,0,"Pattern seed (Walsh / Rhythm)"); getParamQuantity(SEED)->snapEnabled = true;
@@ -65,6 +65,8 @@ struct ByteLookup : Module {
             } catch (const std::exception& error) { note(error); }
             // v2's families are neutral if it is missing; v1's are unaffected.
             try { if (pluginInstance) loaded->loadV2(asset::plugin(pluginInstance,"res/lookup-v2.bin")); }
+            catch (const std::exception& error) { note(error); }
+            try { if (pluginInstance) loaded->loadV3(asset::plugin(pluginInstance,"res/lookup-v3.bin")); }
             catch (const std::exception& error) { note(error); }
             library = loaded;
         }
@@ -122,7 +124,7 @@ struct ByteLookup : Module {
         auto finite = [](float v) { return std::isfinite(v) ? v : 0.f; };
         auto cv = [&](int port) { return inputs[port].isConnected() ? finite(inputs[port].getVoltage()) : 0.f; };
         dspemu::lookup::Parameters p;
-        p.family = int(std::round(clamp(finite(params[FAMILY].getValue()) + cv(FAMILY_CV),0.f,9.f)));
+        p.family = int(std::round(clamp(finite(params[FAMILY].getValue()) + cv(FAMILY_CV),0.f,10.f)));
         p.shape = finite(params[SHAPE].getValue()) + 6.4 * cv(SHAPE_CV);
         p.phase = finite(params[PHASE].getValue()) + cv(PHASE_CV);
         p.seed = uint8_t(std::round(clamp(finite(params[SEED].getValue()),0.f,255.f)));
@@ -142,7 +144,8 @@ struct ByteLookup : Module {
             data.rawWord = data.word = dspemu::bus::fromVolts(inputs[SIGNAL_IN].getVoltage());
         }
         dspemu::lookup::Output out;
-        bool mismatch = dspemu::lookup::inV2(p.family) ? libraryV2Mismatch.load(std::memory_order_relaxed) :
+        bool mismatch = dspemu::lookup::inV3(p.family) ? libraryV3Mismatch.load(std::memory_order_relaxed) :
+            dspemu::lookup::inV2(p.family) ? libraryV2Mismatch.load(std::memory_order_relaxed) :
             p.family != dspemu::lookup::Custom && libraryMismatch.load(std::memory_order_relaxed);
         if (!mismatch)
             out = engine.tick(*library,p,data,args.sampleRate,reset,live ? &live->values : nullptr);
@@ -160,11 +163,12 @@ struct ByteLookup : Module {
     void onReset(const ResetEvent& event) override {
         Module::onReset(event); engine.reset(); reader.reset(); resetGate.reset(); resetButtonHigh = false;
         jumpReader.reset(); jump.clear(); jumpSteps.store(0);
-        libraryMismatch.store(false); libraryV2Mismatch.store(false); displayedWord.store(128);
+        libraryMismatch.store(false); libraryV2Mismatch.store(false); libraryV3Mismatch.store(false); displayedWord.store(128);
     }
     json_t* dataToJson() override {
         json_t* root = json_object(); json_object_set_new(root,"library_sha256",json_string(dspemu::lookup::LIBRARY_SHA256));
         json_object_set_new(root,"library_v2_sha256",json_string(dspemu::lookup::LIBRARY_V2_SHA256));
+        json_object_set_new(root,"library_v3_sha256",json_string(dspemu::lookup::LIBRARY_V3_SHA256));
         json_object_set_new(root,"jump",json_integer(jumpSteps.load(std::memory_order_relaxed)));
         if (uiTable) {
             json_t* table = json_object();
@@ -184,6 +188,8 @@ struct ByteLookup : Module {
         // Patches from before ByteBusLab 2.7 name no v2 library and use none of its families.
         auto* id2 = json_object_get(root,"library_v2_sha256");
         libraryV2Mismatch.store(json_is_string(id2) && std::string(json_string_value(id2)) != dspemu::lookup::LIBRARY_V2_SHA256);
+        auto* id3 = json_object_get(root,"library_v3_sha256");   // absent before ByteBusLab 2.11
+        libraryV3Mismatch.store(json_is_string(id3) && std::string(json_string_value(id3)) != dspemu::lookup::LIBRARY_V3_SHA256);
         if (auto* table = json_object_get(root,"custom")) try { loadJson(table,false); tableError.clear(); }
         catch (const std::exception& error) { tableError = error.what(); }
         else {
@@ -218,7 +224,7 @@ struct ByteLookupWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(0,0))); addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::lookup::WIDTH-15,365)));
         auto* family = createParam<dspemu::panel::Choice>(POS(FAMILY),module,ByteLookup::FAMILY);
         family->box.size = Vec(FAMILY_W,FAMILY_H);
-        family->labels = {"HARMONIC","FORMANT","FOLD","CURVE","WALSH","RHYTHM","CUSTOM","ENVELOPE","SEQUENCE","DENSITY"}; addParam(family);
+        family->labels = {"HARMONIC","FORMANT","FOLD","CURVE","WALSH","RHYTHM","CUSTOM","ENVELOPE","SEQUENCE","DENSITY","RATIO"}; addParam(family);
         addParam(createParamCentered<RoundBlackKnob>(POS(SHAPE),module,ByteLookup::SHAPE));
         addParam(createParamCentered<RoundBlackKnob>(POS(PHASE),module,ByteLookup::PHASE));
         addParam(createParamCentered<RoundBlackSnapKnob>(POS(SEED),module,ByteLookup::SEED));
@@ -267,6 +273,7 @@ struct ByteLookupWidget : ModuleWidget {
         if (!m->libraryError.empty()) menu->addChild(createMenuLabel(m->libraryError));
         if (m->libraryMismatch.load()) menu->addChild(createMenuLabel("Patch requests a different library v1; its families are neutral"));
         if (m->libraryV2Mismatch.load()) menu->addChild(createMenuLabel("Patch requests a different library v2; Envelope, Sequence and Density are neutral"));
+        if (m->libraryV3Mismatch.load()) menu->addChild(createMenuLabel("Patch requests a different library v3; Ratio is neutral"));
     }
 };
 Model* modelLookup = createModel<ByteLookup,ByteLookupWidget>("Lookup");

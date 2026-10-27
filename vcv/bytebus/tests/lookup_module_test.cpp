@@ -103,11 +103,11 @@ static void adapter(std::shared_ptr<const lu::Library> library) {
 // FAMILY 7-9 and FAMILY CV reaches them; each library's identity is saved and checked on its own.
 static void libraryV2Module() {
     ByteLookup m; outputs(m); m.model=modelLookup; auto a=args(); auto& lib=*m.library;
-    assert(m.getParamQuantity(ByteLookup::FAMILY)->maxValue==9);
+    assert(m.getParamQuantity(ByteLookup::FAMILY)->maxValue==10);
     m.params[ByteLookup::FAMILY].setValue(lu::Density); m.params[ByteLookup::SHAPE].setValue(20);
     for (int n=0;n<256;n+=3) { set(m.inputs[ByteLookup::BUS_IN],n); m.process(a); assert(word(m.outputs[ByteLookup::BUS_OUT])==lib.table(lu::Density,20)[n]); }
     m.params[ByteLookup::FAMILY].setValue(lu::Rhythm); m.inputs[ByteLookup::FAMILY_CV].channels=1; m.inputs[ByteLookup::FAMILY_CV].setVoltage(10);
-    set(m.inputs[ByteLookup::BUS_IN],0); m.process(a); assert(word(m.outputs[ByteLookup::BUS_OUT])==lib.table(lu::Density,20)[0]); // clamps at 9
+    set(m.inputs[ByteLookup::BUS_IN],0); m.process(a); assert(word(m.outputs[ByteLookup::BUS_OUT])==lib.table(lu::Ratio,20)[0]); // clamps at 10
     m.inputs[ByteLookup::FAMILY_CV].setVoltage(2); m.process(a);
     m.params[ByteLookup::FAMILY].setValue(lu::Custom); m.inputs[ByteLookup::FAMILY_CV].setVoltage(1);                     // Custom + 1 V = Envelope
     set(m.inputs[ByteLookup::BUS_IN],100); m.process(a); assert(word(m.outputs[ByteLookup::BUS_OUT])==lib.table(lu::Envelope,20)[100]);
@@ -116,6 +116,14 @@ static void libraryV2Module() {
     assert(word(m.outputs[ByteLookup::BUS_OUT])==lib.table(lu::Envelope,0)[100]);
     json_t* saved=m.toJson(); json_t* data=json_object_get(saved,"data");
     assert(std::string(json_string_value(json_object_get(data,"library_v2_sha256")))==lu::LIBRARY_V2_SHA256);
+    assert(std::string(json_string_value(json_object_get(data,"library_v3_sha256")))==lu::LIBRARY_V3_SHA256);
+    {   // A patch naming another v3 library silences Ratio only.
+        json_t* other=json_deep_copy(saved); json_object_set_new(json_object_get(other,"data"),"library_v3_sha256",json_string("another"));
+        ByteLookup q; outputs(q); q.model=modelLookup; q.fromJson(other); json_decref(other);
+        q.params[ByteLookup::FAMILY].setValue(lu::Ratio); set(q.inputs[ByteLookup::BUS_IN],100); q.process(a);
+        assert(q.libraryV3Mismatch.load() && word(q.outputs[ByteLookup::BUS_OUT])==128);
+        q.params[ByteLookup::FAMILY].setValue(lu::Envelope); q.process(a); assert(word(q.outputs[ByteLookup::BUS_OUT])==lib.table(lu::Envelope,0)[100]);
+    }
     // A patch naming another v2 library: only Envelope, Sequence and Density go neutral.
     json_object_set_new(data,"library_v2_sha256",json_string("another"));
     ByteLookup r; outputs(r); r.model=modelLookup; r.fromJson(saved);
@@ -235,12 +243,12 @@ int main() {
     Plugin plugin; plugin.slug="ByteBusLab"; plugin.version="2.1.0"; plugin.path=std::filesystem::absolute("..").string();
     plugin.addModel(modelLookup); plugin.addModel(modelLookup2); plugin.addModel(modelClockedRegister); pluginInstance=&plugin; rack::plugin::plugins.push_back(&plugin);
     auto library=std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
-    { ByteLookup packaged; assert(packaged.library->ready && packaged.library->readyV2 && packaged.libraryError.empty()); }
+    { ByteLookup packaged; assert(packaged.library->ready && packaged.library->readyV2 && packaged.library->readyV3 && packaged.libraryError.empty()); }
     libraryV2Module();
     adapter(library);
     lookup2Module();
     for (float sr : {44100.f,48000.f,96000.f}) jump(library,sr);
     auto expected=feedback(library,48000); assert(feedback(library,44100)==expected && feedback(library,96000)==expected);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: real Lookup ports/DAC, bus clock holds, phase CV, verified custom import, full patch restore, UI handoff, packaged assets, Register feedback/reset at 44.1/48/96 kHz, JUMP steps on the same sample, gates, bit choice, RESET priority and persistence, library v2 families, FAMILY CV and per-library identities, Lookup2 ports, words, CVs, JUMP walk and persistence\n";
+    std::cout << "PASS: real Lookup ports/DAC, bus clock holds, phase CV, verified custom import, full patch restore, UI handoff, packaged assets, Register feedback/reset at 44.1/48/96 kHz, JUMP steps on the same sample, gates, bit choice, RESET priority and persistence, library v2 and v3 families, FAMILY CV and per-library identities, Lookup2 ports, words, CVs, JUMP walk and persistence\n";
 }
