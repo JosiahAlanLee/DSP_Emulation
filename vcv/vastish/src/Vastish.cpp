@@ -17,6 +17,14 @@ struct SampleSlot {
     }
 };
 using namespace vastish;
+// Chain mode (docs/CHAIN.md): what a Vastish sends the Vastish on its right each sample, per
+// voice, through Rack's double-buffered expander messages. The right one owns the two buffers.
+struct ChainMessage {
+    static constexpr uint32_t MAGIC=0x56435631; // "VCV1"
+    uint32_t magic=0; int voices=1;
+    std::array<float,8> tap{}, note{}, velocity{};
+    std::array<uint8_t,8> gate{}, gateFree{};
+};
 struct Vastish : Module {
     // AUX, BUS and AUDIO inputs and FUN3/4 are appended so existing patches keep their cable ids.
     enum { PITCH_IN, GATE_IN, VEL_IN, MOD_IN, AUX1_IN, AUX2_IN, AUX3_IN, AUX4_IN, BUS_A_IN, BUS_B_IN, AUDIO_IN, INPUTS };
@@ -31,6 +39,11 @@ struct Vastish : Module {
     std::atomic<bool> requestedPanic{false};
     // AUDIO IN full scale: ±5 V (default, matching the L/R output scaling) or ±10 V.
     std::atomic<bool> audioIn10V{false};
+    // Chain mode: off by default, so side-by-side Vastishes in older patches are unchanged.
+    ChainMessage chainMessages[2];
+    std::atomic<bool> chainFromLeft{false};
+    enum ChainState { CHAIN_OFF, CHAIN_NO_VASTISH, CHAIN_CONNECTED };
+    std::atomic<int> chainState{CHAIN_OFF};
     // Sample handoff (SAMPLE pitch wave). The UI thread publishes into pendingSample;
     // the audio thread adopts it only when retiredSample is empty, moving its old
     // sample there; the UI thread deletes retired samples. The audio thread never
@@ -137,11 +150,12 @@ struct Vastish : Module {
         const char* outNames[]={"Left audio","Right audio","Amp envelope","Envelope 2","Envelope 3","LFO 1","LFO 2","FUN 1","FUN 2","FUN 3","FUN 4"};
         for(int i=0;i<=FUN4_OUT;++i) configOutput(i,outNames[i]);
         configOutput(BUS_OUT,"Selected word or eight logical lanes; primary bus clock forwarded");
+        leftExpander.producerMessage=&chainMessages[0]; leftExpander.consumerMessage=&chainMessages[1];
     }
     void onSampleRateChange(const SampleRateChangeEvent& e) override { engine.prepare(e.sampleRate); }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e); engine.panic(); for(auto& t:triggers) t.reset(); in={}; displayedProgram=1;
-        busA.reset(); busB.reset(); heldBusWord=128; audioIn10V=false;
+        busA.reset(); busB.reset(); heldBusWord=128; audioIn10V=false; chainFromLeft=false;
     }
     void process(const ProcessArgs& args) override {
         if(requestedPanic.exchange(false)) {
@@ -159,12 +173,23 @@ struct Vastish : Module {
         for(int i=0;i<PARAM_COUNT;++i) {
             float x=params[i].getValue(); p[i]=std::isfinite(x)?vastish::clamp(x,metadata()[i].lo,metadata()[i].hi):programs()[0][i];
         }
+        // Chain mode: with a Vastish directly to the left, its voices' signals, notes and gates
+        // arrive one sample later (Rack's expander message) and replace this one's oscillator
+        // and PITCH, GATE and VEL; the voice count is the left one's.
+        const ChainMessage* chain=nullptr;
+        if(chainFromLeft.load(std::memory_order_relaxed)) {
+            Module* left=leftExpander.module;
+            auto* m=left && left->model==modelVastish ? static_cast<const ChainMessage*>(leftExpander.consumerMessage) : nullptr;
+            chain=m && m->magic==ChainMessage::MAGIC ? m : nullptr;
+            chainState.store(chain ? CHAIN_CONNECTED : CHAIN_NO_VASTISH,std::memory_order_relaxed);
+        } else chainState.store(CHAIN_OFF,std::memory_order_relaxed);
         // AUDIO wave: AUDIO IN's channels establish voices as PITCH and GATE do. Voice v reads
         // channel v; a mono cable reaches every voice, and a voice without a channel reads silence.
         const bool audioWave=choice(p[PITCH_WAVE],AUDIO_WAVE)==AUDIO_WAVE;
         const bool audioPatched=inputs[AUDIO_IN].isConnected(), gatePatched=inputs[GATE_IN].isConnected();
         const int audioChannels=audioPatched ? inputs[AUDIO_IN].getChannels() : 0;
-        int channels=std::min(8,std::max({inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels(),audioWave ? audioChannels : 0}));
+        int channels=chain ? std::max(1,std::min(8,chain->voices)) :
+            std::min(8,std::max({inputs[PITCH_IN].getChannels(),inputs[GATE_IN].getChannels(),audioWave ? audioChannels : 0}));
         const float audioScale=audioIn10V.load(std::memory_order_relaxed) ? .1f : .2f;
         auto a=busA.process(inputs[BUS_A_IN]), b=busB.process(inputs[BUS_B_IN]);
         bool lanes=choice(p[BUS_OUT_MODE],2)==2;
@@ -174,6 +199,21 @@ struct Vastish : Module {
             auto voltage=[&](int port) {
                 float x=inputs[port].getPolyVoltage(i); return std::isfinite(x)?x:0.f;
             };
+            in[i].chained=chain!=nullptr;
+            if(chain) {
+                in[i].chainAudio=chain->tap[i]; in[i].chainGateFree=chain->gateFree[i]!=0;
+                in[i].note=chain->note[i]; in[i].velocity=chain->velocity[i]; in[i].gate=chain->gate[i]!=0;
+                in[i].audioConnected=false; in[i].gateConnected=true;
+                in[i].modwheel=vastish::clamp(voltage(MOD_IN)*.1f,0,1);
+                for(int k=0;k<4;++k) in[i].aux[k]=vastish::clamp(voltage(AUX1_IN+k)*.1f,-1,1);
+                in[i].busAConnected=a.connected;
+                in[i].busA=a.connected ? dspemu::bus::bipolar(a.word) : 0.f;
+                in[i].busB=b.connected ? dspemu::bus::bipolar(b.word) : 0.f;
+                in[i].laneA=a.connected && (a.word&(1<<i)) ? 1.f : 0.f;
+                in[i].laneB=b.connected && (b.word&(1<<i)) ? 1.f : 0.f;
+                active|=in[i].gate;
+                continue;
+            }
             bool was=triggers[i].isHigh();
             triggers[i].process(i<channels?voltage(GATE_IN):0.f);
             bool rise=!was && triggers[i].isHigh();
@@ -208,6 +248,17 @@ struct Vastish : Module {
         int selected=choice(p[BUS_OUT_SOURCE],BUS_SOURCE_MIX);
         auto y=engine.tick(p,in,std::max(1,channels),liveSample ? &view : nullptr,controlAll,lanes && selected==BUS_SOURCE_DSP);
         outputs[LEFT_OUT].setVoltage(y[0]*5); outputs[RIGHT_OUT].setVoltage(y[1]*5);
+        // Send the chain on to a Vastish directly to the right, whether or not it is chaining.
+        if(Module* right=rightExpander.module; right && right->model==modelVastish)
+            if(auto* m=static_cast<ChainMessage*>(right->leftExpander.producerMessage)) {
+                m->magic=ChainMessage::MAGIC; m->voices=std::max(1,channels);
+                for(int i=0;i<8;++i) {
+                    m->tap[i]=engine.voices[i].tap; m->note[i]=in[i].note; m->velocity[i]=in[i].velocity;
+                    m->gate[i]=in[i].gate;
+                    m->gateFree[i]=in[i].chained ? in[i].chainGateFree : audioWave && in[i].audioConnected && !gatePatched;
+                }
+                right->leftExpander.messageFlipRequested=true;
+            }
         const int source[]={SRC_AMPENV,1,2,3,4,SRC_FUN1,SRC_FUN2,SRC_FUN3,SRC_FUN4};
         int n=controlAll ? 8 : std::max(1,channels);
         for(int o=AMP_OUT;o<=FUN4_OUT;++o) {
@@ -238,6 +289,7 @@ struct Vastish : Module {
         json_object_set_new(j,"sampleLoop",json_boolean(sampleLoop.load()));
         json_object_set_new(j,"followOtis",json_boolean(followOtis));
         json_object_set_new(j,"audioInRange",json_integer(audioIn10V ? 10 : 5));
+        json_object_set_new(j,"chainFromLeft",json_boolean(chainFromLeft.load()));
         collectSamples();
         if(uiSample && uiSample->view.valid()) {
             // Rack autosaves often; encode each sample once.
@@ -262,6 +314,7 @@ struct Vastish : Module {
         sampleLoop=json_is_true(json_object_get(j,"sampleLoop"));
         setFollowOtis(json_is_true(json_object_get(j,"followOtis")));
         json_t* range=json_object_get(j,"audioInRange"); audioIn10V=json_is_integer(range) && json_integer_value(range)==10;
+        chainFromLeft=json_is_true(json_object_get(j,"chainFromLeft")); // absent before 2.8: off
         json_t* s=json_object_get(j,"sample");
         // A full restore defines the sample too: no saved sample means none, not
         // "keep whatever this instance had".
@@ -402,6 +455,9 @@ struct VastishWidget : ModuleWidget {
                 [m,param,k]{return choice(m->params[param].getValue(),int(metadata()[param].hi))==int(k);},
                 [m,param,k]{m->params[param].setValue(float(k));}));
         }));
+        menu->addChild(createBoolMenuItem("Chain from the Vastish on the left","",[m]{return m->chainFromLeft.load();},[m](bool on){m->chainFromLeft=on;}));
+        if(m->chainFromLeft.load()) menu->addChild(createMenuLabel(m->chainState.load()==Vastish::CHAIN_CONNECTED ?
+            "Chain: voices continue the Vastish on the left" : "Chain: place this Vastish directly right of another"));
         menu->addChild(createSubmenuItem("AUDIO IN range","",[m](Menu* child) {
             for(bool ten:{false,true}) child->addChild(createCheckMenuItem(ten ? "±10 V" : "±5 V (L/R output level)","",
                 [m,ten]{return m->audioIn10V.load()==ten;},[m,ten]{m->audioIn10V=ten;}));

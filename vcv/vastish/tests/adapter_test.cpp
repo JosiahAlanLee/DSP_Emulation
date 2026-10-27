@@ -2,6 +2,8 @@
 #include "../src/Vastish.cpp"
 #include <cassert>
 #include <iostream>
+#include <random>
+#include <vector>
 Plugin* pluginInstance=nullptr;
 int main() {
     Vastish m; Module::ProcessArgs args; args.sampleRate=48000; args.sampleTime=1.f/48000;
@@ -261,5 +263,73 @@ int main() {
         }
         assert(f.engine.faults==0 && peak>1);
     }
-    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, polyphonic voices and mono broadcast, saved range and feedback\n";
+    // Chain mode (docs/CHAIN.md), with Rack's expander wiring and its end-of-frame message flip
+    // emulated, and the modules processed in a random order each frame.
+    {
+        std::mt19937 order(5);
+        auto wire=[](std::vector<Vastish*> row) {
+            for(size_t k=0;k<row.size();++k) {
+                row[k]->model=modelVastish;
+                row[k]->leftExpander.module=k ? row[k-1] : nullptr;
+                row[k]->rightExpander.module=k+1<row.size() ? row[k+1] : nullptr;
+            }
+        };
+        auto frame=[&](std::vector<Vastish*> row) {
+            auto shuffled=row; std::shuffle(shuffled.begin(),shuffled.end(),order);
+            for(auto* v:shuffled) v->process(args);
+            for(auto* v:row) if(v->leftExpander.messageFlipRequested) {
+                std::swap(v->leftExpander.producerMessage,v->leftExpander.consumerMessage); v->leftExpander.messageFlipRequested=false;
+            }
+        };
+        auto passThrough=[&](Vastish& v) {
+            for(int i=0;i<PARAM_COUNT;++i) v.params[i].setValue(programs()[0][i]);
+            v.params[ALG].setValue(1); v.params[MASTER].setValue(0); v.params[AMP_ADJ].setValue(0); v.params[PAN_ADJ].setValue(-1);
+            for(int f:{F1_TYPE,F2_TYPE,F3_TYPE}) v.params[f].setValue(0);
+            for(auto& o:v.outputs) o.channels=1;
+        };
+        // Three in a row, NONE blocks: the first takes AUDIO IN gate-free; the second and third
+        // continue it, each one sample later, still gate-free; the outputs are the DC-blocked input.
+        Vastish a, b, c; for(auto* v:{&a,&b,&c}) passThrough(*v);
+        a.params[PITCH_WAVE].setValue(AUDIO_WAVE); a.inputs[Vastish::AUDIO_IN].channels=1;
+        b.chainFromLeft=c.chainFromLeft=true; wire({&a,&b,&c});
+        for(int n=0;n<4800;++n) frame({&a,&b,&c});                                   // MASTER ramps settle
+        assert(b.chainState==Vastish::CHAIN_CONNECTED && c.chainState==Vastish::CHAIN_CONNECTED);
+        Highpass dcB, dcC; std::vector<float> sent;
+        for(int n=0;n<4800;++n) {
+            a.inputs[Vastish::AUDIO_IN].setVoltage(float(std::sin(.003*n))*4); frame({&a,&b,&c});
+            sent.push_back(a.in[0].audio);                                             // as AUDIO IN scaled it
+            if(n>=2) {
+                assert(b.outputs[Vastish::LEFT_OUT].getVoltage()==dcB.tick(sent[n-1],5,48000)*5);
+                assert(c.outputs[Vastish::LEFT_OUT].getVoltage()==dcC.tick(sent[n-2],5,48000)*5);
+            } else { dcB.tick(n ? sent[0] : 0.f,5,48000); dcC.tick(0,5,48000); }
+        }
+        // Notes, velocities and gates follow the left one's voices; this one's own PITCH and GATE
+        // are ignored, and its own amp envelope runs on those gates.
+        Vastish keys, follower; for(auto* v:{&keys,&follower}) passThrough(*v);
+        keys.params[PITCH_WAVE].setValue(0); follower.params[AMP_A].setValue(0); follower.params[AMP_S].setValue(1);
+        keys.inputs[Vastish::PITCH_IN].channels=keys.inputs[Vastish::GATE_IN].channels=3;
+        keys.inputs[Vastish::VEL_IN].channels=1; keys.inputs[Vastish::VEL_IN].setVoltage(7);
+        follower.inputs[Vastish::GATE_IN].channels=1; follower.inputs[Vastish::GATE_IN].setVoltage(0);   // its own, low
+        follower.chainFromLeft=true; wire({&keys,&follower});
+        for(int v=0;v<3;++v) { keys.inputs[Vastish::PITCH_IN].setVoltage(v-1.f,v); keys.inputs[Vastish::GATE_IN].setVoltage(v==1 ? 0 : 10,v); }
+        for(int n=0;n<2400;++n) frame({&keys,&follower});
+        for(int v=0;v<3;++v) {
+            assert(follower.in[v].note==keys.in[v].note && follower.in[v].gate==(v!=1) && follower.engine.voices[v].gate==(v!=1));
+            if(v!=1) assert(std::abs(follower.engine.voices[v].velocity-.7f)<1e-6f && follower.engine.voices[v].sources[11]>.9f);
+        }
+        assert(follower.outputs[Vastish::AMP_OUT].getChannels()==3);
+        // Off, or with nothing (or something else) on the left, it is an ordinary Vastish again.
+        follower.chainFromLeft=false; follower.inputs[Vastish::GATE_IN].setVoltage(10); frame({&keys,&follower});
+        assert(follower.chainState==Vastish::CHAIN_OFF && !follower.in[0].chained && follower.in[0].gate && !follower.in[2].gate); // its own GATE
+        follower.chainFromLeft=true; follower.leftExpander.module=nullptr; follower.process(args);
+        assert(follower.chainState==Vastish::CHAIN_NO_VASTISH && !follower.in[0].chained);
+        Module stranger; follower.leftExpander.module=&stranger; follower.process(args);
+        assert(follower.chainState==Vastish::CHAIN_NO_VASTISH);
+        // Saved with the patch; absent before 2.8; Initialize turns it off.
+        json_t* saved=follower.dataToJson(); assert(json_is_true(json_object_get(saved,"chainFromLeft")));
+        Vastish r; r.dataFromJson(saved); assert(r.chainFromLeft);
+        json_object_del(saved,"chainFromLeft"); r.dataFromJson(saved); json_decref(saved); assert(!r.chainFromLeft);
+        follower.leftExpander.module=nullptr;                                        // plugin_test covers Initialize
+    }
+    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, polyphonic voices and mono broadcast, saved range and feedback, three-module chain one sample per hop in random order, chained notes/gates/velocities, chain off and absent, saved chain\n";
 }

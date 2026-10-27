@@ -13,7 +13,7 @@ Developed from this repository's [Pure Data Vastish](https://github.com/JosiahAl
 
 1. Download the zip for your platform from the [latest release](https://github.com/JosiahAlanLee/DSP_Emulation/releases): Windows x64, Linux x64, macOS Apple Silicon or macOS Intel. Each zip holds all the plugins.
 2. In Rack choose **Help → Open user folder**, then quit Rack.
-3. Copy `VastishLab-2.7.0-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other modules as well to use the sample-sharing and byte-bus links.
+3. Copy `VastishLab-2.8.0-<platform>.vcvplugin` from the zip, unopened, into the `plugins-<platform>` folder there (for example `plugins-win-x64`). Copy the other modules as well to use the sample-sharing and byte-bus links.
 4. Start Rack.
 
 Exact file names for each platform are in [Getting started](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/GETTING_STARTED.md#install). Linux has been used live in Rack; the Windows and macOS builds haven't been run inside Rack yet, so please [report](https://github.com/JosiahAlanLee/DSP_Emulation/issues) how they go. To build from source, see the [development guide](https://github.com/JosiahAlanLee/DSP_Emulation/blob/main/docs/DEVELOPMENT.md).
@@ -33,6 +33,12 @@ Vastish 2.6 adds **AUDIO IN**: choose the AUDIO wave to run external audio
 through the DSP chain in place of an oscillator, continuously when GATE is
 unpatched. In 2.7 it is polyphonic, one voice per channel. See
 [Live processing](docs/MANUAL.md#live-processing).
+
+Vastish 2.8 adds **chain mode**: a Vastish directly to the right of another
+continues its voices through a second algorithm and set of blocks, on the same
+notes, and a third continues the second, as the K2600's triple modular
+processing does. Turn it on in the right-hand Vastish's menu. See
+[Chain mode](docs/MANUAL.md#chain-mode).
 
 ## License
 
