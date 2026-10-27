@@ -567,7 +567,7 @@ static std::vector<int> lookup2Chain(float sr, unsigned orderSeed) {
 static void counter2Module(float sr) {
     using K = ByteCounter2;
     K a, b; connectOutputs(a); connectOutputs(b); a.model = b.model = modelCounter2; auto args_ = args(sr);
-    assert(a.params.size() == 6 && a.inputs.size() == 2 && a.outputs.size() == 3 && a.lights.size() == 11);
+    assert(a.params.size() == 6 && a.inputs.size() == 3 && a.outputs.size() == 3 && a.lights.size() == 11);
     for (K* k : {&a, &b}) { k->params[K::CLOCK_MODE].setValue(1); k->inputs[K::CLOCK_IN].channels = 1; }
     a.params[K::D_PARAM].setValue(12); b.params[K::D_PARAM].setValue(16);
     int carriesA = 0, carriesB = 0; std::vector<int> wordsA;
@@ -590,6 +590,43 @@ static void counter2Module(float sr) {
     assert(r.state.d == 1 && r.state.acc == 255);
     r.onReset(Module::ResetEvent{}); assert(r.params[K::D_PARAM].getValue() == 16 && r.params[K::N_PARAM].getValue() == 1);
     r.process(args_); assert(word(r.outputs[K::BUS_OUT]) == 0);
+}
+
+// Counter 2's RATIO input and Lookup's Ratio family (library v3): a ratio word replaces N and D, and
+// a control byte through Lookup Ratio picks a ratio from a grid, through one-sample cables in random
+// order: the Counter then carries n times every d edges.
+static void ratioChain(float sr, unsigned orderSeed) {
+    namespace lu = dspemu::lookup; using K = ByteCounter2; using L = ByteLookup;
+    auto library = std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
+    library->loadV2("../res/lookup-v2.bin"); library->loadV3("../res/lookup-v3.bin");
+    {   // A ratio word straight in: 3/8.
+        K k; connectOutputs(k); k.model = modelCounter2; auto a = args(sr);
+        k.params[K::CLOCK_MODE].setValue(3); putBus(k.inputs[K::RATIO_IN], uint8_t(2 << 4 | 7)); k.process(a);
+        assert(k.ratio.load() == (3 << 8 | 8) && k.state.d == 8);
+        k.inputs[K::RATIO_IN].channels = 0; k.process(a); assert(k.ratio.load() == (1 << 8 | 16));   // unpatched: the knobs
+    }
+    K k; L l(library); connectOutputs(k); connectOutputs(l); auto a = args(sr);
+    k.params[K::CLOCK_MODE].setValue(1); k.inputs[K::CLOCK_IN].channels = 1;
+    l.params[L::FAMILY].setValue(lu::Ratio); l.params[L::SHAPE].setValue(3 * 8 + 7);   // Harmonics, whole grid
+    std::mt19937 order(orderSeed);
+    for (int address : {0, 60, 128, 200, 255}) {
+        uint8_t w = library->table(lu::Ratio, 3 * 8 + 7)[address];
+        int n = lu::ratioN(w), d = lu::ratioD(w);
+        putBus(l.inputs[L::BUS_IN], uint8_t(address));
+        // Settle the ratio, start from 00, then count 4d edges.
+        for (int t = 0; t < 4; ++t) { copy(l.outputs[L::BUS_OUT], k.inputs[K::RATIO_IN]); l.process(a); k.process(a); }
+        k.inputs[K::RESET_IN].channels = 1; k.inputs[K::RESET_IN].setVoltage(10); k.process(a); k.inputs[K::RESET_IN].setVoltage(0); k.process(a);
+        int carries = 0;
+        for (int t = 0; t < 8 * 4 * d; ++t) {
+            k.inputs[K::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+            copy(l.outputs[L::BUS_OUT], k.inputs[K::RATIO_IN]);
+            if (order() & 1) { l.process(a); k.process(a); } else { k.process(a); l.process(a); }
+            carries += k.outputs[K::CARRY_OUT].getVoltage() == 10;
+        }
+        // CARRY pulses once on each edge where the cycle count rises: n times in d edges, or every edge
+        // when n > d (COUNTER2.md, Counting).
+        assert(k.ratio.load() == (n << 8 | d) && carries == 4 * std::min(n, d));
+    }
 }
 
 int main() {
@@ -615,6 +652,7 @@ int main() {
     assert(pipelineCanon(library, 44100, 22) == canon && pipelineCanon(library, 96000, 23) == canon);
     pipelineLoop();
     for (float sr : {44100.f, 48000.f, 96000.f}) counter2Module(sr);
+    for (float sr : {44100.f, 48000.f, 96000.f}) ratioChain(sr, unsigned(sr));
     auto twoWords = lookup2Chain(48000, 31);
     assert(lookup2Chain(44100, 32) == twoWords && lookup2Chain(96000, 33) == twoWords);
     assert(jumpChain(library, 44100, 8) == jumped && jumpChain(library, 96000, 9) == jumped);
@@ -624,5 +662,5 @@ int main() {
         assert(feedback(96000, seed, 3) == reference);
     }
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz\n";
 }

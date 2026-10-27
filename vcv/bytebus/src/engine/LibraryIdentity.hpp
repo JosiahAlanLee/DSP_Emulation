@@ -6,4 +6,6 @@ constexpr uint64_t LIBRARY_HASH = 0xda0bc7953c500569ull;
 constexpr const char* LIBRARY_SHA256 = "f8339c89bd305abaa06a9773721301aa2e1d025b07adc355eddbaeadf03417ee";
 constexpr uint64_t LIBRARY_V2_HASH = 0x236436fb2338f070ull;
 constexpr const char* LIBRARY_V2_SHA256 = "6dca9a367a321379f3ceea33ab27c96a2c02b3d8b109c4bd6d7f89a8a9873b04";
+constexpr uint64_t LIBRARY_V3_HASH = 0xeb081e76c0cd906cull;
+constexpr const char* LIBRARY_V3_SHA256 = "3d269a068061e9a86b0eaaf4c9b4a854a863a3680b39a1814790848e158ab2fd";
 } // namespace dspemu::lookup

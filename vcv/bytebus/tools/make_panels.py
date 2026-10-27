@@ -256,7 +256,7 @@ def counter2(font):
     p.text('LOAD', 140, 244)
     p.component('RESET_LIGHT', 'light', 161, 219)
     p.rule(252)
-    for name, x, label in [('CLOCK_IN', 56, 'CLOCK'), ('RESET_IN', 124, 'RESET')]:
+    for name, x, label in [('CLOCK_IN', 34, 'CLOCK'), ('RESET_IN', 90, 'RESET'), ('RATIO_IN', 146, 'RATIO')]:
         p.jack(name, x, 282, label)
     p.block(12, 312, 156, 52)
     for name, x, label in [('BUS_OUT', 34, 'BUS OUT'), ('CLOCK_OUT', 90, 'CLK OUT'), ('CARRY_OUT', 146, 'CARRY')]:
