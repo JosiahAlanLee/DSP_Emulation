@@ -35,7 +35,11 @@ int main() {
     });
     std::thread reconfig([&] {
         for (int k = 1; !done; k++) {
-            { std::lock_guard<std::mutex> lock(engineMutex); engine->prepare(rates[k % 2], 0, captureSeconds); }
+            {
+                std::lock_guard<std::mutex> lock(engineMutex);
+                if (k % 3 == 0) engine->capture.clear();  // Initialize versus collection
+                else engine->prepare(rates[k % 2], 0, captureSeconds);
+            }
             prepared++;
             std::this_thread::sleep_for(std::chrono::milliseconds(3));
         }

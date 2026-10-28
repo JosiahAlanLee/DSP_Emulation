@@ -10,11 +10,30 @@ Plugin* pluginInstance = nullptr;
 
 static void run(SpoonBender& m, int n, Module::ProcessArgs& a) { for (int i = 0; i < n; i++) { a.frame++; m.process(a); } }
 
-int main() {
+int main(int argc, char** argv) {
     std::cout << std::unitbuf;
     // ParamQuantity::getValue() reads through APP->engine, so a minimal host context is needed.
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Module::ProcessArgs args; args.sampleRate = 48000; args.sampleTime = 1.f / 48000; args.frame = 0;
+    {
+        SpoonBender m;
+        m.clockPeriod = .5; m.clockSeen = true;
+        Module::SampleRateChangeEvent sr; sr.sampleRate = 96000; sr.sampleTime = 1.f / 96000;
+        m.onSampleRateChange(sr);
+        if (argc == 1 || std::atoi(argv[1]) != 2) assert(m.clockPeriod == 0 && !m.clockSeen);
+        if (argc == 1 || std::atoi(argv[1]) != 1) {
+            m.reconfigure(2, false);
+            m.clockPeriod = .5; m.clockSeen = true;
+            m.engine.capture.write(.5f); m.engine.capture.write(.5f);
+            assert(m.engine.capture.trigger(2)); m.collectCapture();
+            Module::ResetEvent reset; m.onReset(reset);
+            assert(m.espRateIndex == 0 && m.espBudget && m.engine.preparedRate == 0);
+            assert(m.clockPeriod == 0 && !m.clockSeen);
+            assert(m.engine.capture.filled == 0 && m.engine.capture.state == 0);
+            assert(m.sharePcm.empty() && !m.shareStereo);
+        }
+        if (argc > 1) return 0;
+    }
     {
         SpoonBender m; for (auto& o : m.outputs) o.channels = 1;
         Module::SampleRateChangeEvent sr; sr.sampleRate = 48000; sr.sampleTime = 1.f / 48000; m.onSampleRateChange(sr);

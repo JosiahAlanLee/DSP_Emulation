@@ -1,5 +1,10 @@
 # Spoon Bender change history
 
+## 2.2.1
+
+- Sample-rate changes clear the wet-path DC blockers and the measured clock period, so old state cannot produce a transient or keep TIME synced to an obsolete period.
+- Initialize restores the ESP rate and memory budget defaults, clears clock and capture triggers, and empties capture history and the published capture slot as well as effects tails.
+
 ## 2.2.0
 
 Captures are stereo: OUT L and OUT R after all mixes, each 16-bit. OTIS 2.7.0 and later read both channels through a stereo extension of the sample link; earlier OTIS versions still read a mono mix, (L + R) / 2, which equals the earlier mono capture whenever the channels match and is within one 16-bit step otherwise. A capture with identical channels is shared as mono. The capture history uses twice the memory: about 7.7 MB at 48 kHz for the 20-second maximum.
