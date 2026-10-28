@@ -1117,11 +1117,45 @@ static std::vector<int> rouletteChain(float sr, unsigned orderSeed) {
     return words;
 }
 
-int main() {
+static void latticeGapPortsRegression() {
+    using L = ByteLattice;
+    for (float sr : {44100.f, 48000.f, 96000.f}) {
+        L m; m.model = modelLattice; connectOutputs(m); auto a = args(sr);
+        m.params[L::SOURCE].setValue(1); m.params[L::SEED].setValue(3);
+        m.inputs[L::H_CLOCK_IN].channels = 1; m.inputs[L::RESET_IN].channels = 1;
+        m.process(a); m.process(a);
+        m.inputs[L::RESET_IN].setVoltage(10); m.process(a);
+        assert(word(m.outputs[L::BUS_OUT]) == 3);
+        m.inputs[L::RESET_IN].setVoltage(0); m.inputs[L::H_CLOCK_IN].setVoltage(10); m.process(a);
+        assert(m.outputs[L::CLOCK_OUT].getVoltage() == 0);
+        assert(word(m.outputs[L::BUS_OUT]) == 0x14);
+        m.inputs[L::H_CLOCK_IN].setVoltage(0); m.process(a);
+        assert(m.outputs[L::CLOCK_OUT].getVoltage() == 10 && word(m.outputs[L::BUS_OUT]) == 0x14);
+    }
+}
+
+static void rouletteResetPortsRegression() {
+    using R = ByteRoulette;
+    for (float sr : {44100.f, 48000.f, 96000.f}) {
+        R m; m.model = modelRoulette; connectOutputs(m); auto a = args(sr);
+        json_t* saved = json_pack("{s:i, s:f, s:f}", "count", 77, "filter", 0., "phase", .25);
+        m.dataFromJson(saved); json_decref(saved);
+        m.inputs[R::ROULETTE_IN].channels = 1; m.inputs[R::RESET_IN].channels = 1;
+        m.process(a); m.process(a);
+        m.inputs[R::RESET_IN].setVoltage(10); m.process(a);
+        assert(word(m.outputs[R::LO_OUT]) == 0);
+        assert(m.outputs[R::VCO_OUT].getVoltage() == -5.f);
+    }
+}
+
+int main(int argc, char** argv) {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
     plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); plugin.addModel(modelWheel); plugin.addModel(modelRoulette); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
+    if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapPortsRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetPortsRegression(); return 0; }
+    latticeGapPortsRegression(); rouletteResetPortsRegression();
     portsAndState();
     counterPorts();
     counterRunModes();

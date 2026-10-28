@@ -3,8 +3,8 @@
 // and H's (column) on a 4 x 4 grid. A jump presets one counter as the Bindubba's cross-coupled
 // jam wiring does: Follow is the settled result (H's position and upper bits become V's
 // position; V's become H's position, swapped for V's position), Load takes the jam values once.
-// H's clock, RESET and LOAD are ClockOwner's; the state word V * 16 + H is published on every
-// change. Contract: docs/LATTICE.md.
+// H's clock source, RESET and LOAD are ClockOwner's, but no H edge is lost to its strobe gap;
+// the state word V * 16 + H is published on every change. Contract: docs/LATTICE.md.
 #pragma once
 #include "ClockOwner.hpp"
 #include <cmath>
@@ -74,15 +74,30 @@ struct Lattice {
 
         clock_owner::Inputs clock = in.clock;
         clock.data = bus::Sample{};
+        bool jackBefore = owner.clockGate.high;
+        clock_owner::ClockSource sourceBefore = owner.source;
+        double phaseBefore = owner.phase;
         auto s = owner.tick(p.mode, p.rateHz, clock, sampleRate);
         out.clocked = s.clocked;
+        // H's edge from the clock ClockOwner selected, read from its state rather than from
+        // s.acquire: ClockOwner drops an edge on its mandatory low sample and on a load's
+        // publication, but NLC §3 lets no Lattice change be lost (only its strobe waits).
+        bool hEdge = false;
+        switch (s.source) {
+            case clock_owner::ClockSource::Jack: hEdge = !jackBefore && owner.clockGate.high; break;
+            // Unclocked, with no strobe gap; its first sample shows the seed, as for every module.
+            case clock_owner::ClockSource::Engine: hEdge = s.acquire; break;
+            // The phase wraps backwards on an edge; a source change restarts it below one step.
+            case clock_owner::ClockSource::Internal: hEdge = s.source == sourceBefore && owner.phase < phaseBefore; break;
+            case clock_owner::ClockSource::Bus: break;  // BUS IN never clocks H
+        }
         if (s.seed) { h = p.seed & 15; v = p.seed >> 4 & 15; }
         if (s.loaded) { out.loaded = true; pending = true; }
 
         // Clocks. A held Follow jump preset ignores its counter's edges. RESET or LOAD takes
-        // priority over V's edges and the jumps on its sample, as ClockOwner gives it over H's.
+        // priority over H's and V's edges and the jumps on its sample.
         bool wrapH = false, wrapV = false;
-        if (s.acquire && !(follow && holdH)) { h = count(h, dirHGate.high, wrapH); out.hAdvanced = true; }
+        if (hEdge && !s.seed && !(follow && holdH)) { h = count(h, dirHGate.high, wrapH); out.hAdvanced = true; }
         if (!in.vClockConnected) vEdge = out.hAdvanced && wrapH;
         if (vEdge && !s.seed && !(follow && holdV)) { v = count(v, dirVGate.high, wrapV); out.vAdvanced = true; }
 

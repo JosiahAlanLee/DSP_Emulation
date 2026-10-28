@@ -110,7 +110,8 @@ to rest. ROULETTE patched and at 0 V always lets it come to rest.
   fraction of a microsecond; here all twelve bits change on one sample.
 - RESET (*original*; the hardware has none) sets the count to 0 and the VCO to
   the start of its low half, so a stopped VCO stays stopped and a running one
-  counts again half a period later. ClockOwner's rules apply: RESET priority
+  counts again half a period later. VCO OUT is low on the RESET sample
+  itself. ClockOwner's rules apply: RESET priority
   over a simultaneous edge, the reset count published with a strobe, and no
   count on that strobe or the low sample after it.
 - **RESULT.** On the sample the VCO stops, RESULT takes LO's word and
