@@ -53,9 +53,60 @@ struct RoutingVoice:HostVoice {
         std::copy(l,l+n,receivedL.begin());std::copy(r,r+n,receivedR.begin());HostVoice::processFx(l,r,outL,outR,n);
     }
 };
+static void linkSourceChanges(Plugin& providerPlugin){
+    Trace trace;auto m=std::make_unique<Monomodule>(factory(trace));m->model=modelMonomodule;ready(*m);
+    Model model;model.slug="Gorgon";model.plugin=&providerPlugin;
+    Module first,second;first.model=second.model=&model;first.id=10;second.id=11;
+    m->leftExpander.module=&first;
+    Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+    auto tick=[&](int f,float gate,bool publish=true){
+        args.frame=f;
+        if(publish){auto* p=static_cast<gorgon_sound::Packet*>(m->leftExpander.consumerMessage);
+            p->frame=f;p->moving=1;p->transport=7;p->lanes[0].gate=gate;p->lanes[0].velocity=1;}
+        m->process(args);
+    };
+    tick(0,0);tick(1,0);tick(2,10);assert(m->block.count==2); // epoch panic, then hit
+    m->leftExpander.module=&second;
+    tick(3,0,false); // still a fresh packet, but written by first
+    assert(m->block.count==3&&m->block.events[2].panic);
+    tick(4,0,false);assert(!m->link.connected&&m->block.count==3); // old packet is still within the 2-sample freshness window
+    tick(5,10);assert(m->block.count==3); // seed second's held gate; never invent a hit
+    tick(6,0);tick(7,10);assert(m->block.count==5&&m->block.events[3].release&&!m->block.events[4].panic);
+    // Rack may reuse a module address: the engine ID also identifies the sender.
+    second.id=12;tick(8,0,false);assert(m->block.count==6&&m->block.events[5].panic);
+    tick(9,10);assert(m->block.count==6);
+    // Loop-wrap reset alone keeps the new sender's held note alive.
+    auto* packet=static_cast<gorgon_sound::Packet*>(m->leftExpander.consumerMessage);
+    packet->reset=10;tick(10,10);assert(m->block.count==6);
+    packet->reset=0;tick(11,10);
+    // TRIG overrides the link, ends its session, and seeds a cable already held high.
+    m->inputs[Monomodule::TRIG].channels=1;m->inputs[Monomodule::TRIG].setVoltage(10);
+    tick(12,10);assert(m->block.count==7&&m->block.events[6].panic&&!m->link.connected);
+    m->leftExpander.module=&first;tick(13,10);assert(m->block.count==7);
+    m->inputs[Monomodule::TRIG].channels=0;
+    tick(14,10,false);assert(m->block.count==8&&m->block.events[7].release&&!m->link.connected);
+    tick(15,10);assert(m->block.count==8&&m->link.connected);
+    // Initialize resets the receiver but retains the provider-change frame barrier. A held
+    // link gate must fall and rise before a new note, just like a held TRIG gate.
+    Module::ResetEvent reset;m->onReset(reset);tick(16,10);
+    assert(m->block.count==1&&m->block.events[0].initialize);
+    tick(17,0);tick(18,10);
+    assert(m->block.count==3&&m->block.events[1].release&&!m->block.events[2].panic);
+    // A replacement can publish immediately while the previous sender's gate was low.
+    // Even a packet stamped this frame cannot turn that sender's held high into a note.
+    tick(19,0);assert(m->block.count==4&&m->block.events[3].release);
+    m->leftExpander.module=&second;
+    tick(20,10);assert(m->block.count==5&&m->block.events[4].panic&&!m->link.connected);
+    tick(21,10);assert(m->block.count==5&&m->link.connected);
+    tick(22,0);tick(23,10);
+    assert(m->block.count==7&&m->block.events[5].release&&!m->block.events[6].panic);
+    std::cout<<"Link provider pointer/ID changes, stale packets, loop reset, TRIG and Initialize passed\n";
+}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
-    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.3";modelMonomodule->plugin=&receiverPlugin;
+    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.4";modelMonomodule->plugin=&receiverPlugin;
+    Plugin linkPlugin;linkPlugin.slug="GorgonBridge";linkPlugin.version="2.4.0";
+    linkSourceChanges(linkPlugin);
     {
         // Rack Initialize must reach the live worker without reconstructing its OS-backed engine.
         HostTrace trace;

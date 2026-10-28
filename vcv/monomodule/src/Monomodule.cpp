@@ -19,6 +19,8 @@ struct Monomodule : Module {
     gorgon_sound::Packet messages[2];
     mnm_rack::InputBlock block;
     mnm_rack::LinkState link;
+    const Module* linkProvider=nullptr;
+    int64_t linkProviderId=-1,linkProviderFrame=-1;
     std::array<mnm_rack::Edge,mnm_rack::tracks> gates;
     mnm_rack::Edge reset;
     uint64_t generation=0,lastLoaded=0;
@@ -121,7 +123,15 @@ struct Monomodule : Module {
         if(external&&!patched)
             for(int t=0;t<mnm_rack::tracks;++t)if(gates[size_t(t)].high){gates[size_t(t)].high=false;appendRelease(t,offset);}
         const auto* packet=patched?nullptr:emu_rack::soundPacket(leftExpander.module,leftExpander.consumerMessage,args.frame);
-        auto linked=link.update(packet,args.frame);
+        const Module* provider=patched?nullptr:leftExpander.module;
+        int64_t providerId=provider?provider->id:-1;
+        bool changed=provider!=linkProvider||providerId!=linkProviderId;
+        if(changed)linkProviderFrame=args.frame;
+        linkProvider=provider;linkProviderId=providerId;
+        if(packet&&packet->frame<linkProviderFrame)packet=nullptr;
+        // Expander buffers belong to us and may still contain the previous sender's packet.
+        // A source change disconnects first; the next flipped packet seeds the new gates.
+        auto linked=link.update(changed?nullptr:packet,args.frame);
         lights[LINK].setBrightness(link.connected?1.f:0.f);
         // Gorgon pulses RESET at every loop wrap. For drums that is a panic (Machinemodule); here it would
         // end every held note each loop, so only a seek, a stop or a disconnect is. A panic ends notes

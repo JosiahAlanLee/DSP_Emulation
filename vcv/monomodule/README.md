@@ -119,6 +119,15 @@ prints a note and exits 77 (skipped). It passed on 2026-10-27 with OS 1.32B, at
 `make dist` writes the `.vcvplugin` and its corresponding-source archive. The shared
 emulated-instrument adapter is `../adapter` (its README draws the AGPL/BSD boundary).
 
+## Changes in 2.0.4
+
+Replacing the adjacent Gorgon ends the old sound-link session, even when the new
+sender has the same transport revision. Its first packet seeds held gates without
+playing a note, and buffered packets from before the replacement are ignored.
+Rack module IDs also distinguish senders when an address is reused. Loop-wrap
+RESET pulses still keep notes held; a TRIG cable still overrides the link, and
+Initialize still resets tracks without replaying a held gate.
+
 ## Changes in 2.0.3
 
 Rack’s **Initialize** returns every track to GND, ends its note (including an FX
