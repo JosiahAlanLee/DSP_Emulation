@@ -72,6 +72,7 @@ public:
     void release(int track) override {state.release(track);}
     void configure(const uint8_t (&settings)[emu_rack::trackSettings]) override {state.configure(settings);}
     void input(const float* frames) override {state.input(frames);}
+    void initialize() override {state.initialize();}
     void panic() override {state.panic();}
     void render(float (&out)[nativeFrames][channels]) override {state.render(out);}
 };

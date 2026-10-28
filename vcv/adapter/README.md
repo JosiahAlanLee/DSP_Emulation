@@ -16,6 +16,9 @@ An instrument supplies a `Layout` (its track, output-channel and audio-input cou
 a `Backend` (the emulator: `fire`, `release`, `panic`, `render`, and, if it has inputs or
 per-track settings, `input` and `configure`), and its module and panel. An instrument
 without inputs, like Machinemodule, renders exactly as it did before inputs existed.
+An explicit Initialize event calls the optional `Backend::initialize()` on the worker
+before simultaneous hits; its default calls `panic()`. Monomodule overrides it to
+restore fresh track state while retaining its loaded OS and DSP engines.
 
 ## The license boundary
 

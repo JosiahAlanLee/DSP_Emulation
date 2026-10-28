@@ -20,6 +20,7 @@ using emu_rack::Event;
 using InputBlock=emu_rack::InputBlockOf<inputs>;
 // An FX track's input, as the hardware's KIT > ROUTING names them, in a block's per-track settings.
 enum FxSource : uint8_t { NEIBOR=0, INP_A=1, INP_B=2, INP_AB=3 };
+constexpr FxSource defaultFxSource(int track) {return track?NEIBOR:INP_AB;}
 using emu_rack::LinkState;
 using emu_rack::resolve;
 using OutputBlock=emu_rack::OutputBlock<channels>;

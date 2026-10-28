@@ -41,8 +41,8 @@ struct Hit {
     uint8_t track=0, velocity=127;
     int8_t note=-1;          // MIDI note for a pitched instrument; -1 for none (a drum machine ignores it)
 };
-// A hit, a panic, or a release: the gate of hit.track fell, so a pitched instrument ends its note.
-struct Event { uint16_t offset=0; bool panic=false, release=false; Hit hit; };
+// A hit, an explicit Initialize, a panic, or a release (the gate of hit.track fell).
+struct Event { uint16_t offset=0; bool panic=false, release=false, initialize=false; Hit hit; };
 // The block's host audio for an instrument with inputs, one frame per host sample.
 template<int Inputs> struct InputAudio { float samples[frames][Inputs]={}; };
 template<> struct InputAudio<0> {};
