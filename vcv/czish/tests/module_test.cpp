@@ -265,9 +265,108 @@ static void persistence() {
     assert(b.params[CzishModule::ENV_BASE + 16 + 1].getValue() == 99);
 }
 
+// Review finding #17: visiting LINEAR gives YM FP back its exact default
+// clock, and a RATE the user set survives profile switches.
+static void profileRoundTrip(float sr) {
+    auto make = [] {
+        auto *m = new DacStageModule;
+        m->model = modelDacStage;
+        connectedOutputs(*m);
+        m->inputs[DacStageModule::SIGNAL].channels = 1;
+        return m;
+    };
+    auto a = args(sr);
+    auto *m = make();
+    auto &rate = m->params[DacStageModule::RATE];
+    auto &profile = m->params[DacStageModule::PROFILE];
+    const float ym = 55930.39f;
+    m->process(a);
+    assert(rate.getValue() == ym);
+    for (int via : {2, 1}) {
+        profile.setValue(2); // LINEAR follows the host rate
+        m->process(a);
+        m->process(a);
+        assert(rate.getValue() == sr && m->activeRate.load() == sr);
+        profile.setValue(float(via)); // straight back, or through Casio
+        m->process(a);
+        profile.setValue(0);
+        m->process(a);
+        m->process(a);
+        if (rate.getValue() != ym)
+            std::cerr << "YM FP RATE after LINEAR: " << rate.getValue() << "\n";
+        assert(rate.getValue() == ym && std::abs(m->activeRate.load() - ym) < .01f);
+    }
+    // A saved patch remembers that LINEAR chose the rate.
+    profile.setValue(2);
+    m->process(a);
+    json_t *j = m->toJson();
+    auto *loaded = make();
+    loaded->fromJson(j);
+    json_decref(j);
+    assert(loaded->params[DacStageModule::RATE].getValue() == sr);
+    loaded->params[DacStageModule::PROFILE].setValue(0);
+    loaded->process(a);
+    assert(loaded->params[DacStageModule::RATE].getValue() == ym);
+    delete loaded;
+    // The user's own RATE survives, in LINEAR and in YM FP.
+    rate.setValue(30000);
+    profile.setValue(0);
+    m->process(a);
+    assert(rate.getValue() == 30000);
+    profile.setValue(2);
+    m->process(a);
+    assert(rate.getValue() == 30000);
+    profile.setValue(1);
+    m->process(a);
+    profile.setValue(0);
+    m->process(a);
+    assert(rate.getValue() == 30000);
+    delete m;
+}
+// Review finding #18: selecting an END step shows LEVEL 0 without writing it,
+// so an imported tone exports byte for byte after only being looked at.
+static void endStepSelection() {
+    CzishModule m;
+    m.model = modelCzish;
+    dspemu::cz::Tone tone;
+    auto &dca = tone.line[0].env[2];
+    dca.level = {99, 70, 42, 0, 0, 0, 0, 0};
+    dca.sustain = 1;
+    dca.end = 2; // the END step carries a non-zero level byte
+    auto file = dspemu::cz::sysex::encode(tone); // writes 0 at END
+    // Line 1 DCA step 3 level is payload byte 26: nibbles at 58 (low) and 59.
+    assert(file.size() == 263 && file[58] == 0 && file[59] == 0);
+    file[58] = 42 & 15;
+    file[59] = 42 >> 4;
+    std::string error;
+    assert(dspemu::cz::sysex::decode(file, tone, error) && tone.line[0].env[2].level[2] == 42);
+    assert(dspemu::cz::sysex::encode(tone) == file);
+    m.setTone(tone);
+    assert(dspemu::cz::sysex::encode(m.readTone(true)) == file);
+    auto *knob = createParamCentered<EnvKnob<1>>(math::Vec(), &m, CzishModule::ENV_BASE + 1);
+    m.params[CzishModule::ENV_SELECT].setValue(2);
+    m.params[CzishModule::STEP_SELECT].setValue(2);
+    for (int i = 0; i < 3; ++i)
+        knob->step(); // UI frames with the END step selected
+    int id = CzishModule::ENV_BASE + 2 * 16 + 2 * 2 + 1;
+    assert(knob->paramId == id);
+    if (m.params[id].getValue() != 42)
+        std::cerr << "END step level after selection: " << m.params[id].getValue() << "\n";
+    assert(m.params[id].getValue() == 42);
+    assert(dspemu::cz::sysex::encode(m.readTone(true)) == file);
+    // The knob itself points at zero, the level the voice uses.
+    assert(std::abs(std::atan2(knob->tw->transform[1], knob->tw->transform[0]) - knob->minAngle) < 1e-4f);
+    m.params[CzishModule::STEP_SELECT].setValue(1);
+    knob->step();
+    assert(knob->paramId == id - 2);
+    assert(std::abs(std::atan2(knob->tw->transform[1], knob->tw->transform[0]) - knob->minAngle) > .1f);
+    delete knob;
+}
+
 int main() {
     Context context;
     context.engine = new engine::Engine;
+    context.event = new widget::EventState; // lets a headless widget be deleted
     contextSet(&context);
     Plugin plugin;
     plugin.slug = "CZishLab";
@@ -279,8 +378,10 @@ int main() {
         voice(sr);
         byteBusFeedback(sr);
         fullModule(sr);
+        profileRoundTrip(sr);
     }
     persistence();
+    endStepSelection();
     rack::plugin::plugins.clear();
     std::cout << "PASS: Rack DAC and CZ ports, clocked byte mask, encoded output, Register feedback, "
                  "polyphony, C4 tuning, CV bounds and release at 44.1/48/96 kHz\n";

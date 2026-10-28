@@ -43,8 +43,10 @@ OCTAVE affects both lines.
 2. Set RATE and LEVEL in Casio's 0–99 units. The display shows their values,
    the levels by step (not elapsed time), and the published bus word/divider.
 3. SUSTAIN chooses a held step or OFF. END chooses the final step, whose
-   effective level is always zero. The editor sets its displayed level to zero.
-   Later steps, including a sustain beyond END, are ignored.
+   effective level is always zero. On the END step the display and the LEVEL
+   knob show zero, but the stored level is kept: an imported tone still exports
+   its own bytes, and the level returns if END moves. Later steps, including a
+   sustain beyond END, are ignored.
 4. While a key is held, reaching SUSTAIN holds there. Releasing a key starts
    the step after SUSTAIN, including a release before the sustain point has
    been reached. Without a sustain, the envelope is a one-shot. A retrigger
@@ -64,6 +66,9 @@ on the provisional 64-tick control cadence.
 chip's high-pitch DCW limit. **VIB CV** adds vibrato depth (10 V spans 0–99).
 **BEND** is ±5 V for the selected bend range. The menu holds vibrato waveform
 and enable, detune direction, bend range, master tuning and portamento.
+As the CZ-101 manual describes, a portamento glide takes the same time whatever
+the interval; TIME sets that time (provisional curve: 5 ms at 0, about 4.8 s
+at 99).
 
 The **CHIP** options expose raw waves 3 and 7, extra windows, other-voice pitch
 modulation and partner cancellation. These are outside the CZ-101 firmware.
@@ -107,7 +112,8 @@ channels), ±5 V is full scale before DRIVE, and the final output is bounded at
 RATE is displayed in Hz at the nominal Yamaha clock; changing the menu's chip
 clock scales it. RATE CV is 1 V/octave; DRIVE CV is 6 dB/V; BITS CV is 1 bit/V,
 rounded and clamped. The readout shows effective Hz and bits. On first selecting
-LINEAR at the untouched default RATE, it adopts the current host rate. CZ
+LINEAR at the untouched default RATE, it adopts the current host rate; leaving
+LINEAR with that rate unchanged restores the exact YM default. CZ
 selects a 20 kHz TONE default when TONE was still at the previous profile's
 default. Saved/user-edited settings take precedence.
 

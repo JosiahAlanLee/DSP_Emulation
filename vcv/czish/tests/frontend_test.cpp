@@ -46,6 +46,98 @@ static void envelopes() {
     run(e, in, 1, t, 4000);
     assert(e.runs[0][2].step == 7 && e.runs[0][2].done);
 }
+// Review finding #1: every envelope ramp moves one way, at most one chip step
+// per host sample (48 kHz host, 40 kHz chip), across many 64-tick control
+// passes. Segment 1 starts above half of its target, the case where a wrong
+// direction bit makes the chip snap straight to the target.
+static void rampIsMonotonic(int e, std::array<int, 2> levels, int rateValue) {
+    cz::VoiceEngine engine;
+    cz::Tone t;
+    t.vibrato = false;
+    auto &env = t.line[0].env[e];
+    env.rate.fill(rateValue);
+    env.level = {levels[0], levels[1], 0, 0, 0, 0, 0, 0};
+    env.sustain = 1;
+    env.end = 2;
+    cz::EnvKind kind = cz::EnvKind(e);
+    uint32_t perSample = cz::Upd933::envelopeRate(uint8_t(cz::rateCode(kind, rateValue)));
+    auto counter = [&]() -> const cz::Upd933::Envelope & {
+        return e == 0 ? engine.chip.dco[0] : (e == 1 ? engine.chip.dcw[0] : engine.chip.dca[0]);
+    };
+    // Where the chip stores each level (MAME upd933.cpp): DCO << 16 with a
+    // further x32 for bit 6, DCW << 19, DCA << 18. Written out independently.
+    auto target = [&](int value) {
+        uint32_t code = uint32_t(cz::levelCode(kind, value));
+        if (e == 0)
+            return (code & 63) << (code & 64 ? 21 : 16);
+        return code << (e == 1 ? 19 : 18);
+    };
+    uint32_t first = target(levels[0]), final = target(levels[1]);
+    assert(first > final / 2 && first < final);
+    // Long enough for several control passes in each segment.
+    assert(first / perSample > 64 * 20 && (final - first) / perSample > 64 * 20);
+    std::array<cz::Input, 8> in{};
+    in[0].gate = 10;
+    uint32_t last = 0, worst = 0;
+    int frames = int((final / perSample + 2000) * 48000 / 40000);
+    for (int i = 0; i < frames; ++i) {
+        engine.process(in, 1, t, 0, 48000, true);
+        uint32_t now = counter().current;
+        assert(now >= last);
+        worst = std::max(worst, now - last);
+        last = now;
+    }
+    if (worst > perSample)
+        std::cerr << "envelope " << e << ": per-sample rate " << perSample << ", largest rise " << worst << "\n";
+    assert(worst <= perSample);
+    assert(last == final && engine.runs[0][e].step == 1);
+    // The release falls the same way: never up, never more than one step.
+    in[0].gate = 0;
+    worst = 0;
+    for (int i = 0; i < frames; ++i) {
+        engine.process(in, 1, t, 0, 48000, true);
+        uint32_t now = counter().current;
+        assert(now <= last);
+        worst = std::max(worst, last - now);
+        last = now;
+    }
+    assert(worst <= perSample && last == 0);
+}
+static void ramps() {
+    rampIsMonotonic(0, {75, 80}, 50); // DCO, bit-6 (x32) units
+    rampIsMonotonic(1, {60, 99}, 50); // DCW: 60 is above half of 99
+    rampIsMonotonic(2, {60, 99}, 50); // DCA
+}
+// Review finding #10: the CZ-101 manual documents a constant glide time, so
+// C4->G4 and C4->C6 take the same time.
+static int glideFrames(float target) {
+    cz::VoiceEngine e;
+    cz::Tone t;
+    t.vibrato = false;
+    t.portamento = true;
+    t.portamentoTime = 30;
+    std::array<cz::Input, 8> in{};
+    in[0].gate = 10;
+    run(e, in, 1, t, 4800);
+    in[0].pitch = target;
+    uint16_t code = cz::pitchRegister(target);
+    for (int i = 1; i < 48000; ++i) {
+        e.process(in, 1, t, 0, 48000, true);
+        if (e.chip.voice[0].pitch == code)
+            return i;
+    }
+    return -1;
+}
+static void portamento() {
+    int fifth = glideFrames(7 / 12.f), twoOctaves = glideFrames(2);
+    double expected = .005 * std::exp2(3.) * 48000; // duration(TIME 30) = 40 ms
+    double tick = 64. / 40000 * 48000;
+    if (std::abs(fifth - twoOctaves) > tick)
+        std::cerr << "portamento: C4->G4 " << fifth << " frames, C4->C6 " << twoOctaves << " frames\n";
+    assert(fifth > 0 && twoOctaves > 0);
+    assert(std::abs(fifth - twoOctaves) <= tick);
+    assert(std::abs(fifth - expected) <= 2 * tick && std::abs(twoOctaves - expected) <= 2 * tick);
+}
 static void modes() {
     for (int mode = 0; mode < 4; ++mode) {
         cz::VoiceEngine e;
@@ -291,6 +383,8 @@ static void converter() {
 }
 int main() {
     envelopes();
+    ramps();
+    portamento();
     modes();
     tuningAndControls();
     sysex();

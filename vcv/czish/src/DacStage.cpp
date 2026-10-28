@@ -33,6 +33,9 @@ struct DacStageModule : Module {
     std::atomic<unsigned> displayed{0};
     float lastTone = -1, lastRate = -1, alpha = 1;
     int lastProfile = 0;
+    static constexpr float defaultRate = 55930.39f;
+    // The host rate LINEAR wrote into RATE automatically, or NaN.
+    float autoRate = NAN;
     std::atomic<float> activeRate{55930.39f};
     std::atomic<int> activeBits{12};
 
@@ -42,7 +45,7 @@ struct DacStageModule : Module {
                      {"YM floating point", "CZ model (provisional)", "Linear"});
         configParam(BITS, 4, 16, 12, "Linear resolution", " bits");
         getParamQuantity(BITS)->snapEnabled = true;
-        configParam(RATE, 1000, 96000, 55930.39f, "Device clock (YM and Linear)", " Hz");
+        configParam(RATE, 1000, 96000, defaultRate, "Device clock (YM and Linear)", " Hz");
         configParam(DRIVE, -24, 24, 0, "Input drive", " dB");
         configParam(TRACK, -.5f, .5f, 0, "Provisional CZ range tracking error", "%", 0, 100);
         configParam(LEVEL, -24, 12, 0, "Output level", " dB");
@@ -90,8 +93,16 @@ struct DacStageModule : Module {
         if (profileIndex != lastProfile) {
             if (params[TONE].getValue() == (lastProfile == 1 ? 20000.f : 24000.f))
                 params[TONE].setValue(profileIndex == 1 ? 20000.f : 24000.f);
-            if (profileIndex == 2 && std::abs(params[RATE].getValue() - 55930.39f) < 1)
+            if (profileIndex == 2 && std::abs(params[RATE].getValue() - defaultRate) < 1) {
                 params[RATE].setValue(float(host));
+                autoRate = float(host);
+            } else if (lastProfile == 2 && profileIndex != 2) {
+                // Give back the YM default if RATE is still the host rate that
+                // LINEAR chose; a rate the user set survives the switch.
+                if (std::isfinite(autoRate) && params[RATE].getValue() == autoRate)
+                    params[RATE].setValue(defaultRate);
+                autoRate = NAN;
+            }
             lastProfile = profileIndex;
         }
         activeRate.store(float(rate), std::memory_order_relaxed);
@@ -133,9 +144,15 @@ struct DacStageModule : Module {
     json_t *dataToJson() override {
         auto *j = json_object();
         json_object_set_new(j, "schema", json_integer(2));
+        if (std::isfinite(autoRate))
+            json_object_set_new(j, "autoRate", json_real(autoRate));
         return j;
     }
-    void dataFromJson(json_t *) override { lastProfile = int(params[PROFILE].getValue()); }
+    void dataFromJson(json_t *j) override {
+        lastProfile = int(params[PROFILE].getValue());
+        json_t *a = json_object_get(j, "autoRate");
+        autoRate = lastProfile == 2 && json_is_number(a) ? float(json_number_value(a)) : NAN;
+    }
     void onReset(const ResetEvent &e) override {
         Module::onReset(e);
         for (auto &s : stages)
@@ -145,6 +162,8 @@ struct DacStageModule : Module {
         reader.reset();
         displayed.store(0);
         lastTone = lastRate = -1;
+        lastProfile = 0;
+        autoRate = NAN;
     }
 };
 

@@ -305,11 +305,16 @@ There are two kinds, because RATE moves:
   converter: 64 taps, 1024 phases, Blackman. Its `configure` allocates and is
   not real-time safe, so it serves rates that only change from the menu: CZ at
   40 kHz, and CLEAN output at a fixed device rate.
-- **Variable ratio.** This follows OTIS's `LabConverter` design: 64 taps, 512
-  phases, 9 precomputed cutoff buckets from 0.46 down to 0.115 of the input
-  rate. RATE CV moves between buckets without reallocating.
-  - Below the lowest bucket's 4:1 ratio, AA ON first decimates with a cascade
-    of half-band 2× stages. LINEAR at 1 kHz from a 48 kHz host is one such case.
+- **Variable ratio.** This follows OTIS's `LabConverter` design: 64 taps, 1024
+  phases, 9 precomputed cutoff buckets at 0.46·2^(−b/2) of the input rate for
+  b = 0…8, from 0.46 down to about 0.029. A ratio r uses the smallest b with
+  2^(−b/2) ≤ r, so ratios down to 1/16 have their own bucket. RATE CV moves
+  between buckets without reallocating.
+  - AA ON keeps the ratio at the sinc stage at or above 1/4 by first
+    decimating with a cascade of up to seven half-band 2× stages, so it uses
+    buckets 0–4. LINEAR at 1 kHz from a 48 kHz host is one such case.
+  - CLEAN output reads the same bank at host/device rate and reaches buckets
+    5–8 only when the device rate is more than four times the host rate.
 - **Existing copies stay.** OTIS and Spoon Bender keep their own. Spoon Bender
   copied rather than shared so OTIS's bit-exact traces stay untouched, and the
   same reason applies here.
