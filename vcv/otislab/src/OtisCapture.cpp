@@ -24,6 +24,9 @@ struct OtisCapture : Module {
     dsp::PulseGenerator done;
     bool buttonHigh = false, armed = false, recording = false, takeClocked = false;
     int64_t pulsesLeft = 0, samplesLeft = 0;
+    // A clocked take ends if no pulse arrives for two beats at TEMPO: the samples allowed between pulses,
+    // and the samples left before the current wait runs out.
+    int64_t pulseTimeout = 0, pulseWaitLeft = 0;
     std::atomic<int> ppqn{4};                    // clock pulses per beat
     // For the display (UI thread).
     std::atomic<bool> displayLinked{false}, displayArmed{false}, displayRecording{false};
@@ -39,7 +42,7 @@ struct OtisCapture : Module {
             {"1/4 beat", "1/2 beat", "1 beat", "2 beats", "3 beats", "4 beats", "6 beats", "8 beats", "12 beats", "16 beats", "32 beats"});
         configSwitch(SOURCE, 0, 2, 0, "Source", {"IN", "The kit's own output", "IN and the kit's output"});
         configParam(GAIN, 0, 2, 1, "Gain", "%", 0, 100);
-        configParam(TEMPO, 40, 240, 120, "Tempo, used when CLOCK is unpatched", " BPM");
+        configParam(TEMPO, 40, 240, 120, "Tempo: sets the take length without CLOCK, and ends a clocked take after two beats without a pulse", " BPM");
         getParamQuantity(TEMPO)->snapEnabled = true;
         configButton(ARM_BUTTON, "Arm: the next take starts on the next CLOCK pulse (at once without CLOCK)");
         configInput(AUDIO_IN, "Audio to record (±5 V full scale)");
@@ -67,12 +70,18 @@ struct OtisCapture : Module {
             // A take covers the samples from its start pulse up to, not including, the pulse that ends it.
             // Keep the tempo fallback measured from the start, even while counting pulses.
             --samplesLeft;
-            if (takeClocked && clocked ? pulse && --pulsesLeft <= 0 : samplesLeft <= 0) stop();
+            if (takeClocked && clocked) {
+                // Ends on its last pulse, or where the clock has stopped for two beats at TEMPO.
+                --pulseWaitLeft;
+                if (pulse ? --pulsesLeft <= 0 : pulseWaitLeft <= 0) stop();
+                else if (pulse) pulseWaitLeft = pulseTimeout;
+            } else if (samplesLeft <= 0) stop();
         } else if (armed && (!clocked || pulse)) {
             armed = false; recording = true; takeClocked = clocked;
             pulsesLeft = std::max<int64_t>(1, std::llround(beats * ppqn.load(std::memory_order_relaxed)));
             float tempo = std::isfinite(params[TEMPO].getValue()) ? clamp(params[TEMPO].getValue(), 40.f, 240.f) : 120.f;
             samplesLeft = std::max<int64_t>(1, std::llround(double(beats) * 60 / tempo * args.sampleRate));
+            pulseWaitLeft = pulseTimeout = std::max<int64_t>(1, std::llround(2.0 * 60 / tempo * args.sampleRate));
         }
         if (linked) if (auto* request = static_cast<otis::kit::CaptureRequest*>(left->rightExpander.producerMessage)) {
             float in = inputs[AUDIO_IN].getVoltage() / 5.f;
@@ -96,7 +105,7 @@ struct OtisCapture : Module {
         }
     }
     void onReset(const ResetEvent& e) override {
-        Module::onReset(e); armed = recording = takeClocked = false; pulsesLeft = samplesLeft = 0; ppqn = 4;
+        Module::onReset(e); armed = recording = takeClocked = false; pulsesLeft = samplesLeft = pulseTimeout = pulseWaitLeft = 0; ppqn = 4;
     }
     json_t* dataToJson() override {
         json_t* root = json_object(); json_object_set_new(root, "ppqn", json_integer(ppqn.load())); return root;

@@ -82,7 +82,8 @@ LEVEL CV are held from the hit.
   Loading or compacting during a take discards it (a take that has already
   finished is kept); nothing more is recorded
   until Capture ends that request and starts a new take. REC and DONE keep
-  their timing.
+  their timing. Once Compact (or a WAV load or Clear) leaves room for a take,
+  Capture's NO ROOM clears.
 
 ## Saving and reset
 
@@ -96,8 +97,10 @@ file above 384,000 Hz is still refused when loaded.) Invalid saved audio
 encoding or length also leaves the slot empty, with the error in the menu.
 The other slots still load. Rack's Initialize empties the bank and restores
 the controls. It also forgets the last take, so a linked
-[Otis Capture](CAPTURE.md) shows READY and the next take is "Capture take 1";
-loading a patch or preset does the same.
+[Otis Capture](CAPTURE.md) shows READY and the next take is "Capture take 1".
+Loading a patch or preset does the same, except that take names continue from
+the highest *n* among the loaded slots named exactly "Capture take *n*", so a
+new take never repeats a loaded one's name.
 
 ## Validation
 
@@ -111,7 +114,7 @@ loading a patch or preset does the same.
 - `tests/kit_module_test.cpp`, through the Rack module: ports; an empty bank
   silent; channel *n* to slot *n* with empty slots ignored; SLOT bits on the
   hit's sample and a clocked SLOT's latched word; PITCH and LEVEL latched from
-  the hit's channel, with TUNE, START and REV; a saved bank restored into a
+  the hit's channel, with TUNE, START and REV applied from the panel; a saved bank restored into a
   fresh module that plays bit-identically, with the clock and drop-sample
   settings; folders loaded in name order, including a two-channel file with
   identical channels; invalid or damaged saved slots; Initialize. The ASan/UBSan build runs it too.

@@ -38,7 +38,7 @@ static void frame(OtisKit& k,OtisCapture* c,const Module::ProcessArgs& a,bool ca
 static void hit(OtisKit& k,int slot,bool high) { k.inputs[OtisKit::GATE_IN].setVoltage(high ? 10.f : 0.f,slot); }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.4"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.5"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Without a kit on the left, Capture says so and never records.
@@ -339,6 +339,98 @@ int main() {
         assert(k->takes==1 && c->displayTakes.load()==1 && c->displaySlot.load()==0);
         assert(k->slots[0].name=="Capture take 1");
     }
+    // Review fix 3, item 1: after a patch load, take names continue from the highest n among loaded
+    // slots named exactly "Capture take n", both in a used kit and in a fresh one; Initialize starts
+    // from 1 again.
+    for(bool fresh:{false,true}) {
+        json_t* patch;
+        {
+            auto src=makeKit();
+            const char* names[]={"Capture take 3","Capture take 7","capture take 50","Capture take 20a",
+                                 "Capture take 99 (copy)","Capture take -30","My Capture take 40","s7"};
+            for(int s=0;s<8;++s) src->slots[size_t(s)].name=names[s];
+            src->install(false); patch=src->toJson();
+        }
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(0); c->params[OtisCapture::LENGTH].setValue(0);   // 6000 samples
+        c->inputs[OtisCapture::AUDIO_IN].channels=1; c->inputs[OtisCapture::AUDIO_IN].setVoltage(1.f);
+        auto take=[&]() {
+            c->params[OtisCapture::ARM_BUTTON].setValue(1); frame(*k,c.get(),a,true); c->params[OtisCapture::ARM_BUTTON].setValue(0);
+            while(c->recording) frame(*k,c.get(),a,true);
+            for(int n=0;n<10;++n) frame(*k,c.get(),a,true);
+            k->syncTakes();
+        };
+        if(!fresh) { take(); assert(k->slots[0].name=="Capture take 1"); take(); assert(k->slots[0].name=="Capture take 2"); }
+        k->fromJson(patch); json_decref(patch);
+        assert(k->slots[1].name=="Capture take 7" && k->slots[2].name=="capture take 50");
+        take(); assert(k->slots[0].name=="Capture take 8");
+        c->params[OtisCapture::SLOT].setValue(2); take(); assert(k->slots[2].name=="Capture take 9");
+        k->onReset(Module::ResetEvent{});
+        c->params[OtisCapture::SLOT].setValue(0); take(); assert(k->slots[0].name=="Capture take 1");
+    }
+    // Item 2: a take started on CLOCK ends when no pulse arrives for two beats at TEMPO
+    // (2 x 60 / 150 s = 38,400 samples at 48 kHz), keeping what it recorded; an ordinary take, not CUT.
+    // A slow clock within that window still ends on its pulses, and removing CLOCK still falls back
+    // to the TEMPO duration from the start.
+    for(bool captureFirst:{true,false}) for(int scenario=0;scenario<3;++scenario) {
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::LENGTH].setValue(2);  // 1 beat: 4 pulses, or 19,200 samples at 150 BPM
+        c->params[OtisCapture::TEMPO].setValue(150);
+        c->inputs[OtisCapture::AUDIO_IN].channels=1; c->inputs[OtisCapture::AUDIO_IN].setVoltage(2.5f);
+        c->inputs[OtisCapture::CLOCK_IN].channels=1;
+        frame(*k,c.get(),a,captureFirst);
+        // 0: pulses at 0 and 100, then the clock stops: ends 38,400 samples after the last pulse.
+        // 1: a slow clock, one pulse every 38,000 samples: ends on the fourth pulse after the start.
+        // 2: the clock stops after 100, and CLOCK is removed at 30,000, past the TEMPO duration: ends there.
+        int end=scenario==0 ? 38500 : scenario==1 ? 4*38000 : 30000;
+        int recorded=0, dones=0; bool doneHigh=false;
+        for(int t=0;t<end+50000;++t) {
+            c->params[OtisCapture::ARM_BUTTON].setValue(t==0 ? 1.f : 0.f);
+            if(scenario==2 && t==30000) c->inputs[OtisCapture::CLOCK_IN].channels=0;
+            bool pulse=scenario==1 ? t%38000==0 : (t==0 || t==100);
+            c->inputs[OtisCapture::CLOCK_IN].setVoltage(pulse ? 10.f : 0.f);
+            frame(*k,c.get(),a,captureFirst);
+            bool rec=c->outputs[OtisCapture::REC_OUT].getVoltage()>5;
+            bool d=c->outputs[OtisCapture::DONE_OUT].getVoltage()>5;
+            assert(rec==(t<end));
+            recorded+=rec; dones+=d && !doneHigh; doneHigh=d;
+        }
+        auto take=k->exchange.read().take[0];
+        assert(recorded==end && dones==1 && k->takes==1 && take.size()==end && !k->lastTruncated);
+        assert(c->displayState.load()==0 && c->displaySlot.load()==0);   // SLOT 1, not CUT
+        for(int i=take.begin;i<take.end;++i) assert(k->engine.sample.pcm[size_t(i)]==otis::quantize(.5f));
+    }
+    // Item 3: Compact clears NO ROOM once it leaves room for a take. Slot 1's old take is still sounding
+    // when a take replaces it and fills the free memory, so the next take finds no room; Compact
+    // drops the old take and frees it. A Compact that leaves no room keeps NO ROOM.
+    {
+        auto k=std::make_unique<OtisKit>(); k->model=modelOtisKit; k->outputs[OtisKit::OUT].channels=1;
+        k->inputs[OtisKit::GATE_IN].channels=8;
+        k->slots[0].pcm=noise(otis::memoryWords-40000-1000,1); k->slots[1].pcm=noise(40000,2); k->install(false);
+        auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(1); c->params[OtisCapture::LENGTH].setValue(0);   // 6000 samples
+        auto take=[&]() {
+            c->params[OtisCapture::ARM_BUTTON].setValue(1); frame(*k,c.get(),a,true); c->params[OtisCapture::ARM_BUTTON].setValue(0);
+            while(c->recording) frame(*k,c.get(),a,true);
+            for(int n=0;n<10;++n) frame(*k,c.get(),a,true);
+        };
+        frame(*k,c.get(),a,true); hit(*k,1,true); frame(*k,c.get(),a,true); assert(k->engine.voices[1].running);
+        take(); assert(k->takes==1 && k->lastTruncated && k->engine.voices[1].running);   // CUT at the free memory's end
+        take(); assert(k->takes==1 && k->noRoom && c->displayState.load()==1 && k->engine.voices[1].running);
+        k->install(true);                                                               // Compact
+        for(int n=0;n<3;++n) frame(*k,c.get(),a,true);
+        assert(!k->noRoom && c->displayState.load()!=1 && c->displayRoom.load()>30000/48000.f);
+        take(); assert(k->takes==2 && !k->noRoom);
+
+        auto full=makeKit(); full->slots[0].pcm=noise(otis::memoryWords,9); full->install(false);
+        auto c2=makeCapture(); wire(*full,*c2);
+        c2->params[OtisCapture::ARM_BUTTON].setValue(1);
+        for(int n=0;n<30000;++n) { frame(*full,c2.get(),a,true); c2->params[OtisCapture::ARM_BUTTON].setValue(0); }
+        assert(full->noRoom && c2->displayState.load()==1);
+        full->install(true);
+        for(int n=0;n<3;++n) frame(*full,c2.get(),a,true);
+        assert(full->noRoom && c2->displayState.load()==1);
+    }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback, a take reusing the last-copied region, a take finishing during an install, 768 kHz takes reloaded, sample-rate change mid-take, Initialize and patch load clear the take status\n";
+    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback, a take reusing the last-copied region, a take finishing during an install, 768 kHz takes reloaded, sample-rate change mid-take, Initialize and patch load clear the take status, take names continuing after a patch load, a clocked take ending when its clock stops, Compact clearing NO ROOM\n";
 }
