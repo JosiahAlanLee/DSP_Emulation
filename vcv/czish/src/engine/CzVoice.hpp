@@ -212,7 +212,8 @@ class VoiceEngine {
     int mode_ = -1;
     bool hadPoly_ = false;
     std::array<uint64_t, 8> ages_{};
-    std::array<double, 8> vibPhase_{}, glide_{};
+    std::array<double, 8> vibPhase_{}, glide_{}, glideTarget_{}, glideStep_{};
+    std::array<int, 8> glideTime_{};
     std::array<bool, 8> pitchInitialized_{};
     std::array<Input, 8> lastInput_{};
     template <class F> static void forEachVoice(const Tone &t, int slot, F f) {
@@ -238,9 +239,12 @@ class VoiceEngine {
                 ++rate;
         }
         auto &state = chipEnvelope(n, e);
-        uint32_t target = uint32_t(level & (e == 0 ? 63 : 127)) << (e == 0 ? 16 : 18);
-        if (e == 0 && (level & 64))
-            target <<= 5;
+        // Compare with the target exactly as the chip will store it (DCW's level
+        // field sits one bit higher than DCA's), so a rising segment never gets
+        // the falling direction bit and snaps to its target.
+        unsigned shift = e == 0 ? Upd933::dcoTargetShift
+                                : (e == 1 ? Upd933::dcwTargetShift : Upd933::dcaTargetShift);
+        uint32_t target = Upd933::envelopeTarget(uint16_t(level), shift, e == 0);
         bool down = state.current > target;
         uint16_t value = uint16_t((down ? 0x8000 : 0) | (rate << 8) | level);
         if (step == env.end || (step == env.sustain))
@@ -257,12 +261,26 @@ class VoiceEngine {
         for (int slot = 0; slot < noteLimit(t); ++slot) {
             double pitch = std::clamp(double(in[slot].pitch), -8., 8.);
             if (!pitchInitialized_[slot] || !t.portamento) {
-                glide_[slot] = pitch;
+                glide_[slot] = glideTarget_[slot] = pitch;
+                glideStep_[slot] = 0;
                 pitchInitialized_[slot] = true;
-            } else if (control) {
-                double duration = .005 * std::exp2(t.portamentoTime / 10.);
-                double delta = 64. / 40000 / duration;
-                glide_[slot] += std::clamp(pitch - glide_[slot], -delta, delta);
+            } else {
+                // Constant time, as the CZ-101 manual documents: a new target (or
+                // a TIME change) restarts the glide from the current pitch, and
+                // every interval takes duration(TIME). The curve is provisional.
+                if (pitch != glideTarget_[slot] || t.portamentoTime != glideTime_[slot]) {
+                    double duration = .005 * std::exp2(t.portamentoTime / 10.);
+                    glideTarget_[slot] = pitch;
+                    glideTime_[slot] = t.portamentoTime;
+                    glideStep_[slot] = std::abs(pitch - glide_[slot]) * 64. / 40000 / duration;
+                }
+                if (control) {
+                    double remaining = glideTarget_[slot] - glide_[slot];
+                    if (std::abs(remaining) <= glideStep_[slot] * (1 + 1e-9))
+                        glide_[slot] = glideTarget_[slot];
+                    else
+                        glide_[slot] += remaining > 0 ? glideStep_[slot] : -glideStep_[slot];
+                }
             }
             double vibrato = 0;
             double delay = t.vibDelay == 0 ? 0 : .01 * std::exp2(t.vibDelay / 10.);

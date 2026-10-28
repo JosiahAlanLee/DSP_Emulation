@@ -41,13 +41,18 @@ No scanned manual text or manufacturer tones are redistributed here.
   and compulsory low clock samples, including fast RATE changes.
 - Single and paired line allocation, all pair modulation targets, second-wave
   selection, envelope sustain/end, early release and retrigger, live segment edits without phase reset, octave/detune,
-  vibrato delay and DCW/key-follow bounds. V/OCT is checked across eight octaves
+  vibrato delay and DCW/key-follow bounds. DCO, DCW and DCA ramps rise and
+  fall monotonically, at most one chip step per host sample, across control
+  passes and from a level above half the next target. Portamento takes the
+  same time for a fifth and for two octaves. V/OCT is checked across eight octaves
   to the chip's quantized pitch table tolerance.
 - Manual-derived SysEx anchors, 300 randomized tone round-trips in both nibble
   orders, malformed headers/nibbles/truncated input, and byte preservation.
 - Rack ports and parameters at 44.1/48/96 kHz, note release, polyphony and
   overflow, saved-tone/source restoration, old-patch migration, effective bit
-  CV, and 16-channel low-rate AA conversion.
+  CV, and 16-channel low-rate AA conversion. DAC Stage profile switches give
+  YM FP its exact default clock back after LINEAR and keep a user's RATE.
+  Selecting an END step in the editor leaves an imported tone's bytes intact.
 - A real Clocked Register in a delayed, alternating-order DAC/XOR feedback
   loop at those three host rates.
 - All 98 capture tones and their MIDI clips, including note durations, file

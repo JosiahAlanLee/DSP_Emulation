@@ -17,6 +17,11 @@ public:
     static constexpr double sampleRate = 40000.;
     static constexpr unsigned noteShift = 9, pitchShift = 20, fineShift = 12;
     static constexpr unsigned volumeShift = 12, dcaShift = 16, dcwShift = 16, dcoShift = 11;
+    // Where each envelope register's level field lands in the envelope's
+    // 32-bit counter (MAME's ENV_*_SHIFT plus the register-specific offset).
+    // A DCO level with bit 6 set is shifted a further dcoUnitShift bits.
+    static constexpr unsigned dcaTargetShift = dcaShift + 2, dcwTargetShift = dcwShift + 3,
+                              dcoTargetShift = dcoShift + 5, dcoUnitShift = 5;
 
     struct Envelope {
         uint8_t direction = 0, sustain = 1, irq = 0;
@@ -69,6 +74,14 @@ public:
         registers_ = {}; sampleCount_ = 0; lastSample_ = 0; random_ = seed;
     }
     static uint32_t envelopeRate(uint8_t data) { return uint32_t(8 | (data & 7)) << (data >> 3); }
+    // The counter value a register write's level field selects; the same
+    // arithmetic setEnvelope uses. Callers choosing the direction bit must
+    // compare against this, not against their own shift.
+    static uint32_t envelopeTarget(uint16_t value, unsigned shift, bool pitch) {
+        uint32_t target = uint32_t(value & (pitch ? 63 : 127)) << shift;
+        if (pitch && (value & 0x40)) target <<= dcoUnitShift;
+        return target;
+    }
 
     // The caller owns voice allocation, note timing, and envelope sequencing.
     // Values and register numbers are the chip's 16-bit interface.
@@ -77,9 +90,9 @@ public:
         int n = reg & 7;
         Voice& v = voice[n];
         switch (reg >> 3) {
-        case 0x0: setEnvelope(dca[n], value, dcaShift + 2, false); break;
-        case 0x2: setEnvelope(dco[n], value, dcoShift + 5, true); break;
-        case 0x4: setEnvelope(dcw[n], value, dcwShift + 3, false); break;
+        case 0x0: setEnvelope(dca[n], value, dcaTargetShift, false); break;
+        case 0x2: setEnvelope(dco[n], value, dcoTargetShift, true); break;
+        case 0x4: setEnvelope(dcw[n], value, dcwTargetShift, false); break;
         case 0xc: v.pitch = value; updatePitch(n); break;
         case 0xd: {
             v.wave[0] = (value >> 13) & 7;
@@ -124,8 +137,7 @@ private:
         e.direction = (value >> 15) & 1;
         e.rate = envelopeRate((value >> 8) & 127);
         e.sustain = (value >> 7) & 1;
-        e.target = uint32_t(value & (pitch ? 63 : 127)) << shift;
-        if (pitch && (value & 0x40)) e.target <<= 5;
+        e.target = envelopeTarget(value, shift, pitch);
         e.irq = 0;
     }
     uint64_t nextRandom() {

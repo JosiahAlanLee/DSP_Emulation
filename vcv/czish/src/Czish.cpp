@@ -404,14 +404,34 @@ struct RemappedKnob : RoundBlackKnob {
     }
 };
 template <int Role> struct EnvKnob : RemappedKnob {
+    // The LEVEL knob on an END step points at zero, the level the voice uses,
+    // but the stored level is left alone so an imported tone's bytes survive.
+    bool showZero = false;
     void step() override {
+        bool zero = showZero;
         if (auto *m = dynamic_cast<CzishModule *>(dragging ? nullptr : module)) {
             int e = m->integer(CzishModule::ENV_SELECT, 0, 5), s = m->integer(CzishModule::STEP_SELECT, 0, 7);
             paramId = CzishModule::ENV_BASE + e * 16 + s * 2 + Role;
-            if (Role == 1 && s == m->integer(CzishModule::ENV_END + e, 0, 7))
-                m->params[paramId].setValue(0);
+            zero = Role == 1 && s == m->integer(CzishModule::ENV_END + e, 0, 7);
+        } else if (dragging)
+            zero = false;
+        if (zero != showZero) {
+            showZero = zero;
+            ChangeEvent change;
+            onChange(change);
         }
         RoundBlackKnob::step();
+    }
+    void onChange(const ChangeEvent &e) override {
+        RoundBlackKnob::onChange(e);
+        if (showZero) {
+            math::Vec center = sw->box.getCenter();
+            tw->identity();
+            tw->translate(center);
+            tw->rotate(minAngle);
+            tw->translate(center.neg());
+            fb->setDirty();
+        }
     }
 };
 struct LineChoice : dspemu::panel::Choice {
