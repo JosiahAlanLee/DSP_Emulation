@@ -215,9 +215,11 @@ struct DacRateDisplay : widget::Widget {
                 nullptr);
     }
 };
-// Use the same explicit selector for left/right click and double-click reset.
-// Do not observe parameter changes in step(): loads and automation are not UI
-// profile selections and must not trigger defaults on a later UI frame.
+// The profile menu (a left click, as on every Choice) and double-click reset are
+// the UI selections that apply defaults. A right click keeps Rack's parameter
+// menu; like automation, its direct writes leave RATE and TONE alone. Do not
+// observe parameter changes in step(): loads and automation are not UI profile
+// selections and must not trigger defaults on a later UI frame.
 struct DacProfileChoice : dspemu::panel::Choice {
     void select(int value) {
         auto *m = dynamic_cast<DacStageModule *>(module);
@@ -230,8 +232,7 @@ struct DacProfileChoice : dspemu::panel::Choice {
             delete action;
     }
     void onButton(const event::Button &e) override {
-        if (getParamQuantity() && e.action == GLFW_PRESS &&
-            (e.button == GLFW_MOUSE_BUTTON_LEFT || e.button == GLFW_MOUSE_BUTTON_RIGHT)) {
+        if (getParamQuantity() && e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
             auto *menu = createMenu();
             for (int i = 0; i < int(labels.size()); ++i)
                 menu->addChild(createCheckMenuItem(labels[i], "",

@@ -119,11 +119,11 @@ LINEAR from the panel selector at the untouched default RATE, it adopts the
 current host rate (clamped to the RATE knob’s 1–96 kHz range); leaving
 LINEAR with that rate unchanged restores the exact YM default. CZ
 selects a 20 kHz TONE default when TONE was still at the previous profile's
-default. The selector (left or right click; double-click resets the profile)
-applies these defaults on the UI thread as one undo step, including RATE and
-TONE. Saved/user-edited settings take precedence. Patch/preset loading and
-direct PROFILE parameter writes (including automation and randomization) keep
-RATE and TONE unchanged. There is no PROFILE CV input or module context-menu
+default. Choosing a profile from the selector's menu (or double-clicking it to
+reset the profile) applies these defaults on the UI thread as one undo step,
+including RATE and TONE. Saved/user-edited settings take precedence. Patch/preset
+loading and direct PROFILE parameter writes (automation, randomization, or a value
+typed in the right-click parameter menu) keep RATE and TONE unchanged. There is no PROFILE CV input or module context-menu
 profile setting. Initialize restores YM FP and all factory parameter defaults.
 
 **AA OFF** uses four-point Hermite input sampling, with one host-sample delay.
