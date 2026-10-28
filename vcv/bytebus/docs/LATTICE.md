@@ -128,9 +128,10 @@ provisional pending measurement (`NLC_BUS_SPEC.md` §9.2).
 Rack saves the controls and the state, as `"state"`, bounded to 0–255. Reload
 publishes the saved state; it does not resume the internal clock phase or the
 slews, which restart at CV OUT. Reload and Initialize publish the held state on
-their first sample even when H CLOCK is already high there: that level is not
-counted as an H edge (nor, with V CLOCK unpatched, as an H wrap for V), as on
-every ClockOwner module. Rack's Initialize restores the defaults
+their first sample even when H CLOCK or a patched V CLOCK is already high
+there: that level is not counted as an H or V edge (nor, with V CLOCK
+unpatched, as an H wrap for V), as on every ClockOwner module; the next rising
+edge steps the counter once. Rack's Initialize restores the defaults
 (Follow, 0–10 V, SEED 0, slews 0.5 ms, knobs at 0) and state 0.
 
 ## First patch

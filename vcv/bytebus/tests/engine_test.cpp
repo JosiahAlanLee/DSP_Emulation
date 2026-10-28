@@ -1560,6 +1560,40 @@ static void latticeHeldRegression() {
     }
 }
 
+// Review 2026-10-28 (findings #29): V CLOCK follows the same rule as H. The held state's own
+// publication after clear() (a new instance, a restore, Initialize) shows the held state even
+// with V CLOCK patched and already high; the next rising edge steps V once. A deferred seed's
+// publication (the sample after RESET) still counts a V edge there.
+static void latticeHeldVRegression() {
+    for (double sr : {44100., 48000., 96000.}) {
+        for (auto mode : {ClockMode::Jack, ClockMode::Engine}) {
+            for (uint8_t held : {uint8_t(0x00), uint8_t(0x5c), uint8_t(0xf3)}) {
+                lattice::Lattice l; l.clear(held); lattice::Parameters p; p.mode = mode;
+                lattice::Inputs in; in.clock.clockConnected = mode == ClockMode::Jack;
+                in.vClockConnected = true; in.vClock = 10;
+                auto o = l.tick(p, in, sr);                            // V CLOCK high on the first sample
+                assert(o.loaded && o.state == held && !o.vAdvanced && !o.hAdvanced);
+                uint8_t h = o.state & 15;
+                o = l.tick(p, in, sr); assert(!o.vAdvanced && o.state >> 4 == held >> 4);
+                in.vClock = 0; o = l.tick(p, in, sr); assert(!o.vAdvanced && o.state >> 4 == held >> 4);
+                in.vClock = 10; o = l.tick(p, in, sr);                 // the next rising edge: V once
+                assert(o.vAdvanced && o.state >> 4 == (((held >> 4) + 1) & 15));
+                if (mode == ClockMode::Jack) assert((o.state & 15) == h);
+                o = l.tick(p, in, sr); assert(!o.vAdvanced);
+            }
+        }
+        // A new instance (no clear()) behaves the same.
+        lattice::Lattice l; lattice::Parameters p; p.mode = ClockMode::Jack;
+        lattice::Inputs in; in.clock.clockConnected = true; in.vClockConnected = true; in.vClock = 10;
+        auto o = l.tick(p, in, sr); assert(o.loaded && o.state == 0 && !o.vAdvanced);
+        // RESET, then V's edge on the deferred seed's publication counts, as H's does (#70).
+        p.seed = 0x30; in.vClock = 0; in.clock.reset = 10;
+        o = l.tick(p, in, sr); assert(o.state == 0x30);
+        in.clock.reset = 0; in.vClock = 10; o = l.tick(p, in, sr);
+        assert(o.vAdvanced && o.state == 0x40);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetRegression(); return 0; }
@@ -1567,8 +1601,9 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "switch-reload") { switchReloadRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "switch-takeover") { switchTakeoverRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "lattice-held") { latticeHeldRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "lattice-held-v") { latticeHeldVRegression(); return 0; }
     latticeGapRegression(); rouletteResetRegression(); fanOwnershipRegression(); switchReloadRegression();
-    switchTakeoverRegression(); latticeHeldRegression();
+    switchTakeoverRegression(); latticeHeldRegression(); latticeHeldVRegression();
 
     conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling(); rouletting();
     std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks; Roulette: counts as exact divisions, the resting state, the spin and coast against the closed form with one RESULT per stop at 44.1/48/96 kHz, the filter against a fine integration, the VCO capped at half the engine rate with every count strobed, ROULETTE replacing the comparator, XOR and edge tracking, RANGE CV and its lag, RESET and strobes under random edges\n";

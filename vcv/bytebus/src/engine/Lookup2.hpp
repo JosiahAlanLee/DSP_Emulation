@@ -62,8 +62,9 @@ inline uint8_t fold(double shape, uint8_t a, uint8_t b) {
     return lookup::rounded(std::min(255., 128 + 128 * triangle(u)));
 }
 // Walsh: output bit k is the parity of (A | B << 8) & mask[k]. Shape 0 is A XOR B; each later shape
-// applies two more reversible row operations to the eight 16-bit masks. Row operations keep the A
-// half and the B half each of rank 8, so every shape is one-to-one in A for each B, and in B for each A.
+// applies two more reversible row operations to the eight 16-bit masks. Every mask keeps the form
+// r | r << 8, so every shape is a fixed byte permutation of A XOR B (equal words give 00) and is
+// one-to-one in A for each B, and in B for each A. Kept as released: saved patches' sound.
 inline std::array<uint16_t, 8> walshMasks(int shape) {
     std::array<uint16_t, 8> masks{};
     for (int k = 0; k < 8; ++k) masks[k] = uint16_t((1u << k) | (1u << (k + 8)));
