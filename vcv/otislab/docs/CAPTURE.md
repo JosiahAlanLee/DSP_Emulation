@@ -72,6 +72,9 @@ offset, as for a loaded WAV, so it plays back at its recorded pitch at TUNE 0.
   the display marks it **CUT** after the requested duration ends. REC and DONE
   keep their scheduled timing even after memory fills.
 - **Moving Capture away** mid-take ends the take there.
+- **Initialize** on Otis Kit, or loading a patch or preset into it, empties the
+  bank and forgets the last take: the display shows **READY** with the empty
+  bank's room, and the next take is named "Capture take 1".
 - **Compact the bank** (Otis Kit's menu) packs every slot, takes included, back
   into one run of memory, which joins the free stretches. It stops sounding hits
   and drops a take in progress, as loading a WAV does; a take that finishes
@@ -138,7 +141,10 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
     kept;
   - a take recorded at 768 kHz saved and reloaded at its rate;
   - a sample-rate change mid-take drops it, and the next take records at the
-    new rate.
+    new rate;
+  - Initialize on the kit, or a patch loaded into it, after a take: the
+    display shows READY (no slot, length, CUT or NO ROOM) and the empty
+    bank's room, and the next take is "Capture take 1".
 - `tests/plugin_test.cpp`: the compiled plugin has OTIS Sampler, Otis Kit and
   Otis Capture.
 - OTIS Sampler's legacy trace is unchanged.

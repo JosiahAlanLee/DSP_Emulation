@@ -38,7 +38,7 @@ static void frame(OtisKit& k,OtisCapture* c,const Module::ProcessArgs& a,bool ca
 static void hit(OtisKit& k,int slot,bool high) { k.inputs[OtisKit::GATE_IN].setVoltage(high ? 10.f : 0.f,slot); }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.3"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.4"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Without a kit on the left, Capture says so and never records.
@@ -311,6 +311,34 @@ int main() {
         for(int n=0;n<10;++n) frame(*k,c.get(),a96,captureFirst);
         auto m=k->exchange.read(); assert(k->takes==1 && m.take[4].size()==12000 && m.rate[4]==96000);
     }
+    // Review #30: Initialize (and loading a patch into a used kit) empties the bank, so a linked Capture
+    // shows READY, not the last take's slot, length, CUT or NO ROOM; ROOM is the empty bank's at once;
+    // and the next take is named from 1 again.
+    for(bool load:{false,true}) for(bool captureFirst:{true,false}) {
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(0); c->params[OtisCapture::LENGTH].setValue(0);   // 1/4 beat = 6000 samples at 120 BPM
+        c->inputs[OtisCapture::AUDIO_IN].channels=1; c->inputs[OtisCapture::AUDIO_IN].setVoltage(1.f);
+        auto take=[&]() {
+            c->params[OtisCapture::ARM_BUTTON].setValue(1); frame(*k,c.get(),a,captureFirst); c->params[OtisCapture::ARM_BUTTON].setValue(0);
+            while(c->recording) frame(*k,c.get(),a,captureFirst);
+            for(int n=0;n<10;++n) frame(*k,c.get(),a,captureFirst);
+        };
+        take(); k->syncTakes();
+        assert(k->takes==1 && c->displayTakes.load()==1 && c->displaySlot.load()==0 && c->displaySeconds.load()>0);
+        assert(k->slots[0].name=="Capture take 1");
+        k->lastTruncated=k->noRoom=true;    // as after a CUT or NO ROOM take
+        for(int n=0;n<1100;++n) frame(*k,c.get(),a,captureFirst);   // ROOM is now measured on the full bank
+        float fullRoom=c->displayRoom.load();
+        if(load) { json_t* empty=json_object(); k->dataFromJson(empty); json_decref(empty); }
+        else k->onReset(Module::ResetEvent{});
+        for(int n=0;n<3;++n) frame(*k,c.get(),a,captureFirst);
+        assert(k->takes==0 && c->displayTakes.load()==0 && c->displaySlot.load()==-1);
+        assert(c->displaySeconds.load()==0 && c->displayState.load()==0);
+        assert(c->displayRoom.load()>fullRoom);    // the emptied bank's room, not the full bank's
+        take(); k->syncTakes();
+        assert(k->takes==1 && c->displayTakes.load()==1 && c->displaySlot.load()==0);
+        assert(k->slots[0].name=="Capture take 1");
+    }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback, a take reusing the last-copied region, a take finishing during an install, 768 kHz takes reloaded, sample-rate change mid-take\n";
+    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback, a take reusing the last-copied region, a take finishing during an install, 768 kHz takes reloaded, sample-rate change mid-take, Initialize and patch load clear the take status\n";
 }
