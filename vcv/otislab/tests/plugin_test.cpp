@@ -70,7 +70,8 @@ int main() {
     auto recorded=a->dataToJson(); auto pcm=otis::decodePcm(json_string_value(json_object_get(recorded,"pcm16le")));
     assert(std::abs(double(pcm.size())-otis::captureRate(5)*.1)<2);
     assert(std::string(json_string_value(json_object_get(recorded,"name")))=="LIVE RECORDING"); json_decref(recorded);
-    auto gated=json_object(); json_object_set_new(gated,"gated",json_true()); a->dataFromJson(gated); json_decref(gated);
+    // Restore a complete preset when changing settings: absent PCM means an empty sample.
+    auto gated=a->dataToJson(); json_object_set_new(gated,"gated",json_true()); a->dataFromJson(gated); json_decref(gated);
     a->inputs[2].channels=1; a->inputs[1].channels=1;
     a->inputs[2].setVoltage(0); a->inputs[1].setVoltage(1); a->process(args);
     a->inputs[2].setVoltage(10); a->process(args); assert(a->lights[0].getBrightness()>0);
@@ -80,7 +81,7 @@ int main() {
     assert(a->lights[0].getBrightness()==0);
     for(int i=0;i<200;i++) a->process(args); // also drain the output converter
     assert(std::abs(a->outputs[0].getVoltage())<1e-6f);
-    auto hardCut=json_object(); json_object_set_new(hardCut,"gated",json_true());
+    auto hardCut=a->dataToJson(); json_object_set_new(hardCut,"gated",json_true());
     json_object_set_new(hardCut,"declick",json_false()); a->dataFromJson(hardCut); json_decref(hardCut);
     a->inputs[2].setVoltage(10); a->process(args); assert(a->lights[0].getBrightness()>0);
     a->inputs[2].setVoltage(0); a->process(args); assert(a->lights[0].getBrightness()==0);

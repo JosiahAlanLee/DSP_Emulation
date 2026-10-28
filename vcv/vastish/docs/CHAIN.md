@@ -94,3 +94,7 @@ is not sent, so a stereo sample continues as its left channel.
 - The legacy trace of an unchained Vastish is unchanged.
 
 Physical audio interfaces and live performance are outside these tests.
+
+## 2.8.2 correction
+
+When chaining ends (disabled or the left neighbour removed), a locally held GATE resumes immediately with its current velocity. Previously, if that gate was already high before chaining and the chained gate was low, the local voice stayed silent until GATE fell and rose again. The adapter regression covers this transition.

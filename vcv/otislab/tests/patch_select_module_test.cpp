@@ -151,6 +151,15 @@ int main() {
         q->storePatch(3,std::nullopt); assert(!q->storedPatch(3));
         q->storePatch(1,q->panelPatch()); Module::ResetEvent e; q->onReset(e); assert(!q->storedPatch(1));
     }
+    {   // An empty preset is a complete sample restore, including while recording.
+        auto m=makeOtis(); m->engine.trigger(0); m->engine.startRecord();
+        OtisSampler empty; json_t* saved=empty.dataToJson();
+        m->dataFromJson(saved); json_decref(saved);
+        assert(m->engine.frames==0 && !m->engine.playing() && !m->engine.recording);
+        m->process(a);
+        assert(m->outputs[OtisSampler::LEFT_OUT].getVoltage()==0);
+        assert(m->displayedFrames==0);
+    }
     rack::plugin::plugins.clear();
     std::cout<<"PASS: patch select per hit (same sample, clocked, held per voice), stored patch = its panel sample for sample, unpatched unchanged, CV on top, REV on panel voices only, saved/clamped/recalled/cleared, live stored REV and clear, retrigger direction\n";
 }

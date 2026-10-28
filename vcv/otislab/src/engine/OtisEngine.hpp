@@ -419,9 +419,10 @@ struct Engine {
     }
     Engine() { setHostRate(48000); }
     void setHostRate(double rate) {
-        hostRate=clamp(rate,8000.0,384000.0);
+        hostRate=std::isfinite(rate) ? clamp(rate,8000.0,768000.0) : 48000.0;
         for(int i=0;i<3;i++) conversion[i].configure(chipRates[i],hostRate);
         if(labConversion.kernels.empty()) labConversion.configure(); else labConversion.reset();
+        resetConversion();
         chipPhase=0; clearPcmFade();
         stopRecord();
     }

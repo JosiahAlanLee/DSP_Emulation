@@ -206,6 +206,7 @@ struct Vastish : Module {
             auto voltage=[&](int port) {
                 float x=inputs[port].getPolyVoltage(i); return std::isfinite(x)?x:0.f;
             };
+            const bool leavingChain=in[i].chained && !chain;
             in[i].chained=chain!=nullptr;
             if(chain) {
                 in[i].chainAudio=chain->tap[i]; in[i].chainGateFree=chain->gateFree[i]!=0;
@@ -223,7 +224,9 @@ struct Vastish : Module {
             }
             bool was=triggers[i].isHigh();
             triggers[i].process(i<channels?voltage(GATE_IN):0.f);
-            bool rise=!was && triggers[i].isHigh();
+            // Local triggers pause during chaining. On return, adopt the current local
+            // gate even when it was already high before the chain took over.
+            bool rise=(!was || leavingChain) && triggers[i].isHigh();
             in[i].audioConnected=audioPatched && i<channels && (audioChannels==1 || i<audioChannels);
             float audio=in[i].audioConnected ? inputs[AUDIO_IN].getVoltage(audioChannels==1 ? 0 : i)*audioScale : 0.f;
             in[i].audio=std::isfinite(audio) ? audio : 0.f;

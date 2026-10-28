@@ -40,6 +40,8 @@ REC RATE is latched at recording start. Changing it during a take affects the ne
 | 6, default | 29,761.905 Hz | 35.22 s | 17.61 s |
 | 7 | 44,642.857 Hz | 23.48 s | 11.74 s |
 
+OTIS Sampler supports Rack host rates through 768 kHz; REC RATE remains independent of the host rate.
+
 Capacity is 1,048,320 mono sample frames, or 524,160 frames per channel for a stereo sample. Recording ends automatically when memory fills and FULL lights. Lower the record controls before starting another take.
 
 ### Load or export a WAV
@@ -274,6 +276,8 @@ OTIS retains its own playback settings when importing. Its window, filters and c
 Spoon Bender captures retain Rack's sample rate. A stereo capture becomes a stereo sample, which holds about 10.9 seconds at 48 kHz or 5.5 seconds at 96 kHz. **Import Spoon Bender captures as mono (twice as long)** imports the mono mix instead: about 21.8 or 10.9 seconds. Longer imports are truncated, keeping the oldest audio.
 
 ## Saving and troubleshooting
+
+Loading an empty preset clears the finished sample and stops recording.
 
 Completed sample audio, its rate and module settings are embedded in the Rack patch. A stereo sample saves both channels; OTIS versions before 2.6 open such a patch with the left channel only. A recording still in progress is not saved as a finished take. Finish recording or reworking before saving the result you want. Pending REWORK jobs and random-seed progression are not restored.
 

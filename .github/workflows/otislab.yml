@@ -33,6 +33,7 @@ jobs:
           make -C tests sanitize
           make -C tests window-sanitize
           make -C tests thread-sanitize
+          make -C tests sampler-thread-sanitize RACK_DIR=/tmp/Rack-SDK
           # Bit-exact comparison of the playback core against the reference ES5505 implementation.
           gcc -O2 -c /tmp/mardlib/native/es5505_core.c -o tests/build/reference_core.o
           g++ -std=c++17 -O2 -I/tmp/mardlib/native tests/reference_compare.cpp tests/build/reference_core.o -o tests/build/reference_compare

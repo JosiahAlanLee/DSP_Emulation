@@ -1,5 +1,13 @@
 # OTIS change history
 
+## 2.11.6
+
+- Importing Spoon Bender captures reads display metadata under the engine lock, avoiding a race with recording.
+
+- OTIS Sampler keeps playback pitch and capture duration correct at Rack host rates through 768 kHz.
+- A host-rate change resets both stereo converter histories together.
+- Loading an empty OTIS Sampler preset clears its previous sample and stops an ongoing take.
+
 ## 2.11.5
 
 - After a patch or preset load, Otis Kit names new takes on from the highest

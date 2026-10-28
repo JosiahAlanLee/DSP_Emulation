@@ -239,6 +239,21 @@ int main() {
         Vastish w; live(w,0,4); w.params[PITCH_WAVE].setValue(0); w.process(args);
         assert(w.outputs[Vastish::AMP_OUT].getChannels()==1);
     }
+    // Leaving a chain resumes a locally held gate even if the chained gate was low.
+    {
+        Vastish v, left; left.model=modelVastish;
+        v.inputs[Vastish::GATE_IN].channels=1; v.process(args);
+        v.inputs[Vastish::GATE_IN].setVoltage(10); v.process(args);
+        assert(v.in[0].gate);
+        v.chainFromLeft=true; v.leftExpander.module=&left;
+        v.leftExpander.moduleId=v.chainLeftId=42;
+        auto* msg=static_cast<ChainMessage*>(v.leftExpander.consumerMessage);
+        *msg=ChainMessage{}; msg->magic=ChainMessage::MAGIC;
+        v.process(args); assert(v.in[0].chained && !v.in[0].gate);
+        v.chainFromLeft=false; v.process(args);
+        assert(!v.in[0].chained && v.in[0].gate && v.engine.voices[0].gate);
+        v.leftExpander.module=nullptr;
+    }
     // The range is saved in the patch. A 2.5 patch, which has no range, opens at ±5 V,
     // and a full restore sets it even on an instance that was at ±10 V.
     {
