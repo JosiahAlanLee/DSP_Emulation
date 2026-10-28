@@ -34,7 +34,8 @@ build/kit_module_test: kit_module_test.cpp ../src/OtisKit.cpp ../src/OtisCapture
 	$(CXX) $(CXXFLAGS) -Wno-unused-parameter -fno-unsafe-math-optimizations $< $(SDK_FLAGS) -o $@
 build/capture_module_test: capture_module_test.cpp ../src/OtisKit.cpp ../src/OtisCapture.cpp ../src/CaptureLink.hpp ../src/KitLayout.hpp ../src/engine/*.hpp ../../shared/*.hpp | build
 	$(CXX) $(CXXFLAGS) -Wno-unused-parameter -fno-unsafe-math-optimizations $< $(SDK_FLAGS) -o $@
-bus-check: build/frame_bus_module_test build/patch_select_module_test build/kit_module_test build/capture_module_test
+bus-check: build/sampler_thread_test build/frame_bus_module_test build/patch_select_module_test build/kit_module_test build/capture_module_test
+	cd .. && tests/build/sampler_thread_test
 	cd .. && tests/build/frame_bus_module_test
 	cd .. && tests/build/patch_select_module_test
 	cd .. && tests/build/kit_module_test
@@ -72,7 +73,7 @@ sanitize: | build
 window-sanitize: | build
 	$(CXX) $(CXXFLAGS) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer window_test.cpp -o build/window_test_sanitized
 	cd .. && ASAN_OPTIONS=detect_leaks=1 tests/build/window_test_sanitized
-thread-sanitize: | build
+thread-sanitize: sampler-thread-sanitize | build
 	$(CXX) $(CXXFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer snapshot_test.cpp -o build/snapshot_test_tsan
 	cd .. && tests/build/snapshot_test_tsan
 	$(CXX) $(CXXFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer mutation_concurrency_test.cpp -o build/mutation_concurrency_tsan
@@ -82,3 +83,10 @@ thread-sanitize: | build
 clean:
 	rm -rf build
 .PHONY: bus-check bus-sanitize
+
+build/sampler_thread_test: sampler_thread_test.cpp ../src/OtisSampler.cpp ../src/engine/*.hpp ../../shared/*.hpp | build
+	$(CXX) $(CXXFLAGS) -Wno-unused-parameter $< $(SDK_FLAGS) -o $@
+sampler-thread-sanitize: | build
+	$(CXX) $(CXXFLAGS) -O1 -g -Wno-unused-parameter -fsanitize=thread -fno-omit-frame-pointer sampler_thread_test.cpp $(SDK_FLAGS) -o build/sampler_thread_tsan
+	cd .. && tests/build/sampler_thread_tsan
+.PHONY: sampler-thread-sanitize

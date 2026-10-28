@@ -178,6 +178,16 @@ static void rework() {
 }
 
 int main() {
+    // Rate changes reset both converter histories, as two mono engines do.
+    for(float clock:{0.f,-1.f}) {
+        auto e=std::make_unique<Engine>(); std::vector<int16_t> pcm(2000,12000);
+        auto image=otis::stereoImage(pcm.data(),pcm.data(),pcm.size());
+        e->install(image,29761.9,pcm.size(),true); e->controls.clockOctaves=clock;
+        e->controls.loop=1; e->trigger(0);
+        for(int i=0;i<1000;++i) e->process(0);
+        e->setHostRate(96000);
+        for(int i=0;i<100;++i) { float left=e->process(0); assert(same(left,e->rightOutput)); }
+    }
     lockstep(); polyphony(); capacity(); recording(); wavFiles(); rework();
     std::cout << "PASS: stereo pairs equal two mono engines (60 scenarios, all modes), half polyphony and memory, stereo takes equal two mono takes, stereo/mono/3-channel WAV, joint rework through the worker\n";
 }

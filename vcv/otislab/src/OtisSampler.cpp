@@ -204,9 +204,9 @@ struct OtisSampler : Module {
             std::lock_guard<std::mutex> guard(engineMutex);
             if(asStereo) engine.install(image,rate,pcm.size(),true); else engine.install(pcm,rate);
             liveSample=false;
+            refreshDisplay(); // engine state is audio-owned; keep this read under engineMutex
         }
         { std::lock_guard<std::mutex> names(nameMutex); sampleName=std::string(name)+(total>capacity ? " [TRUNCATED]" : ""); lastError.clear(); }
-        refreshDisplay();
         fxRevision=rev; fxSeen=true;
         return true;
     }
@@ -506,6 +506,14 @@ struct OtisSampler : Module {
                 if(!image.empty()) engine.install(image,rate,pcm.size(),true); else engine.install(pcm,rate);
                 auto name=json_string_value(json_object_get(root,"name"));
                 { std::lock_guard<std::mutex> names(nameMutex); sampleName=name ? name : "RESTORED SAMPLE"; liveSample=sampleName=="LIVE RECORDING"; }
+                refreshDisplay();
+            } else {
+                // Empty presets define an empty sample too. Prepare storage off the audio thread.
+                std::vector<int16_t> empty(otis::memoryWords,0);
+                std::lock_guard<std::mutex> guard(engineMutex);
+                engine.install(empty,otis::captureRate(5),0,false);
+                liveSample=false;
+                { std::lock_guard<std::mutex> names(nameMutex); sampleName="NO SAMPLE - RIGHT CLICK TO LOAD"; lastError.clear(); }
                 refreshDisplay();
             }
         } catch(const std::exception& e) { std::lock_guard<std::mutex> names(nameMutex); lastError=e.what(); WARN("OtisLab: %s",e.what()); }

@@ -33,6 +33,18 @@ static std::vector<float> run(Engine& e, int n, int skip=2000) {
 }
 
 int main() {
+    // Host clocks through Rack's maximum keep capture duration and chip timing.
+    for(double host:{705600.,768000.}) {
+        auto e=sineEngine(440,host); e->trigger(0);
+        const auto initial=e->voices[0].accumulator;
+        e->controls.captureIndex=5; e->startRecord();
+        for(int i=0;i<int(host/10);++i) e->process(.1f);
+        assert(std::abs(double(e->recordFrames)-captureRate(5)*.1)<1);
+        // Count chip ticks using the converter's ring head before stopping the take.
+        const size_t ticks=size_t(std::floor(chipRates[0]*.1));
+        assert(e->conversion[0].head==ticks%OutputConverter::taps);
+        assert(e->voices[0].accumulator!=initial);
+    }
     // 1. Resolution mode: clock moves, pitch stays put.
     for(float oct:{0.f,-1.f,-2.f,1.f}) {
         auto e=sineEngine(440); e->controls.clockOctaves=oct; e->trigger(0);
