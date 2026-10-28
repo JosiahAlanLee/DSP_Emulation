@@ -108,12 +108,12 @@ when the clock is at audio rate.
 ## Clock, reset and strobe timing
 
 Clock ownership is the shared `src/engine/ClockOwner.hpp`, as on Counter: Auto
-selection by connection, an initially high clock counting as its first edge,
-one-sample strobes with a mandatory low sample, RESET priority over a
-simultaneous edge, the seed published after RESET or LOAD with acquisition
-suppressed for that strobe and the low sample after it. Engine rate steps
-every sample and emits no clock channel. Each cable hop costs one engine
-sample.
+selection by connection, publication of the held state before acquisition after
+a fresh start, Initialize or restore, one-sample strobes with a mandatory low
+sample, RESET priority over a simultaneous edge, the seed published after RESET
+or LOAD with acquisition suppressed for that strobe and the low sample after it.
+Engine rate steps every sample and emits no clock channel. Each cable hop costs
+one engine sample.
 
 The hardware's RST holds the register at 00 for as long as it is high;
 Parallel Sum's RESET loads SEED on its rising edge.
@@ -163,3 +163,13 @@ chain clocking Parallel Sum in random module order, identical at
 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start at 00; restore starts from the saved word.
+The first sample publishes that word without acquiring from an already-high
+clock. A RESET or LOAD already high on that sample takes priority and loads
+SEED instead; holding it high does not reload or block later clock edges.
+MASK BUS supplies raw lines on acquisition, not on initial publication.
+INJECT is a comparator level, effective immediately when above its threshold
+plus hysteresis, but affects the register only on acquisition.

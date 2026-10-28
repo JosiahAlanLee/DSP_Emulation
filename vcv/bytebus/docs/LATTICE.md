@@ -181,3 +181,14 @@ jumps while Lattice's own H clock runs, in random module order, identical at
 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+On a fresh instance the held state is 00. The first-sample clock rule above
+does not suppress non-clock gates: DIR H/V act as levels immediately;
+already-high JUMP H/V act immediately in Follow and Load modes. With BUS IN
+connected, those JUMP edges load its raw nibbles even if bus CLK is low.
+Without a bus, Follow holds the jam preset while high; Load takes it once.
+An already-high RESET or LOAD loads SEED once and wins over jumps and clocks.
+Thus an initial JUMP can change the published state; held-state publication
+only promises that an initial clock level does not count.

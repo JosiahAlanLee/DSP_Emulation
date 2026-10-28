@@ -171,3 +171,16 @@ bounded restore, Initialize; a Counter → DIVIDE chain past the 12-bit wrap in
 random module order, identical at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start count/result/filter at zero and VCO
+phase at 0.5 (low). Restore starts from the saved count, result, filter and
+phase. The counter publishes its held count before counting an already-high
+DIVIDE or VCO clock. An already-high RESET clears the count and restarts
+the VCO low once; holding RESET does not block later counts. TRACK is a
+comparator level: initially high acts immediately in XOR mode and supplies
+a rising event to the edge comparator (which drives the next sample).
+ROULETTE is a continuous voltage, not an edge trigger: an already-high
+voltage drives the filter immediately. Neither input directly increments
+the counter. There is no byte bus input.

@@ -19,7 +19,7 @@ explicit clocking and original table content:
 | **Wheel**, 14 HP | A 24-stage noise register that visits every 24-bit state once, and a loop of 1–24 steps that recirculates until CAPTURE refills it from the noise; both read through an eight-stage window as byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo. | [Wheel](docs/WHEEL.md) |
 | **Roulette**, 14 HP | A phase-locked loop driving a 12-bit counter on two overlapping byte buses: a gate spins the VCO up and the loop filter lets it coast to rest, publishing the count at rest on RESULT; or it tracks an input, loosely or tightly, or divides a clock, after the Nonlinearcircuits Wangernumb. | [Roulette](docs/ROULETTE.md) |
 
-Plugin **ByteBusLab**, version **2.16.4**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.16.5**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -59,3 +59,10 @@ Hardware clock paths are outside these software tests.
 
 Converter's outlined panel labels use DejaVu Sans; its
 [font license](docs/DEJAVU-LICENSE.txt) accompanies the generated SVG.
+
+## Changes in 2.16.5
+
+- Rearm Lookup and Lookup2 RESET when restoring saved data into a running
+  instance, matching a fresh patch load and Initialize.
+- Document first-sample clocks, gates and connected buses across every module;
+  correct the Counter, Fan, Pipeline, Parallel Sum and Wheel clock summaries.

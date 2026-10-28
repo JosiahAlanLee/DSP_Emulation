@@ -48,10 +48,13 @@ they remain stopped. **Internal** ignores other clock sources. **Engine rate**
 explicitly acquires every engine sample and emits no clock channel, since an
 edge every sample cannot be represented with a required high/low gap.
 
-Switching to a different effective clock source restarts the internal phase.
-All external edge detectors continue tracking while unselected, so selecting
-an already-high, already-tracked clock does not invent a new edge. An initially
-high clock on a new input connection or bus mode counts as its first edge.
+Switching to a different effective clock source restarts the internal phase. All
+external edge detectors continue tracking while unselected, so selecting an
+already-high, already-tracked clock does not invent a new edge. During normal
+running, a newly connected high jack clock, or a bus changing to clocked mode
+with CLK high, can count as an edge. The first sample after a fresh start,
+Initialize or restore instead publishes the held word; it consumes that initial
+high level without acquiring.
 
 With a local CLOCK or Internal selected, the register samples BUS IN's current
 decoded data lines directly, even if that input also carries a stopped clock.
@@ -127,3 +130,12 @@ random process order and three seed words across those sample rates.
 
 The prototype is outside the release bundles. Software tests do not establish
 physical clock transport or live workstation behavior.
+
+## First sample after Initialize or restore
+
+A fresh instance or Initialize starts at 00; restore publishes the saved
+word first. BUS IN can already carry raw data or a high bus CLK: neither
+replaces that word on its initial publication. RESET or LOAD already high
+loads RESET WORD once instead; holding it high allows later acquisitions.
+The shared bus reader itself still latches an initially high bus CLK; that
+input latch is distinct from permission to acquire this register.

@@ -53,3 +53,13 @@ feeds the ADC, Register samples at 4 Hz, a second Vastish shapes the held
 word, and Lookup's Walsh permutation chooses frames in an embedded original
 stereo bank. Change the converter trims, Register RATE or either transform.
 Rebuild with tools/make_io_patch.py after building the standalone compiler.
+
+## First sample after Initialize or restore
+
+Fresh instances, Initialize and patch reload start ADC and Jack DAC at 80;
+running captures are not saved. Converter follows acquisition-clock semantics,
+rather than the Register publication-strobe protocol: an already-high CLOCK
+samples ADC and Jack DAC immediately on the first sample. Engine policies
+also convert immediately. Follow DAC takes an unclocked bus immediately,
+a clocked initially high bus immediately, or 00 until the first rising CLK
+on a clocked initially low bus.

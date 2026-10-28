@@ -1253,6 +1253,131 @@ static void latticeHeldVPortsRegression() {
     }
 }
 
+// First-sample matrix: fresh, Initialize after activity, and patch restore. A connected
+// high clock must publish the held state, stay held, then accept a real low/high edge.
+template<class M> static void heldClockMatrix(M& m, int clock, int output, Model* model) {
+    m.model = model; connectOutputs(m); auto a = args();
+    uint8_t expected = 0;
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) {
+        if (lifecycle == 1) m.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) {
+            json_t* saved = m.toJson(); m.fromJson(saved); json_decref(saved);
+        }
+        m.inputs[clock].channels = 1; m.inputs[clock].setVoltage(10);
+        m.process(a); uint8_t held = word(m.outputs[output]);
+        assert(held == (lifecycle == 2 ? expected : 0));
+        assert(m.outputs[output].getVoltage(8) == 10);
+        for (int t = 0; t < 4; ++t) { m.process(a); assert(word(m.outputs[output]) == held); }
+        m.inputs[clock].setVoltage(0); m.process(a);
+        m.inputs[clock].setVoltage(10); m.process(a);
+        expected = word(m.outputs[output]);
+    }
+}
+template<class M> static void firstReset(M& m, int seed, int output) {
+    connectOutputs(m); auto a = args();
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) {
+        if (lifecycle == 1) m.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = m.dataToJson(); m.dataFromJson(j); json_decref(j); }
+        m.params[seed].setValue(5);
+        m.inputs[M::RESET_IN].channels = 1; m.inputs[M::RESET_IN].setVoltage(10);
+        m.process(a); assert(word(m.outputs[output]) == 5);
+        m.params[seed].setValue(9); m.process(a); m.process(a);
+        assert(word(m.outputs[output]) == 5); // held RESET does not keep loading SEED
+    }
+}
+static void initialControls() {
+    { ClockedRegister m; firstReset(m, m.RESET_WORD, m.BUS_OUT); }
+    { ByteCounter m; firstReset(m, m.SEED, m.BUS_OUT); }
+    { ByteCounter2 m; firstReset(m, m.SEED, m.BUS_OUT); }
+    { ByteFan m; firstReset(m, m.SEED, m.BUS_OUT); }
+    { ByteLattice m; firstReset(m, m.SEED, m.BUS_OUT); }
+    { ByteParallelSum m; firstReset(m, m.SEED, m.BUS_OUT); }
+    { ByteWheel m; firstReset(m, m.SEED, m.LOOP_OUT); }
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) {
+        auto a = args();
+        ByteWheel w; connectOutputs(w);
+        if (lifecycle == 1) w.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = json_pack("{s:i,s:i}", "free", 7, "loop", 3); w.dataFromJson(j); json_decref(j); }
+        w.inputs[w.CLOCK_IN].channels = w.inputs[w.CAPTURE_IN].channels = 1;
+        w.inputs[w.CLOCK_IN].setVoltage(10); w.inputs[w.CAPTURE_IN].setVoltage(10);
+        w.process(a); assert(w.state.armed);
+        uint32_t before = w.state.loop; w.process(a); assert(w.state.loop == before);
+        w.inputs[w.CLOCK_IN].setVoltage(0); w.process(a);
+        w.inputs[w.CLOCK_IN].setVoltage(10); w.process(a);
+        assert(!w.state.armed && w.state.loop == w.state.free);
+
+        ByteLattice l; connectOutputs(l);
+        if (lifecycle == 1) l.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = json_pack("{s:i}", "state", 0x12); l.dataFromJson(j); json_decref(j); }
+        putBus(l.inputs[l.BUS_IN], 0xa5, true, false); // JUMP takes raw lines even with stopped bus CLK
+        l.inputs[l.JUMP_H_IN].channels = l.inputs[l.JUMP_V_IN].channels = 1;
+        l.inputs[l.JUMP_H_IN].setVoltage(10); l.inputs[l.JUMP_V_IN].setVoltage(10);
+        l.process(a); assert(word(l.outputs[l.BUS_OUT]) == 0xa5);
+
+        ByteParallelSum ps; connectOutputs(ps);
+        if (lifecycle == 1) ps.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = json_pack("{s:i}", "word", 0x42); ps.dataFromJson(j); json_decref(j); }
+        ps.inputs[ps.CLOCK_IN].channels = ps.inputs[ps.INJECT_IN].channels = 1;
+        ps.inputs[ps.CLOCK_IN].setVoltage(10); ps.inputs[ps.INJECT_IN].setVoltage(10);
+        putBus(ps.inputs[ps.MASK_IN], 0xa5, true, false);
+        ps.process(a); assert(ps.state.comparator.high);
+        assert(ps.state.mask == 0xb8); // mask only changes on acquisition
+
+        ByteRoulette r; connectOutputs(r);
+        if (lifecycle == 1) r.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = json_object(); r.dataFromJson(j); json_decref(j); }
+        r.params[r.COMPARATOR].setValue(1); // edge comparator sees initial TRACK rise
+        r.inputs[r.TRACK_IN].channels = 1; r.inputs[r.TRACK_IN].setVoltage(10);
+        r.process(a); assert(r.state.trackHigh && r.state.edge.state == 1);
+        r.inputs[r.ROULETTE_IN].channels = 1; r.inputs[r.ROULETTE_IN].setVoltage(10);
+        r.process(a); assert(r.state.vC > 0 && r.state.edge.state == 0);
+
+        ByteFan f; connectOutputs(f);
+        if (lifecycle == 1) f.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = json_object(); f.dataFromJson(j); json_decref(j); }
+        f.params[f.SEED].setValue(7);
+        putBus(f.inputs[f.BUS_IN], 19, true, true);
+        f.inputs[f.RESET_IN].channels = 1; f.inputs[f.RESET_IN].setVoltage(10);
+        f.process(a); assert(word(f.outputs[f.BUS_OUT]) == 19);
+        f.inputs[f.BUS_IN].channels = 0; f.process(a);
+        assert(word(f.outputs[f.BUS_OUT]) == 7); // documented decision: held RESET loads on release
+    }
+}
+template<class M> static void firstBusClock(M& m, int bus, int output) {
+    connectOutputs(m); auto a = args();
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) {
+        if (lifecycle == 1) m.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = m.dataToJson(); m.dataFromJson(j); json_decref(j); }
+        putBus(m.inputs[bus], 7, true, true);
+        m.process(a); assert(word(m.outputs[output]) == 0);
+        m.process(a); m.process(a); assert(word(m.outputs[output]) == 0);
+    }
+}
+static void initializeSweep() {
+    { ClockedRegister m; firstBusClock(m, m.BUS_IN, m.BUS_OUT); }
+    { ByteCounter m; firstBusClock(m, m.BUS_IN, m.BUS_OUT); }
+    { BytePipeline m; firstBusClock(m, m.BUS_IN, m.BUS_OUT); }
+    { ByteParallelSum m; firstBusClock(m, m.MASK_IN, m.BUS_OUT); }
+    { ClockedRegister m; putBus(m.inputs[ClockedRegister::BUS_IN], 0xa5, true, true);
+      heldClockMatrix(m, m.CLOCK_IN, m.BUS_OUT, modelClockedRegister); }
+    { ByteCounter m; putBus(m.inputs[m.BUS_IN], 3, true, true);
+      heldClockMatrix(m, m.CLOCK_IN, m.BUS_OUT, modelCounter); }
+    { BytePipeline m; putBus(m.inputs[m.BUS_IN], 0xa5, true, true);
+      heldClockMatrix(m, m.CLOCK_IN, m.BUS_OUT, modelPipeline); }
+    { ByteCounter2 m; putBus(m.inputs[m.RATIO_IN], 0x23, true, true);
+      heldClockMatrix(m, m.CLOCK_IN, m.BUS_OUT, modelCounter2); }
+    { ByteFan m; m.inputs[m.DIR_IN].channels = 1; m.inputs[m.DIR_IN].setVoltage(10);
+      heldClockMatrix(m, m.CLOCK_IN, m.BUS_OUT, modelFan); }
+    { ByteParallelSum m; putBus(m.inputs[m.MASK_IN], 0xa5, true, true);
+      m.inputs[m.INJECT_IN].channels = 1; m.inputs[m.INJECT_IN].setVoltage(10);
+      heldClockMatrix(m, m.CLOCK_IN, m.BUS_OUT, modelParallelSum); }
+    { ByteWheel m; m.inputs[m.CAPTURE_IN].channels = 1; m.inputs[m.CAPTURE_IN].setVoltage(10);
+      heldClockMatrix(m, m.CLOCK_IN, m.LOOP_OUT, modelWheel); }
+    { ByteRoulette m; // DIVIDE owns the counter; ROULETTE keeps the filter independent of TRACK.
+      m.inputs[m.ROULETTE_IN].channels = 1;
+      heldClockMatrix(m, m.DIVIDE_IN, m.LO_OUT, modelRoulette); }
+}
+
 int main(int argc, char** argv) {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
@@ -1265,6 +1390,17 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "lattice-held-v") { latticeHeldVPortsRegression(); return 0; }
     latticeGapPortsRegression(); rouletteResetPortsRegression(); latticeHeldPortsRegression(); latticeHeldVPortsRegression();
     for (float sr : {44100.f, 48000.f, 96000.f}) counter2RatioRegression(sr);
+    initializeSweep(); initialControls();
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) for (int busMode = 0; busMode < 3; ++busMode) {
+        ByteSwitch m; m.model = modelSwitch; connectOutputs(m);
+        if (lifecycle == 1) m.onReset(Module::ResetEvent{});
+        if (lifecycle == 2) { json_t* j = m.toJson(); m.fromJson(j); json_decref(j); }
+        putBus(m.inputs[m.A_IN], 0x42, busMode != 0, busMode == 2);
+        putBus(m.inputs[m.B_IN], 0xa5, true, false);
+        putBus(m.inputs[m.C_IN], 1, true, false);
+        m.process(args()); assert(word(m.outputs[m.BUS_OUT]) == 0xa5);
+        assert(m.outputs[m.BUS_OUT].getVoltage(8) == (busMode == 2 ? 10 : 0));
+    }
     portsAndState();
     counterPorts();
     counterRunModes();

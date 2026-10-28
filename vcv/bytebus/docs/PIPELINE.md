@@ -81,13 +81,13 @@ edge, starting from the words it then finds.
 
 ## Clock, reset and strobe timing
 
-Identical to Clocked Register's [clock ownership](MANUAL.md#clock-ownership)
-and [clock and reset timing](MANUAL.md#clock-and-reset-timing), through the
-shared `src/engine/ClockOwner.hpp`: Auto selection by connection, an initially
-high clock counting as its first edge, one-sample strobes with a mandatory low
-sample, RESET priority over a simultaneous edge, the cleared word (00) published
-after RESET or CLEAR with acquisition suppressed for that strobe and the low
-sample after it.
+Identical to Clocked Register's [clock ownership](MANUAL.md#clock-ownership) and
+[clock and reset timing](MANUAL.md#clock-and-reset-timing), through the shared
+`src/engine/ClockOwner.hpp`: Auto selection by connection, publication of the
+held state before acquisition after a fresh start, Initialize or restore,
+one-sample strobes with a mandatory low sample, RESET priority over a
+simultaneous edge, the cleared word (00) published after RESET or CLEAR with
+acquisition suppressed for that strobe and the low sample after it.
 
 ## Saving and reset
 
@@ -127,3 +127,12 @@ phrase saved and restored into a fresh module that goes on identically; short
 and out-of-range saved histories; CLEAR and Initialize.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start with empty history (00). Restore
+publishes the word selected by the restored history, DELAY and SPREAD.
+An already-high CLOCK or bus CLK on that sample does not shift the history.
+An already-high RESET or CLEAR clears it once, taking priority. LOOP is a
+level control: an already-high gate enables looping immediately, but cannot
+shift anything until acquisition. BUS IN is read from its raw lines then.

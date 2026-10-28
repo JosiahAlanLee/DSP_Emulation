@@ -20,6 +20,20 @@ static void set(Input& p,uint8_t n,bool clocked=false,bool clk=false) { p.channe
 static uint8_t word(Output& p) { uint8_t n=0; for(int k=0;k<8;++k) if(p.getVoltage(k)>=1) n|=1<<k; return n; }
 static void copy(Output& src,Input& dst) { dst.channels=src.getChannels(); for(int k=0;k<16;++k) dst.setVoltage(k<dst.channels ? src.getVoltage(k) : 0,k); }
 static void init(Vastish& v) { for(int i=0;i<PARAM_COUNT;++i) v.params[i].setValue(programs()[0][i]); v.params[PITCH_WAVE].setValue(BUS_WAVE); v.params[PITCH_KT].setValue(0); outputs(v); }
+static void converterFirstSamples() {
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) for (int policy = 0; policy < 3; ++policy)
+    for (int busMode = 0; busMode < 3; ++busMode) {
+        ByteConverter c; c.model = modelConverter; outputs(c); auto a = args();
+        if (lifecycle == 1) { c.process(a); c.onReset(Module::ResetEvent{}); }
+        c.params[c.DAC_CLOCK].setValue(policy);
+        if (lifecycle == 2) { json_t* j = c.toJson(); c.fromJson(j); json_decref(j); }
+        c.inputs[c.CLOCK_IN].channels = c.inputs[c.SIGNAL_IN].channels = 1;
+        c.inputs[c.CLOCK_IN].setVoltage(10); c.inputs[c.SIGNAL_IN].setVoltage(-5);
+        set(c.inputs[c.BUS_IN], 0xa5, busMode != 0, busMode == 2); c.process(a);
+        assert(word(c.outputs[c.BUS_OUT]) == 0 && c.outputs[c.CLOCK_OUT].getVoltage() == 10);
+        assert(c.engine.dac == (policy == 0 && busMode == 1 ? 0 : 0xa5));
+    }
+}
 static void converter() {
     ByteConverter c; c.model=modelConverter; outputs(c); auto a=args();
     assert(c.params.size()==8 && c.inputs.size()==3 && c.outputs.size()==3);
@@ -153,7 +167,7 @@ int main() {
     Plugin vastPlugin; vastPlugin.slug="VastishLab"; vastPlugin.version="2.5.0"; vastPlugin.addModel(modelVastish);
     Plugin otisPlugin; otisPlugin.slug="OtisLab"; otisPlugin.version="2.8.0"; otisPlugin.addModel(modelOtisSampler);
     rack::plugin::plugins={&bytePlugin,&vastPlugin,&otisPlugin};
-    converter(); testVastish(); auto library=std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load("../res/lookup-v1.bin"));
+    converterFirstSamples(); converter(); testVastish(); auto library=std::make_shared<dspemu::lookup::Library>(dspemu::lookup::Library::load("../res/lookup-v1.bin"));
     for(float sr:{44100.f,48000.f,96000.f}) chain(library,sr);
     example(library);
     rack::plugin::plugins.clear();

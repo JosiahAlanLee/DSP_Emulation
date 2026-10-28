@@ -141,3 +141,12 @@ rate; reclocking a Counter on its internal clock onto Switch's CLOCK jack with
 strobe gaps.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance, Initialize or patch reload computes the current result
+on the first sample, using raw A/B/C lines regardless of B/C CLK. In Follow A
+it passes A CLK through, including an initially high level, and computes even
+when A CLK is low. Owning its clock, it publishes the current result first
+without counting an already-high CLOCK as an acquisition. There is no saved
+result or RESET input.

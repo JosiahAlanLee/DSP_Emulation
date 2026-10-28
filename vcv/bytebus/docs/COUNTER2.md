@@ -128,3 +128,14 @@ knobs' ratio and the fraction until its first CLK; Lookup Ratio into RATIO throu
 order, giving each chosen ratio's carries; at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start at 00; restore starts from the saved word.
+The first sample publishes that word without acquiring from an already-high
+clock. A RESET or LOAD already high on that sample takes priority and loads
+SEED instead; holding it high does not reload or block later clock edges.
+RATIO is different from the counter clock: an unclocked word takes effect
+immediately; a clocked RATIO initially high latches immediately, while one
+initially low keeps the knobs or saved ratio until its first publication.
+Changing the denominator keeps the phase byte but restarts its fraction.

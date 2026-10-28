@@ -140,3 +140,15 @@ JUMP walking the Logic functions on a clocked A, with holds; steps saved and
 restored; RESET and Initialize; two Counters into A and B with CARRY → JUMP
 through one-sample cables in random order, every result equal to the function of
 the words on A's edge, identical at 44.1/48/96 kHz.
+
+## First sample after Initialize or restore
+
+A fresh instance, Initialize or patch restore evaluates A and B raw lines
+on the first sample even if A is clocked and CLK is low; a high A CLK passes
+through and evaluates too. B is read immediately regardless of its CLK.
+Unlike Lookup Map/Follow, there is no neutral wait for the first publication:
+this computed two-input operation initializes its result from present inputs.
+JUMP already high does not step: its unclocked bit is primed; the first
+clocked publication only arms it. Restored JUMP steps survive unless RESET
+is already high, which clears them once; held RESET allows later JUMPs.
+Restore rearms RESET even when loading into a running instance.

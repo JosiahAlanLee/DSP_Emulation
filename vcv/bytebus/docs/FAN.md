@@ -120,11 +120,12 @@ not documented for the hardware. Off, every sample selects exactly one channel.
 ## Clock, reset and strobe timing
 
 The internal counter runs the shared `src/engine/ClockOwner.hpp`, as Counter
-does: Auto selection by connection, an initially high clock counting as its
-first edge, one-sample strobes with a mandatory low sample, RESET priority over
-a simultaneous edge, the seed published after RESET or LOAD with acquisition
-suppressed for that strobe and the low sample after it. Engine rate counts every
-sample and emits no clock channel. Each cable hop costs one engine sample.
+does: Auto selection by connection, publication of the held state before
+acquisition after a fresh start, Initialize or restore, one-sample strobes with
+a mandatory low sample, RESET priority over a simultaneous edge, the seed
+published after RESET or LOAD with acquisition suppressed for that strobe and
+the low sample after it. Engine rate counts every sample and emits no clock
+channel. Each cable hop costs one engine sample.
 
 ## Saving and reset
 
@@ -173,3 +174,20 @@ GLITCH through the panel; Counter → Fan BUS IN through one-sample cables in
 random module order, identical at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start at 00; restore starts from the saved word.
+The first sample publishes that word without acquiring from an already-high
+clock. A RESET or LOAD already high on that sample takes priority and loads
+SEED instead; holding it high does not reload or block later clock edges.
+DIR is a level control and immediately inverts direction while high. With
+BUS IN connected, its held word immediately selects the address instead: an
+unclocked word is current, a clocked initially high word latches immediately,
+and a clocked initially low word starts at 00 until a publication.
+
+While following BUS IN, RESET and LOAD are not tracked. Releasing BUS IN
+clears the counter clock/reset detectors: RESET or LOAD still high then
+loads SEED once, even if it rose while following. A high CLOCK on release
+is consumed without counting. If the previous bus CLK was high, a low
+sample precedes the publication.
