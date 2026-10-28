@@ -70,6 +70,25 @@ int main() {
         // No room: no take starts.
         full.end[0] = int32_t(memoryWords) - 1; b.reset(full); assert(!b.start(1, 48000) && !b.active());
     }
+    // Generations (review #2): a finished take gives its slot a new generation even when it reuses the
+    // region of an earlier take; a reset gives every slot a new one; other slots keep theirs.
+    {
+        // Slot 0 fills all but 1000 frames, so takes of 500 frames alternate between two regions.
+        kit::Bank b; kit::Layout l; l.begin[0] = 0; l.end[0] = int32_t(memoryWords) - 1000; l.rate[0] = 44100; b.reset(l);
+        std::vector<int16_t> memory(memoryWords, 0);
+        auto take = [&](int s) { assert(b.start(s, 48000)); for (int n = 0; n < 500; ++n) b.write(memory, 0); assert(b.finish()); b.protect(s, Region{}); return b.map.take[size_t(s)]; };
+        auto g0 = b.map.generation;
+        Region a = take(3); auto g1 = b.map.generation;
+        assert(g1[3] != g0[3] && g1[3] == b.map.serial);
+        for (int s = 0; s < kit::SLOTS; ++s) if (s != 3) assert(g1[size_t(s)] == g0[size_t(s)]);
+        Region bb = take(3);                                 // frees a
+        Region c = take(3);                                  // lands in a's region
+        assert(bb != a && c == a && b.map.generation[3] != g1[3]);
+        auto before = b.map.generation; b.reset(l);
+        for (int s = 0; s < kit::SLOTS; ++s) assert(b.map.generation[size_t(s)] != before[size_t(s)]);
+        // The exchange hands generations over with the map.
+        kit::Exchange x; x.publish(b.map); assert(x.read().generation == b.map.generation);
+    }
     // Recording never writes into a current take, a take still sounding, or a pinned region, through
     // random hits, takes, finishes and save pins.
     {
@@ -115,7 +134,7 @@ int main() {
             std::array<std::vector<int16_t>, kit::SLOTS> copied;
             while (!stop.load()) {
                 // Only the copies of the pass copyTakes returns are promised to be whole takes.
-                auto m = x.copyTakes([&](int s, Region r) {
+                auto m = x.copyTakes([&](int s, Region r, uint32_t) {
                     copied[size_t(s)].assign(memory.begin() + r.begin, memory.begin() + std::max(r.begin, r.end));
                 });
                 for (int s = 0; s < kit::SLOTS; ++s) {
@@ -148,5 +167,5 @@ int main() {
         stop = true; saver.join();
         assert(copies.load() > 10);
     }
-    std::cout << "PASS: Otis Kit takes: largest-gap allocation against a brute-force map, takes written and made current at the host rate, replaced takes kept while sounding, short and truncated takes, no room; recording never over a current, sounding or pinned take in 300000 random steps; lock-free hand-over of takes to a concurrent saver\n";
+    std::cout << "PASS: Otis Kit takes: largest-gap allocation against a brute-force map, per-slot generations, takes written and made current at the host rate, replaced takes kept while sounding, short and truncated takes, no room; recording never over a current, sounding or pinned take in 300000 random steps; lock-free hand-over of takes to a concurrent saver\n";
 }

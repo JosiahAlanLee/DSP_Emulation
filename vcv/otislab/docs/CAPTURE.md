@@ -74,7 +74,9 @@ offset, as for a loaded WAV, so it plays back at its recorded pitch at TUNE 0.
 - **Moving Capture away** mid-take ends the take there.
 - **Compact the bank** (Otis Kit's menu) packs every slot, takes included, back
   into one run of memory, which joins the free stretches. It stops sounding hits
-  and drops a take in progress, as loading a WAV does. Nothing more is recorded
+  and drops a take in progress, as loading a WAV does; a take that finishes
+  while it packs is kept. Changing Rack's sample rate also drops a take in
+  progress. Nothing more is recorded
   until Capture ends that request and starts a new take; REC and DONE keep
   their timing.
 
@@ -111,7 +113,8 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
   the host rate; replaced takes kept while sounding; short, truncated and
   no-room takes; in 300,000 random steps of hits, takes and save pins, no write
   into a current, sounding or pinned take; and a saving thread copying takes
-  while another records them, every copy one whole take, race-free under TSan.
+  while another records them, every copy one whole take, race-free under TSan;
+  a new generation for every finished take, even one in an older take's region.
 - `tests/capture_module_test.cpp` (and its ASan/UBSan build), with Rack's
   expander wiring and message swaps emulated:
   - no kit;
@@ -129,6 +132,13 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
     with REC and DONE unchanged and the next take recording normally;
   - CLOCK removed before or after the TEMPO deadline, CLOCK patched during an
     unclocked take, and a slow clock kept patched past the TEMPO deadline.
+  - three equal-length takes into one slot of a nearly full bank, the third in
+    the first's region: save and Compact keep the third;
+  - a take finishing while Compact or a WAV load waits for the engine lock is
+    kept;
+  - a take recorded at 768 kHz saved and reloaded at its rate;
+  - a sample-rate change mid-take drops it, and the next take records at the
+    new rate.
 - `tests/plugin_test.cpp`: the compiled plugin has OTIS Sampler, Otis Kit and
   Otis Capture.
 - OTIS Sampler's legacy trace is unchanged.

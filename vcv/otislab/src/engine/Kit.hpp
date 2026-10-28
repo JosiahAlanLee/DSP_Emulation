@@ -57,9 +57,12 @@ struct Region {
     bool operator!=(const Region& o) const { return !(*this == o); }
 };
 // Each slot's current take and its rate. serial rises with every finished take and every repack.
+// generation[s] is the serial at which slot s last changed: a new take can reuse the region of an
+// older one, so a saver tells takes apart by generation, never by region.
 struct BankMap {
     std::array<Region, SLOTS> take{};
     std::array<double, SLOTS> rate{};
+    std::array<uint32_t, SLOTS> generation{};
     uint32_t serial = 0;
 };
 // The audio thread's bank. Recording writes only into memory that no current take, no take still
@@ -77,7 +80,7 @@ struct Bank {
     bool active() const { return slot >= 0; }
     void reset(const Layout& l) {
         for (int s = 0; s < SLOTS; ++s) { map.take[size_t(s)] = {l.begin[size_t(s)], l.end[size_t(s)]}; map.rate[size_t(s)] = l.rate[size_t(s)]; }
-        map.serial++; sounding = {}; cancel();
+        map.serial++; map.generation.fill(map.serial); sounding = {}; cancel();
     }
     void cancel() { slot = -1; recording = {}; limit = 0; truncated = false; }
     // The longest stretch of memory nothing above covers.
@@ -119,7 +122,7 @@ struct Bank {
         int s = slot; Region take = recording; double r = rate; cancel();
         if (!take.playable()) return false;
         if (!sounding[size_t(s)].playable()) sounding[size_t(s)] = map.take[size_t(s)];
-        map.take[size_t(s)] = take; map.rate[size_t(s)] = r; map.serial++;
+        map.take[size_t(s)] = take; map.rate[size_t(s)] = r; map.generation[size_t(s)] = ++map.serial;
         return true;
     }
     // Keep the region voice s is reading out of the free memory while it differs from the slot's take.
@@ -133,6 +136,7 @@ struct Bank {
 struct Exchange {
     std::array<std::atomic<int32_t>, SLOTS> begin{}, end{}, pinBegin{}, pinEnd{};
     std::array<std::atomic<double>, SLOTS> rate{};
+    std::array<std::atomic<uint32_t>, SLOTS> generation{};
     std::atomic<uint32_t> serial{0}, sequence{0};
     std::atomic<bool> pinned{false};
 
@@ -145,6 +149,7 @@ struct Exchange {
             begin[size_t(s)].store(m.take[size_t(s)].begin, std::memory_order_relaxed);
             end[size_t(s)].store(m.take[size_t(s)].end, std::memory_order_relaxed);
             rate[size_t(s)].store(m.rate[size_t(s)], std::memory_order_relaxed);
+            generation[size_t(s)].store(m.generation[size_t(s)], std::memory_order_relaxed);
         }
         serial.store(m.serial, std::memory_order_relaxed);
         sequence.store(q + 2, std::memory_order_release);
@@ -163,6 +168,7 @@ struct Exchange {
             for (int s = 0; s < SLOTS; ++s) {
                 m.take[size_t(s)] = {begin[size_t(s)].load(std::memory_order_relaxed), end[size_t(s)].load(std::memory_order_relaxed)};
                 m.rate[size_t(s)] = rate[size_t(s)].load(std::memory_order_relaxed);
+                m.generation[size_t(s)] = generation[size_t(s)].load(std::memory_order_relaxed);
             }
             m.serial = serial.load(std::memory_order_relaxed);
             std::atomic_thread_fence(std::memory_order_acquire);
@@ -170,7 +176,7 @@ struct Exchange {
         } while (before != after || (before & 1));
         return m;
     }
-    // copy(slot, region) reads the region out of sample memory. Returns the map the copies match.
+    // copy(slot, region, generation) reads the region out of sample memory. Returns the map the copies match.
     template <class Copy> BankMap copyTakes(Copy copy) {
         for (;;) {
             BankMap m = read();
@@ -179,7 +185,7 @@ struct Exchange {
                 pinEnd[size_t(s)].store(m.take[size_t(s)].end, std::memory_order_relaxed);
             }
             pinned.store(true, std::memory_order_seq_cst);
-            for (int s = 0; s < SLOTS; ++s) copy(s, m.take[size_t(s)]);
+            for (int s = 0; s < SLOTS; ++s) copy(s, m.take[size_t(s)], m.generation[size_t(s)]);
             pinned.store(false, std::memory_order_release);
             if (read().serial == m.serial) return m;
         }

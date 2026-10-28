@@ -1,5 +1,18 @@
 # OTIS change history
 
+## 2.11.3
+
+- Otis Kit no longer loses a take that lands in the same memory as the take
+  last copied out of its slot. Before, saving, **Compact the bank**, **Load
+  WAV**, **Clear** or **Load folder** could bring back the slot's older take
+  when takes of equal length went into a nearly full bank.
+- A take that finishes while the kit compacts or loads a WAV is kept. Only a
+  take still in progress is dropped.
+- Takes recorded at Rack's 705.6 kHz and 768 kHz engine rates now reload with
+  the patch. The saved-rate limit is 1,000–768,000 Hz.
+- A sample-rate change during a take drops the take, as Compact does, instead
+  of landing it with the wrong pitch for the part recorded after the change.
+
 ## 2.11.2
 
 - Re-storing an OTIS patch now applies its REV to voices already playing that
@@ -39,7 +52,9 @@
 ## 2.9.0
 
 - Patch select, the EPS idiom: bits 1 and 2 of the new PATCH input choose, on
-  each hit, the panel or one of three patches stored from it. A patch holds
+  each hit, the panel or one of three patches stored from it. (From 2.11.x the
+  docs number these bits 0 and 1, counting from zero: the same two lanes, cable
+  channels 1 and 2.) A patch holds
   PITCH, START, END, K1, K2, LOOP, REV, INTERP, POSITION and SIZE, with CV
   added as on the panel. Store, recall and clear them from the menu; they are
   saved with the patch.
