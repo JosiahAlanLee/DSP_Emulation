@@ -59,8 +59,12 @@ H 10, row 4, column 3, step 15. A light by each knob shows the selected step.
 
 ## Counting
 
-- H counts on each acquisition edge of its clock, under the shared
-  `src/engine/ClockOwner.hpp` rules. V counts on each V CLOCK rising edge.
+- H counts on each rising edge of the clock it follows, chosen by the shared
+  `src/engine/ClockOwner.hpp` rules. Unlike the other ClockOwner modules,
+  Lattice counts an edge that lands on a mandatory low sample, or on the
+  sample a deferred seed is published, and only its strobe waits
+  (`NLC_BUS_SPEC.md` §3: no change is lost). V counts on each V CLOCK rising
+  edge.
 - Each counter is 4 bits and wraps modulo 16, up, or down while its DIR gate
   is high. Only the low two bits, the counter's *position*, select the step;
   the upper two bits are carried state that a jump reads.
@@ -96,12 +100,13 @@ With BUS IN unpatched, the JUMP selector decides what a jump does.
 ## Order within a sample
 
 1. RESET or LOAD loads SEED. On that sample, H's clock edge, V's edge and the
-   jumps are ignored (RESET priority, as ClockOwner gives it over H's edge).
+   jumps are ignored (RESET priority).
 2. H counts on its edge, then V on its own edge or H's wrap.
 3. The jumps, from the state the clocks left.
 
 Every change, and every counting edge, publishes the state once. A strobe never
-follows a strobe: a change on the sample after one is published on the next.
+follows a strobe: a change on the sample after one, H's edge included, is
+applied at once and published on the next.
 Engine rate counts H every sample and publishes 8 channels with no strobe.
 RESET or LOAD publishes the seed after a low sample if CLK was high, as on
 every ClockOwner module. Each cable hop costs one engine sample.

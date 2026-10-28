@@ -133,27 +133,30 @@ struct Roulette {
         bool rise = phase >= 1;
         if (rise) phase -= std::floor(phase);
         bool newBit = phase < .5;
-        // The edge comparator sees this sample's edges; it drives the filter from the next.
-        if (!in.rouletteConnected && p.comparator == Comparator::Edge) edge.process(trackRise, rise);
-        else edge = {};
-        out.vcoBit = newBit; out.vcoRise = rise;
-        // VCO OUT: a band-limited square, +5 V in the high half.
-        double naive = newBit ? 5 : -5;
-        double blep = 5 * (polyBlep(phase, inc) - polyBlep(std::fmod(phase + .5, 1.), inc));
-        out.vcoOut = float(inc > 0 ? naive + blep : naive);
 
-        // The filter, an exact exponential step over the sample.
-        if (!floating) vC = u + (vC - u) * std::exp(-dt / ((rs + R2) * c));
-
-        // The counter: DIVIDE or the VCO as a jack clock.
+        // The counter: DIVIDE or the VCO as a jack clock. RESET restarts the VCO low on its
+        // own sample, so the outputs, the edge comparator and the count all see the restart.
         bool divide = p.source == Source::Divide || (p.source == Source::Auto && in.divideConnected);
         clock_owner::Inputs clock;
         clock.clockConnected = true;
         clock.clock = divide ? (in.divideConnected && std::isfinite(in.divide) ? in.divide : 0.f) : (newBit ? bus::HIGH : 0.f);
         clock.reset = in.reset;
         auto s = owner.tick(ClockMode::Jack, 0, clock, sr);
-        if (s.seed) { count = 0; phase = .5; }
+        if (s.seed) { count = 0; phase = .5; newBit = false; rise = false; }
         if (s.acquire) { count = (count + 1) & COUNT_MASK; out.advanced = true; }
+
+        // The edge comparator sees this sample's edges; it drives the filter from the next.
+        if (!in.rouletteConnected && p.comparator == Comparator::Edge) edge.process(trackRise, rise);
+        else edge = {};
+        out.vcoBit = newBit; out.vcoRise = rise;
+        // VCO OUT: a band-limited square, +5 V in the high half. A restart is not an edge at a
+        // known point within the sample, so the RESET sample is the plain low level.
+        double naive = newBit ? 5 : -5;
+        double blep = 5 * (polyBlep(phase, inc) - polyBlep(std::fmod(phase + .5, 1.), inc));
+        out.vcoOut = float(inc > 0 && !s.seed ? naive + blep : naive);
+
+        // The filter, an exact exponential step over the sample.
+        if (!floating) vC = u + (vC - u) * std::exp(-dt / ((rs + R2) * c));
 
         // RESULT: the count as the VCO comes to rest, once per stop.
         bool nowRunning = f > 0;
