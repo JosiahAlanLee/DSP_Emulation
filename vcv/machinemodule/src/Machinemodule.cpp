@@ -19,6 +19,8 @@ struct Machinemodule : Module {
     gorgon_sound::Packet messages[2];
     md_rack::InputBlock block;
     md_rack::LinkState link;
+    const Module* linkProvider=nullptr;
+    int64_t linkProviderId=-1,linkProviderFrame=-1;
     std::array<md_rack::Edge,16> gates;
     md_rack::Edge reset;
     std::atomic<int> trigMode{TRIG_TRACKS};
@@ -97,7 +99,15 @@ struct Machinemodule : Module {
         int offset=int(frame%md_rack::frames);
         bool patched=inputs[TRIG].isConnected();
         const auto* packet=patched?nullptr:soundPacket(args.frame);
-        auto linked=link.update(packet,args.frame);
+        const Module* provider=patched?nullptr:leftExpander.module;
+        int64_t providerId=provider?provider->id:-1;
+        bool changed=provider!=linkProvider||providerId!=linkProviderId;
+        if(changed)linkProviderFrame=args.frame;
+        linkProvider=provider;linkProviderId=providerId;
+        if(packet&&packet->frame<linkProviderFrame)packet=nullptr;
+        // Expander buffers belong to us and may still contain the previous sender's packet.
+        // A source change disconnects first; the next flipped packet seeds the new gates.
+        auto linked=link.update(changed?nullptr:packet,args.frame);
         lights[LINK].setBrightness(link.connected?1.f:0.f);
         if(linked.panic)appendPanic(offset);
         bool resetHit=reset.process(inputs[RESET].getVoltage());if(resetHit)appendPanic(offset);

@@ -129,11 +129,37 @@ static void busTrig(){
     }
 #endif
 }
+// Replacing a Gorgon is a disconnect/reconnect even when its transport revision matches.
+// The consumer buffer still belongs to the old sender on the first sample after the swap.
+static void linkSourceChanges(Plugin& providerPlugin){
+    Trace trace;auto m=std::make_unique<Machinemodule>(factory(trace));m->model=modelMachinemodule;ready(*m);
+    Model model;model.slug="Gorgon";model.plugin=&providerPlugin;
+    Module first,second;first.model=second.model=&model;first.id=10;second.id=11;
+    m->leftExpander.module=&first;
+    Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+    auto tick=[&](int f,float gate,bool publish=true){
+        args.frame=f;
+        if(publish){auto* p=static_cast<gorgon_sound::Packet*>(m->leftExpander.consumerMessage);
+            p->frame=f;p->moving=1;p->transport=7;p->lanes[0].gate=gate;p->lanes[0].velocity=1;}
+        m->process(args);
+    };
+    tick(0,0);tick(1,0);tick(2,10);assert(m->block.count==2); // epoch panic, then hit
+    m->leftExpander.module=&second;
+    tick(3,0,false); // still a fresh packet, but written by first
+    assert(m->block.count==3&&m->block.events[2].panic);
+    tick(4,0,false);assert(!m->link.connected&&m->block.count==3); // old packet is still within the 2-sample freshness window
+    tick(5,10);assert(m->block.count==3); // seed second's held gate; never invent a hit
+    tick(6,0);tick(7,10);assert(m->block.count==4&&!m->block.events[3].panic);
+    // Rack may reuse a module address: the engine ID also identifies the sender.
+    second.id=12;tick(8,0,false);assert(m->block.count==5&&m->block.events[4].panic);
+    tick(9,10);assert(m->block.count==5);
+}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
     Plugin receiverPlugin;receiverPlugin.slug="MachinemoduleRack";receiverPlugin.version="2.0.0";modelMachinemodule->plugin=&receiverPlugin;
     Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.4.0";
     Model providerModel;providerModel.slug="Gorgon";providerModel.plugin=&providerPlugin;
+    linkSourceChanges(providerPlugin);
     {
         Trace trace;Machinemodule m(factory(trace));m.model=modelMachinemodule;ready(m);
         for(auto& o:m.outputs)o.channels=1;

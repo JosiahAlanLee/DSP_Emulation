@@ -1,7 +1,7 @@
 {
   "slug": "MachinemoduleRack",
   "name": "Machinemodule Rack",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "license": "AGPL-3.0-only",
   "brand": "DSP_Emulation",
   "author": "DSP_Emulation contributors; Machinemodule by sd88me and contributors",

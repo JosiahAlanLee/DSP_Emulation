@@ -48,7 +48,7 @@ jobs:
           python3 - <<'PY'
           import tarfile
           from pathlib import Path
-          source = Path('vcv/machinemodule/dist/MachinemoduleRack-2.2.0-source.tar.gz')
+          source = Path('vcv/machinemodule/dist/MachinemoduleRack-2.2.1-source.tar.gz')
           with tarfile.open(source) as tar:
               names = tar.getnames()
               assert any(n.endswith('asmjit/src/asmjit/core/builder.cpp') for n in names)
@@ -117,7 +117,7 @@ jobs:
           fi
           python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
           python3 vcv/machinemodule/tools/package.py
-          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.0-win-x64.vcvplugin
+          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.1-win-x64.vcvplugin
           vcv/machinemodule/build/plugin_load_test.exe vcv/machinemodule/dist/MachinemoduleRack/plugin.dll
       - uses: actions/upload-artifact@v4
         with:
@@ -164,7 +164,7 @@ jobs:
         run: |
           python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
           python3 vcv/machinemodule/tools/package.py
-          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.0-${{ matrix.arch }}.vcvplugin
+          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.1-${{ matrix.arch }}.vcvplugin
           otool -L vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib
           otool -L vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib | grep '/tmp/Rack2/libRack.dylib'
           codesign --verify --strict vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib

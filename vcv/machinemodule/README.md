@@ -54,7 +54,9 @@ CV and knobs latch on each hit. This first adapter does not offer continuous
 audio-rate parameter modulation, slides or triggerless locks. Changing controls
 under a held gate cannot retrigger it. Hot-plugging into a high gate seeds its
 state and waits for the next rising edge. Stop, seek and lost-link transitions
-silence voices through the same event queue.
+silence voices through the same event queue. Replacing the adjacent Gorgon also
+silences the previous voices, discards its buffered packet, and seeds the new
+sender's held gates without inventing a hit.
 
 ## ROM samples and sampling scope
 
@@ -189,3 +191,12 @@ license notices.
 Firmware and ROM sample data are excluded. To build the source archive without
 Git metadata, configure CMake directly: its dependency revision manifest records
 the pin. Not affiliated with Elektron, Akai or VCV.
+
+## Changelog
+
+### 2.2.1
+
+- Treat a changed Gorgon instance as a lost link, including reuse of a module
+  address with a new Rack ID. Silence the previous voices and seed the new gates;
+  the previous sender's still-fresh consumer packet cannot trigger the new link.
+- Cover native block edges and simultaneous locked hits with panic in renderer tests.
