@@ -12,6 +12,10 @@ The [getting-started guide](GETTING_STARTED.md) and individual manuals describe 
 | vcv/spoonbender | Rack effects module, portable engine and capture buffers. |
 | vcv/seance | Rack spectral core and five expanders: portable STFT engine and operations, chain link, modules. |
 | vcv/bytebus | Clocked Register, Counter, Counter 2, Switch, Pipeline, Lookup, Lookup2, Converter, Fan, Lattice, Parallel Sum, Wheel and Roulette; portable engines, original generated assets, Vastish table compiler and real Rack feedback tests. |
+| vcv/czish | CZishLab: CZish, a CZ-style phase-distortion voice, and DAC Stage, a converter model; portable engines with reference tests for the µPD933 arithmetic and Yamaha word format. |
+| vcv/machinemodule | Machinemodule, a separate AGPL-3.0-only plugin: the pinned Machinemodule desktop core running a user-supplied Machinedrum OS, played by Gorgon sound locks and polyphonic CV. |
+| vcv/monomodule | Monomodule, a separate AGPL-3.0-only plugin: the Monomachine's six tracks, the OS's own DSP program in six emulated DSP56300s, running a user-supplied Monomachine OS, played by Gorgon or a TRIG cable. |
+| vcv/adapter | The AGPL-3.0-only emulated-instrument adapter shared by Machinemodule and Monomodule: scheduling, the worker thread and renderer, Gorgon sound-link reception and per-track CV. Its README draws the AGPL/BSD license boundary: BSD plugins never include it. |
 | vcv/shared | Sample-file utilities, versioned sample-sharing interface, byte-bus helpers and panel-glyph sources. |
 
 Build from a complete checkout: plugins include headers from vcv/shared outside their own directories. Generated panels are committed. Regenerating their marks additionally uses the source project described in [the glyph README](../vcv/shared/glyphs/README.md).

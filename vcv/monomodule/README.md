@@ -54,6 +54,26 @@ is saved with the patch. INP A and INP B take audio at 5 V per full scale. At an
 but 44.1 kHz they cross a converter to the engine's rate and back, which the menu's
 latency includes.
 
+## Pitch
+
+- **Whole notes only.** V/OCT is rounded to the nearest MIDI note (C4 = 0 V), so CV
+  can't play microtones or glides.
+- **Tuning is fixed** at the hardware's 440 Hz setting; there is no master-tune control.
+  The pitch index is truncated (`(note << 11) / 12`, 2048 units an octave), and the
+  master-tune word encodes 440 Hz as −1 unit (the hardware's encoding). Together they
+  leave most machines about 0.6–1.2 cents flat; SWAVE SAW and ENS land within half a
+  cent.
+- **VO-6 rounds its frequency down to a whole hertz.** That happens inside the OS, not in
+  Monomodule, so its low notes run flat: about 38 cents at C1, 10–18 cents at C2–G2, and
+  about 2 cents or less from C5 up.
+- **Octave placements.** At their default settings, FM+ STAT and FM+ PAR sound an octave
+  below the played note, and DPRO WAVE has an equally loud partial an octave below it.
+  These come from the machines' default FRQ and WAVE settings, not from tuning; a lock on
+  those settings moves them.
+
+The cent figures were measured on 2026-10-27 with OS 1.32B, at each machine's default
+settings, through Monomodule's own engines.
+
 ## Limits of this version
 
 - The AMP, FILT and EFX pages and the LFOs stay at each machine's defaults. Only the
@@ -78,7 +98,18 @@ own worker thread.
 ```sh
 make deps    # Monomodule and its pinned, patched dsp56300 (tools/fetch-core.sh)
 make RACK_DIR=/path/to/Rack-SDK test
+# Optional real-engine comparison, with your own OS (not a CI fixture):
+build/firmware_test /path/to/your/OS1.32B.syx
 ```
+
+The [platform workflow](../../.github/workflows/monomodule.yml) builds `firmware_test`
+but can't run it: CI has no OS image, and `ctest` (and `make test`) leave it out. Run
+it by hand with the unzipped OS 1.32B `.syx`. It loads all six engines, then checks,
+sample for sample, that a SAW note on track 3 matches a separately driven Monomodule
+voice and that THRU on INP A+B matches a direct voice's FX path, and that both are
+audible. It prints a line for each check and exits 0 when both pass; with no file it
+prints a note and exits 77 (skipped). It passed on 2026-10-27 with OS 1.32B, at
+1955fbb.
 
 `make dist` writes the `.vcvplugin` and its corresponding-source archive. The shared
 emulated-instrument adapter is `../adapter` (its README draws the AGPL/BSD boundary).

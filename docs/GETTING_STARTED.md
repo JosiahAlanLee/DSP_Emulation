@@ -5,6 +5,8 @@ Four plugins for VCV Rack 2. The first three are instruments, usable separately 
 | Module | Use it for | Manual |
 |---|---|---|
 | **OTIS Sampler** | Record audio, transpose it through an ES5505-derived playback engine, scan short loops, and reshape stored samples. | [OTIS](../vcv/otislab/docs/MANUAL.md) |
+| **Otis Kit** | Play a bank of eight sample slots on the same playback arithmetic, one slot per hit, chosen by gate channel or a byte bus, with per-slot tune, decay, level, filter, start and direction. | [Otis Kit](../vcv/otislab/docs/KIT.md) |
+| **Otis Capture** | Record takes of a set number of beats, from an input or the kit itself, into an Otis Kit slot. | [Otis Capture](../vcv/otislab/docs/CAPTURE.md) |
 | **Vastish** | Play an eight-voice synthesizer with selectable DSP routing, sample playback, and modulation outputs. | [Vastish](../vcv/vastish/docs/MANUAL.md) |
 | **Spoon Bender** | Add stereo echo, frequency-shifted feedback, reverb and frozen tails; capture a phrase after hearing it. | [Spoon Bender](../vcv/spoonbender/docs/MANUAL.md) |
 | **Séance** | Hold a sound's spectrum in place, scatter its partials, shape it with a second signal, or sweep a wall across it, with expanders working on one shared spectral frame. | [Séance](../vcv/seance/docs/MANUAL.md) |
@@ -17,7 +19,7 @@ OTIS, Vastish and Spoon Bender draw on early digital instrument architectures an
 2. Unzip it. Inside are the `.vcvplugin` files and `INSTALL.txt`. Don't unzip the `.vcvplugin` files themselves; Rack does that.
 3. In Rack, choose **Help → Open user folder**, then quit Rack.
 4. Copy the `.vcvplugin` files into the plugins folder for your platform, inside that user folder.
-5. Start Rack. Right-click the rack and search for **OTIS Sampler**, **Vastish**, **Spoon Bender** or **Séance**.
+5. Start Rack. Right-click the rack and search for **OTIS Sampler**, **Otis Kit**, **Otis Capture**, **Vastish**, **Spoon Bender** or **Séance**.
 
 Files in the current preview release, **preview-1**:
 
@@ -28,7 +30,7 @@ Files in the current preview release, **preview-1**:
 | macOS Apple Silicon | `DSP_Emulation-preview-1-macOS-AppleSilicon.zip` | `OtisLab-2.5.2-mac-arm64.vcvplugin`<br>`VastishLab-2.3.1-mac-arm64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-arm64.vcvplugin` | `plugins-mac-arm64` |
 | macOS Intel | `DSP_Emulation-preview-1-macOS-Intel.zip` | `OtisLab-2.5.2-mac-x64.vcvplugin`<br>`VastishLab-2.3.1-mac-x64.vcvplugin`<br>`SpoonBenderLab-2.1.1-mac-x64.vcvplugin` | `plugins-mac-x64` |
 
-preview-1 predates Séance. Current source builds `SeanceLab-2.1.0-<platform>.vcvplugin`, including Bridge.
+preview-1 predates Séance, Otis Kit and Otis Capture. Current source builds `SeanceLab-2.1.0-<platform>.vcvplugin`, including Bridge, and OtisLab with all three OTIS modules.
 
 Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple Silicon; "Processor: Intel…" is Intel.
 
