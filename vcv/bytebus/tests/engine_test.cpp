@@ -10,6 +10,7 @@
 #include "../src/engine/Wheel.hpp"
 #include "../src/engine/Roulette.hpp"
 #include <set>
+#include <string>
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -1370,7 +1371,42 @@ static void rouletting() {
     }
 }
 
-int main() {
+// Review regressions are individually selectable because each intentionally fails until fixed.
+static void latticeGapRegression() {
+    for (double sr : {44100., 48000., 96000.}) {
+        lattice::Lattice l; lattice::Parameters p; p.mode = ClockMode::Jack;
+        p.seed = 3; lattice::Inputs in; in.clock.clockConnected = true;
+        l.tick(p, in, sr); l.tick(p, in, sr);
+        in.clock.reset = 10;
+        auto o = l.tick(p, in, sr); assert(o.clk && o.state == 3);
+        in.clock.reset = 0; in.clock.clock = 10;
+        o = l.tick(p, in, sr);
+        // NLC §3: apply the edge now, including the normalled V wrap; defer publication only.
+        assert(!o.clk && o.hAdvanced && o.vAdvanced && o.state == 0x14);
+        in.clock.clock = 0; o = l.tick(p, in, sr);
+        assert(o.clk && o.state == 0x14);
+    }
+}
+
+static void rouletteResetRegression() {
+    for (double sr : {44100., 48000., 96000.}) {
+        roulette::Roulette r;
+        // Restore a high, stopped VCO; patched 0 V keeps the filter and frequency at zero.
+        r.clear(77, 0, 0, .25);
+        roulette::Parameters p; roulette::Inputs in; in.rouletteConnected = true;
+        r.tick(p, in, sr); r.tick(p, in, sr);
+        in.reset = 10; auto o = r.tick(p, in, sr);
+        assert(o.count == 0 && o.loaded && r.phase == .5);
+        // ROULETTE.md: reset restarts the VCO low; the output and phase must agree this sample.
+        assert(!o.vcoBit && !o.vcoRise && o.vcoOut == -5.f);
+    }
+}
+
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetRegression(); return 0; }
+    latticeGapRegression(); rouletteResetRegression();
+
     conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling(); rouletting();
     std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks; Roulette: counts as exact divisions, the resting state, the spin and coast against the closed form with one RESULT per stop at 44.1/48/96 kHz, the filter against a fine integration, the VCO capped at half the engine rate with every count strobed, ROULETTE replacing the comparator, XOR and edge tracking, RANGE CV and its lag, RESET and strobes under random edges\n";
 }
