@@ -95,7 +95,9 @@ sample rate, which is never above 768,000 Hz, so every take reloads. (A WAV
 file above 384,000 Hz is still refused when loaded.) Invalid saved audio
 encoding or length also leaves the slot empty, with the error in the menu.
 The other slots still load. Rack's Initialize empties the bank and restores
-the controls.
+the controls. It also forgets the last take, so a linked
+[Otis Capture](CAPTURE.md) shows READY and the next take is "Capture take 1";
+loading a patch or preset does the same.
 
 ## Validation
 

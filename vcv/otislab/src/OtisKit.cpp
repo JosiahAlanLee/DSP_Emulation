@@ -220,13 +220,20 @@ struct OtisKit : Module {
         std::lock_guard<std::mutex> guard(engineMutex); engine.setHostRate(e.sampleRate);
         if (bank.active()) { bank.cancel(); captureBlocked = true; }
     }
+    // An emptied bank has no last take: Capture shows READY and the next take is named from 1, and
+    // ROOM is measured again on the next sample. Audio-thread state: called only where process() can't
+    // run (Initialize, and a patch or preset load, which Rack runs under the engine's exclusive lock).
+    void clearTakeStatus() {
+        takes = 0; lastSlot = -1; lastFrames = 0; lastTruncated = noRoom = false; roomCountdown = 0;
+        takeNumber = 0;
+    }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e);
         engineMode = 0; dropSample = false; slotReader.reset();
         for (auto& g : gates) g.reset();
         hitPitch.fill(0); hitLevel.fill(1);
         for (auto& s : slots) s = {};
-        install(false);
+        install(false); clearTakeStatus();
     }
     json_t* dataToJson() override {
         syncTakes();
@@ -264,7 +271,7 @@ struct OtisKit : Module {
             const char* name = json_string_value(json_object_get(o, "name"));
             slots[size_t(s)].name = name ? name : "RESTORED";
         }
-        install(false);
+        install(false); clearTakeStatus();
     }
 };
 

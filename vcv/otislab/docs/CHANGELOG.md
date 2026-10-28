@@ -1,5 +1,12 @@
 # OTIS change history
 
+## 2.11.4
+
+- Initializing Otis Kit, or loading a patch or preset into it, now clears the
+  last take's status. Before, a linked Otis Capture kept showing the old take's
+  slot and length (or CUT or NO ROOM) on the empty bank, its ROOM could lag
+  for a moment, and the next take's name continued the old count.
+
 ## 2.11.3
 
 - Otis Kit no longer loses a take that lands in the same memory as the take
