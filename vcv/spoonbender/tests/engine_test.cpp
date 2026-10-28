@@ -296,8 +296,42 @@ static void cpu() {
     }
 }
 
-int main() {
+static void rateMatrix() {
+    for (double sr : {44100., 48000., 96000., 192000., 384000.}) {
+        for (int rate = 0; rate < 3; ++rate) {
+            Engine e; e.prepare(sr, rate, .01);
+            Params p; p.esp = true; p.echoMix = 1; p.spaceMix = 0; p.mix = 1;
+            p.echo.feedback = 0; p.echo.timeSec = .001f;
+            double power = 0; int count = 0;
+            for (int i = 0; i < int(sr / 5); ++i) {
+                auto out = e.tick(.5f * float(std::sin(2 * PI * 1000 * i / sr)), 0, p);
+                assert(std::isfinite(out[0]) && std::isfinite(out[1]));
+                if (i >= int(sr / 10)) { power += double(out[0]) * out[0]; ++count; }
+            }
+            assert(std::abs(db(std::sqrt(power / count), .5 / std::sqrt(2.))) < .5);
+        }
+    }
+    std::cout << "rate conversion: 1 kHz gain within 0.5 dB at all three ESP rates, 44.1/48/96/192/384 kHz hosts\n";
+}
+
+static void rateChangeClearsDc() {
+    Engine e; e.prepare(48000, 0, .01);
+    Params p; p.echoMix = 1; p.spaceMix = 0; p.mix = 1;
+    p.echo.timeSec = .001f; p.echo.feedback = 0;
+    for (int i = 0; i < 1000; ++i) e.tick(.5f, -.25f, p);
+    assert(std::abs(e.dcTrack[0].z) > .01f);
+    for (double rate : {44100., 48000., 96000., 192000.}) {
+        e.prepare(rate, 0, .01);
+        auto out = e.tick(0, 0, p);
+        assert(out[0] == 0 && out[1] == 0);
+    }
+}
+
+int main(int argc, char**) {
+    rateChangeClearsDc();
+    if (argc > 1) return 0;
     std::cout << std::unitbuf;  // keep progress output if an assertion aborts
+    rateMatrix();
     fixedPointParity();
     shifterAccuracy();
     echoTimingAndBudget();

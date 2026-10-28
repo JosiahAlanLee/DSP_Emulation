@@ -274,7 +274,45 @@ static void testWipe() {
     std::printf("  wipe: +0.5 leaves 200 Hz at %.0f dB and 5 kHz at %.1f dB; -0.5 the reverse (%.1f / %.0f dB); 0 is an identity; soft edge takes 1 kHz to %.1f dB\n", dB(lowLeft / .4f), dB(highLeft / .4f), dB(lowLeft2 / .4f), dB(highLeft2 / .4f), dB(part / .4f));
 }
 
-int main() {
+// Run individually to retain a separate failing-before result for each regression.
+static void reviewRegression(int which) {
+    Core c; CoreParams p;
+    if (which == 1) {
+        for (float bad : {NAN, INFINITY, -INFINITY}) {
+            c.clear();
+            for (int i = 0; i < 20000; ++i) {
+                float a = i == 100 ? bad : .25f;
+                float b = i == 200 ? bad : 0.f;
+                assert(std::isfinite(c.tick(a, b, p, false)));
+            }
+        }
+    } else if (which == 2) {
+        c.setSize(3); c.setSize(2);
+        for (int i = 0; i < 1024; ++i) c.tick(0, 0, p, false);
+        assert(c.size == 2048);
+    } else if (which == 3) {
+        while (!c.pending) c.tick(.25f, 0, p, true);
+        while (c.t < c.frameTime + SLACK) c.tick(.25f, 0, p, true);
+        bool nested = false;
+        serve(c.frame, 1, true, false, [&](FrameV1& f) {
+            // Simulate the core reaching its deadline while this operation owns the frame.
+            for (int i = 0; i < 32; ++i) c.tick(.25f, 0, p, true);
+            assert(c.pending);
+            nested = serve(f, 1, true, false, [](FrameV1&) {});
+        });
+        assert(!nested);
+        c.tick(.25f, 0, p, true);
+        assert(!c.pending && c.stalled && c.stalls == 1);
+        for (long long at = c.frameTime + SLACK; at < c.t; ++at) {
+            assert(c.out[size_t(at) & RING_MASK] == 0);
+            assert(c.wsum[size_t(at) & RING_MASK] == 0);
+        }
+    }
+}
+
+int main(int argc, char** argv) {
+    if (argc > 1) { reviewRegression(std::atoi(argv[1])); return 0; }
+    for (int i = 1; i <= 3; ++i) reviewRegression(i);
     std::cout << std::unitbuf;
     std::printf("FFT\n"); testFft();
     std::printf("Reconstruction and latency\n"); testReconstruction();

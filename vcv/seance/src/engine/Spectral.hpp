@@ -25,7 +25,7 @@ constexpr int RING_MASK = RING - 1;
 
 constexpr uint32_t FRAME_MAGIC = 0x53454146u;  // "SEAF"
 constexpr uint32_t FRAME_VERSION = 1;
-constexpr int STAGE_IDLE = 0, STAGE_DONE = -1;
+constexpr int STAGE_IDLE = 0, STAGE_DONE = -1, STAGE_BUSY = -2;
 
 inline float clampf(float x, float lo, float hi) { return std::max(lo, std::min(hi, x)); }
 // Wrap a phase to (-pi, pi].
@@ -48,7 +48,8 @@ inline float bipolar(uint64_t k) { return 2 * uniform(k) - 1; }                 
 struct FrameV1 {
     uint32_t magic = FRAME_MAGIC, version = FRAME_VERSION;
     // Who holds the frame: STAGE_IDLE (the core, between frames), k > 0 (the k-th expander
-    // from the core), STAGE_DONE (the chain has finished; the core may resynthesise).
+    // from the core), STAGE_BUSY (an expander owns the arrays), or STAGE_DONE
+    // (the chain has finished; the core may resynthesise).
     std::atomic<int> stage{STAGE_IDLE};
     std::atomic<int> length{0};  // expanders in the chain, reported by the last one
     uint64_t serial = 0;         // frames since RESET; epochs of seeded randomness count from it
@@ -133,7 +134,7 @@ struct Core {
         frame.stage.store(STAGE_IDLE, std::memory_order_release);
     }
     // Takes effect at the next frame boundary, once no frame is out.
-    void setSize(int index) { index = std::max(0, std::min(SIZES - 1, index)); if (index != sizeIndex) pendingSizeIndex = index; }
+    void setSize(int index) { index = std::max(0, std::min(SIZES - 1, index)); pendingSizeIndex = index != sizeIndex ? index : -1; }
     // RESET: frames count from zero again and the frame grid restarts here, so a sequence
     // that resets the core replays the same frames at the same offsets.
     void reset() { serial = 0; hopCounter = 0; }
@@ -172,19 +173,28 @@ struct Core {
         for (int k = 1; k < bins - 1; k++) { re[n - k] = re[k]; im[n - k] = -im[k]; }
         fft.transform(re.data(), im.data(), true);
         size_t base = size_t(frameTime - n + 1 + latency());
-        for (int i = 0; i < n; i++) { size_t r = (base + i) & RING_MASK; float w = window[i]; out[r] += re[i] * w; wsum[r] += w * w; }
+        // An operation can finish after the output deadline. Never write already
+        // consumed slots: they would otherwise sound again one ring revolution later.
+        int first = int(std::min<long long>(n, std::max<long long>(0, t - (frameTime + SLACK))));
+        for (int i = first; i < n; i++) { size_t r = (base + i) & RING_MASK; float w = window[i]; out[r] += re[i] * w; wsum[r] += w * w; }
     }
 
     // One sample. `chain` says whether an expander sits to the right, in which case the
     // frame is handed over and collected when its stage reads STAGE_DONE.
     float tick(float a, float b, const CoreParams& p, bool chain) {
         size_t w = size_t(t) & RING_MASK;
+        // Reject bad cables before either FFT or delayed dry storage is contaminated.
+        if (!std::isfinite(a)) a = 0;
+        if (!std::isfinite(b)) b = 0;
         inA[w] = a; inB[w] = b; dry[w] = a;
         if (pending) {
             int st = frame.stage.load(std::memory_order_acquire);
-            if (st == STAGE_DONE || t >= frameTime + SLACK) {
-                if (st != STAGE_DONE) { stalled = true; stalls++; frame.stage.exchange(STAGE_IDLE, std::memory_order_acq_rel); }
-                else { stalled = false; frame.stage.store(STAGE_IDLE, std::memory_order_relaxed); }
+            // A timeout may reclaim a waiting token, never a frame an expander is
+            // currently changing. Acquire ownership before touching its plain arrays.
+            if (st != STAGE_BUSY && (st == STAGE_DONE || t >= frameTime + SLACK) &&
+                frame.stage.compare_exchange_strong(st, STAGE_IDLE, std::memory_order_acq_rel)) {
+                stalled = st != STAGE_DONE || t > frameTime + SLACK;
+                if (stalled) stalls++;
                 synthesize(); pending = false;
             }
         }
@@ -212,10 +222,12 @@ struct Core {
 template <class Op>
 inline bool serve(FrameV1& f, int position, bool last, bool bypassed, Op&& op) {
     int expected = position;
-    if (position < 1 || f.stage.load(std::memory_order_acquire) != position) return false;
+    // Claim before invoking op: checking the token and claiming it afterwards lets
+    // a timeout or another module at the same position race with the plain arrays.
+    if (position < 1 || !f.stage.compare_exchange_strong(expected, STAGE_BUSY, std::memory_order_acq_rel)) return false;
     if (!bypassed) op(f);
     if (last) f.length.store(position, std::memory_order_relaxed);
-    f.stage.compare_exchange_strong(expected, last ? STAGE_DONE : position + 1, std::memory_order_acq_rel);
+    f.stage.store(last ? STAGE_DONE : position + 1, std::memory_order_release);
     return true;
 }
 

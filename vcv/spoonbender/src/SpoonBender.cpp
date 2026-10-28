@@ -157,6 +157,9 @@ struct SpoonBender : Module {
 
     // UI thread: move a finished capture into the share.
     void collectCapture() {
+        // Serialize collection and publication with Initialize, including the gap
+        // between copying a frozen ring and replacing the published sample.
+        std::lock_guard<std::mutex> guard(shareMutex);
         std::vector<int16_t> left, right, mono;
         double rate = 0;
         if (!engine.capture.collect(left, right, rate)) return;
@@ -164,7 +167,6 @@ struct SpoonBender : Module {
         bool stereo = left != right;
         mono.resize(left.size());
         for (size_t i = 0; i < left.size(); i++) mono[i] = int16_t((int32_t(left[i]) + right[i]) >> 1);
-        std::lock_guard<std::mutex> guard(shareMutex);
         shareRevision.fetch_add(1, std::memory_order_acq_rel);  // odd: changing
         sharePcm.swap(mono); shareRate = rate;  // the rate it was recorded at, not the current one
         if (stereo) { shareLeft.swap(left); shareRight.swap(right); } else { shareLeft.clear(); shareRight.clear(); }
@@ -183,12 +185,21 @@ struct SpoonBender : Module {
         std::lock_guard<std::mutex> guard(engineMutex);
         sampleRate = e.sampleRate;
         engine.prepare(e.sampleRate, espRateIndex.load());
-        clockSeen = false; samplesSinceClock = 0;
+        clockPeriod = 0; clockSeen = false; samplesSinceClock = 0;
+        clockTrigger.reset();
     }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e);
         std::lock_guard<std::mutex> guard(engineMutex);
-        engine.clear();
+        espRateIndex = 0; espBudget = true;
+        if (engine.preparedRate != 0) engine.prepareEsp(0);
+        engine.clear(); engine.capture.clear();
+        clockPeriod = 0; clockSeen = false; samplesSinceClock = 0;
+        clockTrigger.reset(); captureTrigger.reset(); captureButton.reset();
+        std::lock_guard<std::mutex> shareGuard(shareMutex);
+        sharePcm.clear(); shareLeft.clear(); shareRight.clear(); shareStereo = false;
+        shareRate = 0; shareName = "NO CAPTURE"; captureCount = 0;
+        shareRevision.fetch_add(2, std::memory_order_release);
     }
 
     float cv(int input, float scale) { return inputs[input].isConnected() ? inputs[input].getVoltage() * scale : 0.f; }

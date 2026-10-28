@@ -42,13 +42,17 @@ struct Seance : Module {
     void onSampleRateChange(const SampleRateChangeEvent& e) override { core.prepare(e.sampleRate); }
     void onReset(const ResetEvent& e) override { Module::onReset(e); core.clear(); }
 
-    float cv(int input, float scale) { return inputs[input].isConnected() ? inputs[input].getVoltage() * scale : 0.f; }
+    float cv(int input, float scale) {
+        float v = inputs[input].isConnected() ? inputs[input].getVoltage() * scale : 0.f;
+        return std::isfinite(v) ? v : 0.f;
+    }
 
     void process(const ProcessArgs& args) override {
         CoreParams p;
         p.sizeIndex = int(std::round(params[SIZE].getValue()));
         core.setSize(p.sizeIndex);
-        int seed = int(std::round(params[SEED].getValue() + cv(SEED_CV, 100.f)));
+        // Wrap in floating point before converting, including extreme finite CV.
+        int seed = int(std::fmod(std::round(double(params[SEED].getValue()) + cv(SEED_CV, 100.f)), 1000.));
         p.seed = uint32_t(((seed % 1000) + 1000) % 1000);
         p.mix = clamp(params[MIX].getValue() + cv(MIX_CV, .1f), 0.f, 1.f);
         p.hasB = inputs[B_IN].isConnected();

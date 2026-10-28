@@ -294,6 +294,12 @@ struct Capture {
         ring[0].assign(2 * frames, 0); ring[1].assign(2 * frames, 0); size = frames; rate = recordRate;
         writePos = filled = 0; writing = 0; state = 0;
     }
+    // Called with audio excluded. Collection may still be running on the UI thread.
+    void clear() {
+        std::lock_guard<std::mutex> lock(guard);
+        writePos = filled = 0; writing = 0;
+        state.store(0, std::memory_order_release);
+    }
     static int16_t pcm(float x) { return int16_t(std::lround(clampf(x, -1, 32767.f / 32768) * 32768)); }
     void write(float x) { write(x, x); }
     void write(float l, float r) {
@@ -352,6 +358,7 @@ struct Engine {
         spaceClean.prepare(float(rate));
         prepareEsp(espRate);
         capture.prepare(size_t(captureSeconds * rate), rate);
+        clear();  // DC blockers belong to the old rate and tail too.
     }
     void prepareEsp(int espRate) {
         preparedRate = std::max(0, std::min(2, espRate));

@@ -20,7 +20,7 @@ Séance does not clip. It scales ±10 V to ±1 internally and works in floating 
 
 Only modules touching each other count. The row is: the core, then any Séance expanders to its right without a gap. Another module in the row, or a gap, ends it. Expanders farther right than that are not linked (their LINK light is off) and do nothing.
 
-The frame makes one trip per hop (a quarter of the frame size). Each expander takes its turn when the frame reaches its position; a bypassed expander passes the frame on untouched. The core waits up to 64 samples for the frame to come back, which is more than a row ever needs; if an expander is removed while it holds the frame, the core resynthesises what it has, lights **STALL** briefly, and carries on. The context menu reports the row length, the latency and the number of frames returned late.
+The frame makes one trip per hop (a quarter of the frame size). Each expander takes its turn when the frame reaches its position; a bypassed expander passes the frame on untouched. The core gives the row a 64-sample deadline. If a gap or removed expander leaves the token waiting, the core reclaims it, resynthesises what it has, lights **STALL** briefly, and carries on. An operation already modifying the frame owns it until it finishes; the core defers reclamation rather than reading a spectrum being changed. A result completed after the deadline also lights **STALL** and may lose output samples. The context menu reports the row length, the latency and the number of frames returned late.
 
 The same row can hold two expanders of the same kind, applied twice. The frame is mono; for stereo use two rows.
 
@@ -39,7 +39,7 @@ The same row can hold two expanders of the same kind, applied twice. The frame i
 
 Latency is the frame size minus one plus 64 samples: 575, 1087, 2111 or 4159 samples (12, 23, 44 or 87 ms at 48 kHz). It does not change when expanders are added or removed.
 
-Analysis and resynthesis use Hann windows on both sides at a quarter-frame hop and divide by the windows actually summed at each sample, so an unmodified frame reconstructs the input exactly (to float precision) and a restarted grid or a late frame does not break the output.
+Analysis and resynthesis use Hann windows on both sides at a quarter-frame hop and divide by the windows actually summed at each sample, so an unmodified frame returned within the deadline reconstructs the input exactly (to float precision). A restarted grid uses the actual window sum too; frames returned beyond the deadline can lose output samples.
 
 ## Freeze
 

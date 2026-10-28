@@ -32,6 +32,16 @@ int main() {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Module::ProcessArgs args; args.sampleRate = 48000; args.sampleTime = 1.f / 48000; args.frame = 0;
 
+    {
+        Seance m; m.params[Seance::SEED].setValue(5);
+        m.inputs[Seance::SEED_CV].channels = 1;
+        for (float bad : {NAN, INFINITY, -INFINITY}) {
+            m.inputs[Seance::SEED_CV].setVoltage(bad);
+            for (int i = 0; i < 1024; ++i) { ++args.frame; m.process(args); }
+            assert(m.core.frame.seed == 5);
+        }
+    }
+
     Seance core; SeanceFreeze fz; SeanceScramble sc; SeanceCross cr; SeanceWipe wp;
     core.model = modelSeance; fz.model = modelSeanceFreeze; sc.model = modelSeanceScramble; cr.model = modelSeanceCross; wp.model = modelSeanceWipe;
     core.id = 1; fz.id = 2; sc.id = 3; cr.id = 4; wp.id = 5;

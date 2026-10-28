@@ -1,6 +1,6 @@
 # Séance Bridge: spectrum and byte bus
 
-Contract v1 · SeanceLab 2.1.0 · original expander · 8 HP
+Contract v1 · SeanceLab 2.1.1 · original expander · 8 HP
 
 Bridge sits anywhere in the unbroken Séance row. It measures the spectral frame
 at its position, publishes eight activity bits at **ACT OUT**, then applies an

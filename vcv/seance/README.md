@@ -2,7 +2,7 @@
 
 A spectral core and five expanders for VCV Rack 2. The core takes a short-time Fourier frame of its input, hands it to whatever Séance expanders sit directly to its right, and resynthesises whatever comes back. One analysis, one resynthesis, any number of in-place operations between, applied left to right: the SuperCollider `PV_` chain or a Pd `block~` subpatch, in Rack's expander idiom. The frame is held in common by the row; Bridge connects eight bands to the shared byte bus.
 
-See the [manual](docs/MANUAL.md).
+See the [manual](docs/MANUAL.md) and [change history](docs/CHANGELOG.md).
 
 ![Original Séance core and four effects: a layout illustration of the generated panels, not a Rack screenshot](docs/panel-preview.png)
 

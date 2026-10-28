@@ -145,7 +145,7 @@ The captured audio is OUT L and OUT R after all mixes, in stereo, quantized to 1
 
 Only one capture can await collection at a time. The capture light indicates a pending capture, not that the history has filled. Collection occurs on a UI refresh; the most recently collected capture replaces the previous slot.
 
-After a capture, the new history starts empty. A capture two seconds later contains at most those two seconds even if LENGTH is 20. History also begins empty when the module starts or Rack's sample rate changes.
+After a capture, the new history starts empty. A capture two seconds later contains at most those two seconds even if LENGTH is 20. History also begins empty when the module starts, after Initialize, or when Rack's sample rate changes.
 
 ### Send a capture to OTIS
 
@@ -167,6 +167,8 @@ These are proposed starting settings, not supplied presets or hardware compariso
 | Held reverb texture | Raise SPACE MIX and DECAY, play a chord, then engage FREEZE. Capture only after the tail you want has occupied enough history. |
 
 ## Saving and troubleshooting
+
+Initialize restores the controls, ESP rate (29.76 kHz) and memory budget (on), clears clock measurements and triggers, and empties effects tails, rolling history and the collected capture slot. A sample-rate change clears the clock measurement; two new edges establish a new period.
 
 Rack saves the controls and the ESP rate/budget settings. It does **not** save delay/reverb contents, rolling history or the collected capture slot. Import the capture into OTIS and save that patch to retain its audio.
 
