@@ -31,6 +31,7 @@ running patch. Machinemodule requires a user-supplied OS to make sound.
 | Otis Kit | 18 HP | Eight slot rows of TUNE/DECAY/LEVEL/FILTER/START knobs with REV switches and hit lights, GATE/SLOT/PITCH/LEVEL inputs, grouped output | [Otis Kit](../vcv/otislab/docs/OtisKit-preview.svg) |
 | Otis Capture | 8 HP | Status display, named slot, length and source selectors, GAIN/TEMPO knobs, ARM button, IN/CLOCK/ARM inputs, grouped REC/DONE outputs | [Otis Capture](../vcv/otislab/docs/OtisCapture-preview.svg) |
 | Machinemodule | 18 HP | Local machine ID/name readout, labelled Ready/Link indicators, eight offset/CV pairs, grouped outputs | [Machinemodule](../vcv/machinemodule/docs/Machinemodule-preview.svg) |
+| Monomodule | 18 HP | Ready/Link indicators, MACHINE/TEMPO/GAIN knobs, local machine ID/name readout, TRIG/V/OCT/MACH CV/RESET/INP A/INP B inputs, eight P1–P8 offset/CV pairs, grouped LEFT/RIGHT and TRACKS L/R outputs | [Monomodule](../vcv/monomodule/docs/Monomodule-preview.svg) |
 
 The machine readout describes the local selector. A patched machine CV or an
 incoming Gorgon sound lock can select a different machine per hit. P1–P8 remain
@@ -54,6 +55,7 @@ From the repository root:
 ```sh
 python vcv/bytebus/tools/make_panels.py
 python vcv/machinemodule/tools/make_panel.py
+python vcv/monomodule/tools/make_panel.py
 python vcv/seance/tools/make_panel.py
 python vcv/czish/tools/make_panels.py
 ```
