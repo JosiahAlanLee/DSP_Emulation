@@ -44,6 +44,9 @@ struct Vastish : Module {
     std::atomic<bool> chainFromLeft{false};
     enum ChainState { CHAIN_OFF, CHAIN_NO_VASTISH, CHAIN_CONNECTED };
     std::atomic<int> chainState{CHAIN_OFF};
+    // The left neighbour's id as of the last frame. The buffers keep the previous neighbour's last
+    // message, so the first frame after it changes reads nothing from them.
+    int64_t chainLeftId=-1;
     // Sample handoff (SAMPLE pitch wave). The UI thread publishes into pendingSample;
     // the audio thread adopts it only when retiredSample is empty, moving its old
     // sample there; the UI thread deletes retired samples. The audio thread never
@@ -176,10 +179,14 @@ struct Vastish : Module {
         // Chain mode: with a Vastish directly to the left, its voices' signals, notes and gates
         // arrive one sample later (Rack's expander message) and replace this one's oscillator
         // and PITCH, GATE and VEL; the voice count is the left one's.
+        // The buffers hold the last message of whichever Vastish was there before, so on the first
+        // frame after the left neighbour changes (put back, or replaced) that stale message is skipped.
         const ChainMessage* chain=nullptr;
+        const bool sameLeft=leftExpander.moduleId==chainLeftId;
+        chainLeftId=leftExpander.moduleId;
         if(chainFromLeft.load(std::memory_order_relaxed)) {
             Module* left=leftExpander.module;
-            auto* m=left && left->model==modelVastish ? static_cast<const ChainMessage*>(leftExpander.consumerMessage) : nullptr;
+            auto* m=sameLeft && left && left->model==modelVastish ? static_cast<const ChainMessage*>(leftExpander.consumerMessage) : nullptr;
             chain=m && m->magic==ChainMessage::MAGIC ? m : nullptr;
             chainState.store(chain ? CHAIN_CONNECTED : CHAIN_NO_VASTISH,std::memory_order_relaxed);
         } else chainState.store(CHAIN_OFF,std::memory_order_relaxed);

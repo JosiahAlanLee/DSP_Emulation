@@ -270,8 +270,11 @@ int main() {
         auto wire=[](std::vector<Vastish*> row) {
             for(size_t k=0;k<row.size();++k) {
                 row[k]->model=modelVastish;
+                static int64_t nextId=1; if(row[k]->id<0) row[k]->id=nextId++;   // Rack gives each module an id
                 row[k]->leftExpander.module=k ? row[k-1] : nullptr;
+                row[k]->leftExpander.moduleId=k ? row[k-1]->id : -1;
                 row[k]->rightExpander.module=k+1<row.size() ? row[k+1] : nullptr;
+                row[k]->rightExpander.moduleId=k+1<row.size() ? row[k+1]->id : -1;
             }
         };
         auto frame=[&](std::vector<Vastish*> row) {
@@ -325,11 +328,27 @@ int main() {
         assert(follower.chainState==Vastish::CHAIN_NO_VASTISH && !follower.in[0].chained);
         Module stranger; follower.leftExpander.module=&stranger; follower.process(args);
         assert(follower.chainState==Vastish::CHAIN_NO_VASTISH);
+        // Placed back on the left after a note ended while apart, the left Vastish's last message
+        // from before is never played: no one-sample gate, so no blip (review #15).
+        follower.inputs[Vastish::GATE_IN].channels=0; wire({&keys,&follower});
+        for(int n=0;n<2400;++n) frame({&keys,&follower});
+        assert(follower.chainState==Vastish::CHAIN_CONNECTED && follower.in[0].gate && follower.engine.voices[0].gate);
+        keys.rightExpander.module=nullptr; keys.rightExpander.moduleId=-1;
+        follower.leftExpander.module=nullptr; follower.leftExpander.moduleId=-1;
+        keys.inputs[Vastish::GATE_IN].setVoltage(0,0);                              // the note ends while apart
+        for(int n=0;n<2400;++n) { keys.process(args); follower.process(args); }
+        assert(!follower.engine.voices[0].gate);
+        wire({&keys,&follower});
+        for(int n=0;n<4;++n) {
+            frame({&keys,&follower});
+            assert(!follower.in[0].gate && !follower.engine.voices[0].gate);
+        }
+        assert(follower.chainState==Vastish::CHAIN_CONNECTED && follower.in[2].gate);   // and then it follows again
         // Saved with the patch; absent before 2.8; Initialize turns it off.
         json_t* saved=follower.dataToJson(); assert(json_is_true(json_object_get(saved,"chainFromLeft")));
         Vastish r; r.dataFromJson(saved); assert(r.chainFromLeft);
         json_object_del(saved,"chainFromLeft"); r.dataFromJson(saved); json_decref(saved); assert(!r.chainFromLeft);
         follower.leftExpander.module=nullptr;                                        // plugin_test covers Initialize
     }
-    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, polyphonic voices and mono broadcast, saved range and feedback, three-module chain one sample per hop in random order, chained notes/gates/velocities, chain off and absent, saved chain\n";
+    std::cout<<"PASS: audio-thread program loads, held-gate Panic, retrigger, editor endpoints, sample handoff and patch round-trip, poly AUX and FUN 3/4 outputs, OTIS link, AUDIO IN level, range, gating, key tracking, polyphonic voices and mono broadcast, saved range and feedback, three-module chain one sample per hop in random order, chained notes/gates/velocities, chain off and absent, no stale message when put back, saved chain\n";
 }
