@@ -39,7 +39,7 @@ Each of the eight rows is one slot:
 |---|---|
 | TUNE | −24 to +24 semitones; default 0. |
 | DECAY | The time to fall 60 dB, from 20 ms (fully counterclockwise) to 10 s, exponential in the knob. Fully clockwise (the default) holds: no decay, the slot plays to its end. A decaying hit stops once it is 80 dB down. |
-| LEVEL | 0–100%, through OTIS's chip volume register (100%, the default, is unity). |
+| LEVEL | Shown in dB, on an audio taper: the gain is the knob position squared, so fully clockwise (the default) is 0 dB, halfway about −12 dB, a quarter about −24 dB, and fully counterclockwise silent. It sets OTIS's chip volume register, whose steps are 0.3–0.5 dB. Patches saved before 2.12 keep their sound: their LEVEL settings are converted on load. |
 | FILTER | K1, the cutoff of OTIS's filter pair, 0–100%, default 100%. K2 stays open. |
 | START | Where in the slot playback starts, 0–100% of the slot, default 0%; clamped to leave at least two frames. |
 | REV | Plays the slot backwards from its end, down to START. Defaults to forward. |
@@ -51,7 +51,7 @@ A light by each slot number flashes on its hits.
 | GATE | Hits, polyphonic up to 16 channels; a rising edge (2 V, falling at 0.1 V) is a hit. With SLOT unpatched, channel *n* plays slot *n* (channels 9–16 play slots 1–8 again), so an eight-channel gate cable is eight drum lanes. |
 | SLOT | A byte bus. When patched, bits 0–2 of its word choose the slot for every hit, read on the hit's own sample; channel 9 supplies an optional bus clock. Bus bits and clock rise at 1 V and fall at 0.1 V; a clocked SLOT uses its latched word (initially zero until a clock edge). This is how OTIS's PATCH input chooses a patch. |
 | PITCH | 1 V/oct, clamped to −10 to +10 V, polyphonic (a mono cable broadcasts). The hit's own channel is read and latched with the hit, added to TUNE. |
-| LEVEL | 0–10 V, clamped to that range, polyphonic (a mono cable broadcasts), latched per hit like PITCH and multiplied with the slot's LEVEL. Unpatched it is full. |
+| LEVEL | 0–10 V, clamped to that range, polyphonic (a mono cable broadcasts), latched per hit like PITCH. It is the chip's log VCA after the slot's LEVEL: 10 V is unity and each volt below takes 7.2 dB, so 5 V is −36 dB and 0 V silent. Unpatched it is full. |
 | OUT | The bank's mono output, ±5 V full scale. |
 
 A slot is one voice: a new hit on a slot that is still sounding fades it out

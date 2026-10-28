@@ -676,7 +676,7 @@ struct OtisSamplerWidget : ModuleWidget {
             for(int i=0;i<3;i++) child->addChild(createCheckMenuItem(names[i],"",[m,i](){return m->recordSource.load()==i;},[m,i](){m->recordSource=i;}));
         }));
         menu->addChild(createSubmenuItem("VCA CV response","",[m](Menu* child) {
-            child->addChild(createCheckMenuItem("Chip log (10 V = unity, ~6 dB per 0.52 V)","",[m](){return !m->linearLevel.load();},[m](){m->linearLevel=false;}));
+            child->addChild(createCheckMenuItem("Chip log (10 V = unity, about 6 dB per 0.83 V)","",[m](){return !m->linearLevel.load();},[m](){m->linearLevel=false;}));
             child->addChild(createCheckMenuItem("Linear amplitude (via chip volume steps)","",[m](){return m->linearLevel.load();},[m](){m->linearLevel=true;}));
         }));
         menu->addChild(createSubmenuItem("Chip output clock","",[m](Menu* child) {

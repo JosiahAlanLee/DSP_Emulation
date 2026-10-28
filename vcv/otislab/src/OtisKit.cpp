@@ -54,7 +54,7 @@ struct OtisKit : Module {
         for (int s = 0; s < SLOTS; ++s) {
             configParam(TUNE + s, -24, 24, 0, string::f("Slot %d tune", s + 1), " semitones");
             configParam(DECAY + s, 0, 1, 1, string::f("Slot %d decay (fully clockwise holds)", s + 1));
-            configParam(LEVEL + s, 0, 1, 1, string::f("Slot %d level", s + 1), "%", 0, 100);
+            configParam(LEVEL + s, 0, 1, 1, string::f("Slot %d level", s + 1), " dB", -10, 40);   // gain = knob squared
             configParam(FILTER + s, 0, 1, 1, string::f("Slot %d filter (K1)", s + 1), "%", 0, 100);
             configParam(START + s, 0, 1, 0, string::f("Slot %d start", s + 1), "%", 0, 100);
             configSwitch(REV + s, 0, 1, 0, string::f("Slot %d direction", s + 1), {"Forward", "Reverse"});
@@ -156,7 +156,7 @@ struct OtisKit : Module {
             c.regionBegin[i] = voiceTake[i].begin; c.regionEnd[i] = voiceTake[i].end;
             c.startv[i] = params[START + s].getValue(); c.endv[i] = 1;
             c.pitch[i] = float(params[TUNE + s].getValue() / 12 + voiceOctaves[i] + hitPitch[i]);
-            c.level[i] = params[LEVEL + s].getValue() * hitLevel[i];
+            c.level[i] = otis::kit::chipLevel(params[LEVEL + s].getValue(), hitLevel[i]);
             c.k1v[i] = params[FILTER + s].getValue(); c.k2v[i] = 1;
             c.loopv[i] = 0; c.reversev[i] = params[REV + s].getValue() > .5f ? 1 : 0;
             c.decaySeconds[i] = float(otis::kit::decaySeconds(params[DECAY + s].getValue()));
@@ -176,7 +176,7 @@ struct OtisKit : Module {
             hitPitch[size_t(s)] = inputs[PITCH_IN].isConnected() ? otis::clamp(finite(inputs[PITCH_IN].getPolyVoltage(ch)), -10.f, 10.f) : 0.f;
             hitLevel[size_t(s)] = inputs[LEVEL_IN].isConnected() ? otis::clamp(finite(inputs[LEVEL_IN].getPolyVoltage(ch)) / 10, 0.f, 1.f) : 1.f;
             c.pitch[size_t(s)] = float(params[TUNE + s].getValue() / 12 + voiceOctaves[size_t(s)] + hitPitch[size_t(s)]);
-            c.level[size_t(s)] = params[LEVEL + s].getValue() * hitLevel[size_t(s)];
+            c.level[size_t(s)] = otis::kit::chipLevel(params[LEVEL + s].getValue(), hitLevel[size_t(s)]);
             engine.trigger(s);
             flash[size_t(s)] = 1;
         }
@@ -245,6 +245,7 @@ struct OtisKit : Module {
         json_t* root = json_object();
         json_object_set_new(root, "engineMode", json_integer(engineMode.load()));
         json_object_set_new(root, "dropSample", json_boolean(dropSample.load()));
+        json_object_set_new(root, "levelTaper", json_string("audio"));
         json_t* list = json_array();
         for (const auto& slot : slots) {
             if (slot.pcm.size() < 2) { json_array_append_new(list, json_null()); continue; }
@@ -261,6 +262,11 @@ struct OtisKit : Module {
         json_t* mode = json_object_get(root, "engineMode");
         engineMode = json_is_integer(mode) ? int(otis::clamp<json_int_t>(json_integer_value(mode), 0, 2)) : 0;
         dropSample = json_is_true(json_object_get(root, "dropSample"));
+        // Before 2.12 a slot's LEVEL drove the chip register directly. Rack has already loaded the params,
+        // so convert those patches' levels to the knob positions that sound the same with the audio taper.
+        if (!json_object_get(root, "levelTaper"))
+            for (int s = 0; s < SLOTS; ++s)
+                params[LEVEL + s].setValue(otis::kit::knobForChipLevel(params[LEVEL + s].getValue()));
         json_t* list = json_object_get(root, "slots");
         for (int s = 0; s < SLOTS; ++s) {
             slots[size_t(s)] = {};
