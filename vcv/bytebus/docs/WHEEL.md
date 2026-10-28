@@ -24,9 +24,10 @@ The panel, names, taps and the bus side are original.
 - **A timbre from noise.** With CLOCK from an oscillator, LENGTH *L* makes a
   periodic wave at clock / *L* whose shape is the loop's contents. A capture
   changes the timbre without changing the pitch.
-- **Noise.** LENGTH Off joins the two registers into one 48-stage line; FREE
-  BUS, NOISE and a fast clock are a long pseudo-random stream that never
-  repeats within a quarter of an hour at 18 kHz.
+- **Noise.** FREE BUS and NOISE at a fast clock, at any LENGTH, are a long
+  pseudo-random stream that never repeats within a quarter of an hour at
+  18 kHz. LENGTH Off joins the two registers into one 48-stage line, so LOOP
+  BUS, U, G and LOOP GATE carry the same stream 24 steps later.
 - **Bytes for other modules.** LOOP BUS and FREE BUS feed Lookup, Switch,
   Fan's address or Parallel Sum's mask.
 
@@ -122,7 +123,8 @@ clock phase or an armed capture. Rack's Initialize restores the defaults
 5. A VCO square at 2 kHz → CLOCK, U → a lowpass → your mixer: a tone at
    2 kHz / LENGTH. Capture to change its timbre; change LENGTH to change its
    pitch.
-6. LENGTH Off and NOISE → a VCA: long-period digital noise.
+6. NOISE → a VCA: long-period digital noise. With LENGTH Off, U and G are
+   noise too.
 
 ## Validation
 

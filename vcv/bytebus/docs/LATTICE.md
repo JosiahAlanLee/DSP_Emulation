@@ -128,7 +128,8 @@ slews, which restart at CV OUT. Rack's Initialize restores the defaults
 ## First patch
 
 1. **Lattice** with nothing patched: Internal at 8 Hz. The step lights walk
-   1 … 16 and the readout counts `00`, `01` … with V moving every fourth step.
+   1 … 16 and the readout reads `00`, `01`, `02`, `03`, `14`, `15` …: H moves
+   on every step and V every fourth.
 2. Set the sixteen knobs and CV → an oscillator's V/OCT: a 16-step sequence.
    STEPS 1–8 → Core **Split** gives a gate per step.
 3. A slower clock (a Counter's CARRY, or a clock divider) → V CLOCK: the row
