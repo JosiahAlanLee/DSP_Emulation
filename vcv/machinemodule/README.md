@@ -75,6 +75,12 @@ RAM playback, user-WAV mapping and a complete Machinedrum sequencer are not
 implemented here.** Master reverb, delay, EQ and dynamics are not enabled in this
 first adapter; use Rack effects. Native track effects remain in the core.
 
+Rack's **Initialize** restores the knobs and **TRIG reads → Tracks**, silences
+all voices through the worker event path, and discards queued audio and hits.
+The loaded OS and ROM sample bank (and their saved paths) stay loaded; no OS
+reload is needed. Held TRIG gates, including Gorgon gates, must fall and rise
+before another hit. Track-filter tails may remain, as with RESET.
+
 ## Timing and failure behavior
 
 The Rack audio callback only captures immutable events, moves bounded POD
@@ -193,6 +199,13 @@ Git metadata, configure CMake directly: its dependency revision manifest records
 the pin. Not affiliated with Elektron, Akai or VCV.
 
 ## Changelog
+
+### 2.2.2
+
+- Initialize now silences every voice, discards queued audio and hits, restores
+  Rack parameters and TRIG Tracks mode, and retains the loaded OS and sample bank.
+  Held TRIG gates must fall and rise before another hit.
+
 
 ### 2.2.1
 
