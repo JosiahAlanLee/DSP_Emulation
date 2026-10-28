@@ -71,11 +71,14 @@ struct Fan {
     uint8_t count = 0;                  // the internal counter
     uint8_t previous = 0;               // the address on the previous sample
     bool owned = true;                  // the internal counter owns the address
+    bool lastClk = false;               // BUS OUT's CLK on the previous sample
+    bool deferred = false;              // a followed strobe moved past a low sample
     std::array<float, WAYS> held{};
 
     void clear(uint8_t value = 0) {
         owner.clear(); dirGate.reset();
         count = previous = uint8_t(value & (WAYS - 1)); owned = true; held.fill(0);
+        lastClk = deferred = false;
     }
 
     Output tick(const Parameters& p, const Inputs& in, double sampleRate) {
@@ -89,9 +92,15 @@ struct Fan {
             address = uint8_t(in.address.word & (WAYS - 1));
             out.clocked = in.address.clocked;
             out.clk = in.address.clocked && in.address.clk;
+            // A bus edge right after a high CLK (taking over from Fan's own strobe) would publish a
+            // new word under a CLK that never fell: insert the low sample, then the strobe.
+            if (out.clocked && in.address.rising && lastClk) { out.clk = false; deferred = true; }
+            else if (deferred) { out.clk = out.clocked; deferred = false; }
         } else {
-            // Taking the address back publishes the held count first, as a load does.
-            if (!owned) { owner.clear(); owned = true; }
+            // Taking the address back publishes the held count first, as a load does: after a low
+            // sample if the followed CLK was high.
+            if (!owned) { owner.clear(); owner.strobe = lastClk; owned = true; }
+            deferred = false;
             clock_owner::Inputs clock = in.clock;
             clock.data = bus::Sample{};
             auto s = owner.tick(p.mode, p.rateHz, clock, sampleRate);
@@ -101,6 +110,7 @@ struct Fan {
             out.clocked = s.clocked; out.clk = s.clk; out.loaded = s.loaded; out.advanced = s.acquire;
         }
         out.address = address;
+        lastClk = out.clocked && out.clk;
         out.selectedCount = selection(p.glitch, previous, address, out.selected);
         previous = address;
         float com = in.comConnected ? in.com : bus::HIGH;

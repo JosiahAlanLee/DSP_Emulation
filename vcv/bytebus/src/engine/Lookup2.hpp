@@ -93,9 +93,10 @@ struct Engine {
     lookup::Selector selector;
     int lastFamily = -1;
     uint8_t held = 0;
+    bool fresh = true;       // no result computed from a clocked A since the reset
 
     Engine() { for (int s = 0; s < SHAPES; ++s) masks[s] = walshMasks(s); }
-    void reset() { selector = {}; lastFamily = -1; held = 0; }
+    void reset() { selector = {}; lastFamily = -1; held = 0; fresh = true; }
     uint8_t evaluate(int family, double shape, uint8_t a, uint8_t b) {
         if (family == Fold) return fold(shape, a, b);
         if (family != lastFamily) { selector = {}; lastFamily = family; }
@@ -107,14 +108,16 @@ struct Engine {
         return out;
     }
     // A's clock is the output's: on a clocked A the result is evaluated on A's CLK edge from B's raw
-    // lines and held between edges; an unclocked or unpatched A is evaluated every sample.
+    // lines and held between edges; an unclocked or unpatched A is evaluated every sample. After a
+    // reset (a reload or Initialize) the first sample of a clocked A is evaluated too, without an edge.
     Output tick(Parameters p, const bus::Sample& a, uint8_t b) {
         p.family = std::max(0, std::min(int(Walsh), p.family));
         if (!std::isfinite(p.shape)) p.shape = 0;
         Output out;
         out.clocked = a.connected && a.clocked;
         out.clk = out.clocked && a.clk;
-        if (!out.clocked || a.rising) { held = evaluate(p.family, p.shape, a.rawWord, b); out.evaluated = true; }
+        if (!out.clocked || a.rising || fresh) { held = evaluate(p.family, p.shape, a.rawWord, b); out.evaluated = true; }
+        if (out.clocked) fresh = false;
         out.word = held;
         return out;
     }

@@ -37,7 +37,7 @@ this is an original per-edge implementation with no interpolation between edges.
 | RATE | Internal clock, 0.125–2048 Hz. Used only when Internal owns the clock. |
 | N | Integer 1–16, default 1. Cycles per D edges. |
 | D | Integer 1–64, default 16. Edges per N cycles. |
-| RATIO | Byte bus (appended in 2.11). Patched, its word is a *ratio word* and replaces N and D: n = high four bits + 1, d = low four bits + 1, so 1/16 to 16. A clocked RATIO uses its latched word. The N/D readout shows the ratio in force. |
+| RATIO | Byte bus (appended in 2.11). Patched, its word is a *ratio word* and replaces N and D: n = high four bits + 1, d = low four bits + 1, so 1/16 to 16. A clocked RATIO uses its latched word. Until RATIO has published a word (an unclocked RATIO at once, a clocked one on its first CLK edge) since it was patched, or since a load or Initialize, Counter 2 keeps the ratio it had: the knobs, or the saved ratio after a load. The N/D readout shows the ratio in force. |
 | SEED | Integer 0–255. The phase word RESET/LOAD starts from. |
 | LOAD | Loads SEED, restarts the internal clock phase and publishes the seed. |
 | CLOCK | Monophonic clock; rising at 1 V, falling at 0.1 V. |
@@ -83,11 +83,19 @@ mandatory low sample.
 
 ## Saving and reset
 
-Rack saves the controls and the exact phase (`"accumulator"` and
-`"denominator"`), so a reloaded Counter 2 continues the same sequence. Values are
-bounded on load. Reload publishes the saved word; it does not resume the
-fractional internal clock phase. Initialize restores N 1, D 16, word 00.
-A ratio from RATIO is not saved: it is whatever the cable carries.
+Rack saves the controls, the exact phase (`"accumulator"` and
+`"denominator"`) and the N in use (`"numerator"`, since 2.16.2), so a reloaded
+Counter 2 continues the same sequence. Values are bounded on load. Reload
+publishes the saved word; it does not resume the fractional internal clock
+phase. Initialize restores N 1, D 16, word 00.
+
+The ratio word from RATIO is not saved: once RATIO publishes a word, it is
+whatever the cable carries. Until then, the saved ratio (N and D) stays in
+force, so a clocked RATIO whose CLK is low after the load, or still unpatched
+on Rack's first samples, does not change the sequence or drop the fraction
+below the word. The saved ratio also stays with RATIO unpatched, until N or D
+is turned (when RATIO was unpatched at the save, it is the knobs' ratio
+anyway). A patch saved before 2.16.2 has no numerator; the N knob stands in.
 
 ## First patch
 
@@ -114,7 +122,9 @@ Rack API tests (`tests/module_test.cpp`): real ports; the 12/16 polymeter on
 one clock, with every word of the 12-edge cycle checked; a save mid-sequence
 restored into a fresh module that continues identically; bounded restores;
 Initialize; a ratio word on RATIO replacing the knobs and the knobs returning
-when it is unpatched; Lookup Ratio into RATIO through one-sample cables in random
+when it is unpatched; a reload mid-sequence with a clocked RATIO whose CLK stays
+low for 20 edges, continuing exactly, and a fresh clocked RATIO keeping the
+knobs' ratio and the fraction until its first CLK; Lookup Ratio into RATIO through one-sample cables in random
 order, giving each chosen ratio's carries; at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.

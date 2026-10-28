@@ -15,9 +15,17 @@ struct ByteCounter2 : Module {
     dspemu::bus::Writer writer;
     dspemu::bus::Reader ratioReader;
     dspemu::counter2::Counter2 state;
-    // The accumulator (low 16 bits) and D (above), saved together; the display reads the word.
-    std::atomic<uint32_t> published{16u << 16};
+    // The accumulator (low 16 bits), D (bits 16-23) and the N in use (bits 24-31), saved together;
+    // the display reads the word.
+    std::atomic<uint32_t> published{16u << 16 | 1u << 24};
     std::atomic<int> ratio{(1 << 8) | 16};
+    // RATIO replaces the knobs once it has published a word: at once on an unclocked bus, on its first
+    // CLK edge on a clocked one. Until then, after a new connection, a load or Initialize, the ratio
+    // Counter 2 had stays, so an unpublished word 0 (1/1) never runs or rescales the accumulator.
+    int usedN = 0, usedD = 0;                 // the ratio on the previous sample; 0 before the first
+    bool ratioLatched = false, ratioWasConnected = false, ratioWasClocked = false;
+    bool holdLoaded = false;                  // after a load: keep the saved ratio while RATIO is unpatched,
+    int loadKnobs = -1;                       // until RATIO is patched and unpatched or N or D is turned
 
     ByteCounter2() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -42,7 +50,12 @@ struct ByteCounter2 : Module {
         return modes[std::max(0, std::min(3, choice))];
     }
     void onReset(const ResetEvent& e) override {
-        Module::onReset(e); state.clear(); ratioReader.reset(); published.store(16u << 16);
+        Module::onReset(e); state.clear(); ratioReader.reset(); published.store(16u << 16 | 1u << 24);
+        restartRatio(0, 0, false);
+    }
+    void restartRatio(int n, int d, bool loaded) {
+        usedN = n; usedD = d; ratioLatched = ratioWasConnected = ratioWasClocked = false;
+        holdLoaded = loaded; loadKnobs = -1;
     }
     void process(const ProcessArgs& args) override {
         using namespace dspemu::counter2;
@@ -58,7 +71,18 @@ struct ByteCounter2 : Module {
         // A patched RATIO replaces the knobs with the ratio word on its data lines (latched on its CLK
         // when it has one), from 1/16 to 16.
         auto ratioBus = ratioReader.process(inputs[RATIO_IN]);
-        if (ratioBus.connected) { p.n = dspemu::lookup::ratioN(ratioBus.word); p.d = dspemu::lookup::ratioD(ratioBus.word); }
+        if (ratioBus.connected != ratioWasConnected || ratioBus.clocked != ratioWasClocked) ratioLatched = false;
+        if (ratioWasConnected && !ratioBus.connected) holdLoaded = false;
+        ratioWasConnected = ratioBus.connected; ratioWasClocked = ratioBus.clocked;
+        ratioLatched |= ratioBus.updated;
+        int knobs = p.n << 8 | p.d;
+        if (loadKnobs < 0) loadKnobs = knobs;
+        else if (knobs != loadKnobs) holdLoaded = false;
+        if (ratioBus.connected && ratioLatched) {
+            holdLoaded = false;
+            p.n = dspemu::lookup::ratioN(ratioBus.word); p.d = dspemu::lookup::ratioD(ratioBus.word);
+        } else if ((ratioBus.connected || holdLoaded) && usedN > 0) { p.n = usedN; p.d = usedD; }
+        usedN = p.n; usedD = p.d;
         p.seed = uint8_t(integer(SEED, 0, 255, 0));
         dspemu::counter2::Inputs in;
         in.clockConnected = inputs[CLOCK_IN].isConnected();
@@ -73,14 +97,16 @@ struct ByteCounter2 : Module {
         lights[CLOCK_LIGHT].setBrightnessSmooth(out.clk ? 1.f : 0.f, args.sampleTime);
         lights[RESET_LIGHT].setBrightnessSmooth(out.loaded ? 1.f : 0.f, args.sampleTime);
         lights[CARRY_LIGHT].setBrightnessSmooth(out.carry ? 1.f : 0.f, args.sampleTime);
-        published.store(uint32_t(state.acc) | uint32_t(state.d) << 16, std::memory_order_relaxed);
+        published.store(uint32_t(state.acc) | uint32_t(state.d) << 16 | uint32_t(std::max(1, std::min(MAX_N, p.n))) << 24,
+            std::memory_order_relaxed);
         ratio.store(p.n << 8 | p.d, std::memory_order_relaxed);
     }
     json_t* dataToJson() override {
         uint32_t saved = published.load(std::memory_order_relaxed);
         json_t* root = json_object();
         json_object_set_new(root, "accumulator", json_integer(saved & 0xffff));
-        json_object_set_new(root, "denominator", json_integer(saved >> 16));
+        json_object_set_new(root, "denominator", json_integer(saved >> 16 & 0xff));
+        json_object_set_new(root, "numerator", json_integer(saved >> 24));   // since 2.16.2
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -90,8 +116,11 @@ struct ByteCounter2 : Module {
         };
         int d = int(get("denominator", 1, dspemu::counter2::MAX_D, 16));
         int64_t acc = get("accumulator", 0, int64_t(256) * d - 1, 0);
-        state.clear(0, d); state.acc = acc;
-        published.store(uint32_t(acc) | uint32_t(d) << 16);
+        // The ratio in use when saved; a patch from before 2.16.2 has no numerator, so the N knob stands in.
+        int knobN = int(std::round(clamp(std::isfinite(params[N_PARAM].getValue()) ? params[N_PARAM].getValue() : 1.f, 1.f, 16.f)));
+        int n = int(get("numerator", 1, dspemu::counter2::MAX_N, knobN));
+        state.clear(0, d); state.acc = acc; ratioReader.reset(); restartRatio(n, d, true);
+        published.store(uint32_t(acc) | uint32_t(d) << 16 | uint32_t(n) << 24);
     }
 };
 
@@ -112,7 +141,7 @@ struct Counter2Display : widget::Widget {
             text = string::f("%d/%d", r >> 8, r & 0xff);
         } else {
             uint32_t s = module ? module->published.load(std::memory_order_relaxed) : (16u << 16);
-            text = string::f("%02X", unsigned((s & 0xffff) / std::max(1u, s >> 16)));
+            text = string::f("%02X", unsigned((s & 0xffff) / std::max(1u, s >> 16 & 0xff)));
         }
         nvgText(args.vg, box.size.x / 2, box.size.y / 2, text.c_str(), nullptr);
     }

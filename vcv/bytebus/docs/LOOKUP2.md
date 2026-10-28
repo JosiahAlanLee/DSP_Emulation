@@ -99,8 +99,10 @@ half a shape plus 0.05. Fold has no selection; SHAPE is continuous.
 As Lookup's Map/Follow: with a clocked A, the result is evaluated on each A CLK
 rising edge from A's word and B's raw lines on that sample, and held between
 edges, including while SHAPE, B WORD or B change. BUS OUT carries A's CLK level
-unchanged. With an unclocked or unpatched A the result is evaluated every sample
-and BUS OUT has eight channels. B's own clock is ignored. JUMP is decoded before
+unchanged. After a reload or Initialize, the first sample with a clocked A also
+evaluates, from A's lines as they are, without a CLK edge, so a stopped A gives
+the result of the present inputs rather than 00. With an unclocked or unpatched
+A the result is evaluated every sample and BUS OUT has eight channels. B's own clock is ignored. JUMP is decoded before
 A on each sample, so a step and an A edge together evaluate with the new shape.
 
 ## Saving and reset
@@ -124,7 +126,8 @@ passes around SHAPE) and every Arithmetic shape against integer and floating
 references; every Walsh shape linear over GF(2), one-to-one in A for each B and
 in B for each A, all 64 distinct, shape 0 equal to XOR; Fold exactly A at 0 and
 64, bounded change for small SHAPE steps, and dependent on B at 32; discrete
-selection with hysteresis; A-clocked evaluation and holds; family clamping.
+selection with hysteresis; A-clocked evaluation and holds; after a reset, the
+first sample of a clocked, stopped A evaluated without an edge; family clamping.
 
 Rack API tests (`tests/lookup_module_test.cpp`, `tests/module_test.cpp`): real
 ports; A passing by default; B WORD and B; FAMILY CV and SHAPE CV; a gate on

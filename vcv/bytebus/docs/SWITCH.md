@@ -76,6 +76,9 @@ Map/Follow is:
   edge, from A's word and B's and C's raw lines on that sample, and held between
   edges. BUS OUT carries A's CLK level unchanged, however long it is high, so
   the result is published on the same sample as A's word reaches Switch.
+  After a reload or Initialize, the first sample with a clocked A also
+  evaluates, from A's lines as they are, without a CLK edge on BUS OUT, so a
+  stopped A gives the result of the present inputs rather than 00.
 - A unclocked or unpatched: the operation is evaluated every sample and BUS OUT
   has eight channels.
 - B's and C's own clocks are ignored: they are read as raw lines, as Counter
@@ -98,7 +101,8 @@ clock at once.
 ## Saving and reset
 
 Switch holds no state beyond its last result, which it recomputes, so Rack saves
-only its controls. Initialize restores Select, SEL BIT 0, words 00 and Auto.
+only its controls. On reload with a clocked A it recomputes the result on the
+first sample (see Follow A). Initialize restores Select, SEL BIT 0, words 00 and Auto.
 
 ## First patch
 
@@ -122,8 +126,9 @@ crossfade with no ties; Mix endpoints and monotonicity; Follow A with a
 clocked A (evaluation on the edge with raw B and C, holds, CLK level passed
 through), an unclocked A, unpatched inputs and their words; Auto taking the
 CLOCK jack over with a first publication, one strobe per edge and A's clock
-ignored, then returning to Follow A; Internal at 16 Hz and Engine rate at
-44.1/48/96 kHz.
+ignored, then returning to Follow A; after a reset, the first sample of a
+clocked, stopped A evaluated without an edge; Internal at 16 Hz and Engine
+rate at 44.1/48/96 kHz.
 
 Rack API tests (`tests/module_test.cpp`): real ports and lights, A passing
 through by default, a gate into C, JSON restore and Initialize; two Counters
