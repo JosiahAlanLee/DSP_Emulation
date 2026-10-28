@@ -3,6 +3,8 @@
 // held, and records what it was given. Track 6 plays INP A back, for the input path.
 #pragma once
 #include "Renderer.hpp"
+#include "Tracks.hpp"
+#include "host/HostModel.h"
 #include <mutex>
 #include <vector>
 namespace mnm_rack {
@@ -35,6 +37,27 @@ public:
             sample[trackLeft+5]=inA[f];
         }
         frame+=nativeFrames;
+    }
+};
+// A voice with the real host model and no DSP, for Tracks: it reads the note word of each block the host
+// builds, as the DSP does. A synth machine sounds 0.25 while its note is on (GND is silent); an FX machine
+// passes its input while it is trigged, as an FX machine on the hardware needs a trig to pass audio.
+struct HostVoice {
+    mnm::host::HostModel model;
+    bool gate=false;
+    mnm::host::HostModel& host() {return model;}
+    void step() {
+        const auto& w=model.nextBlock().w;
+        if(w[mnm::host::NoteTrig]&1u)gate=true;
+        else if(w[mnm::host::NoteTrig]&2u)gate=false;
+    }
+    void process(float* l,float* r,int n) {
+        step();const float v=gate&&model.machine()!=MnmMachine::GND?.25f:0.f;
+        std::fill(l,l+n,v);std::fill(r,r+n,v);
+    }
+    void processFx(const float* inL,const float* inR,float* l,float* r,int n) {
+        step();
+        for(int f=0;f<n;++f){l[f]=gate?inL[f]:0.f;r[f]=gate?inR[f]:0.f;}
     }
 };
 }

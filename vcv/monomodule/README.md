@@ -25,13 +25,18 @@ never a copy. Not affiliated with Elektron, Akai or VCV.
    falls, when its channel goes away or when the cable is unplugged. A TRIG cable
    overrides the Gorgon link.
 
+Stopping or seeking Gorgon, a RESET edge, a sample-rate change or a dropped block ends
+every note, as stopping the hardware does, and changes nothing else: each track keeps
+its machine, and an FX track (a REVERB on NEIBOR, say) keeps processing its input.
+Loading an OS, as opening a patch does, starts every track on GND.
+
 | Control | |
 | --- | --- |
 | MACHINE | The machine for notes that don't name one: the 22 machines in the hardware's order. MACHINE CV (0–10 V) overrides it. |
 | TEMPO | The engine tempo for synced LFOs and delays. Set it to Gorgon's. |
 | GAIN | Output level. |
 | P1–P8 + CV | Raw offsets to the SYN page, added to each note's locks or the machine's defaults, sampled at the note. The menu lists the selected machine's parameter names. |
-| RESET | A rising edge ends every note. |
+| RESET | A rising edge ends every note. Each track keeps its machine and settings, and an FX track keeps processing its input. |
 | INP A / INP B | Audio for the FX machines. |
 
 | Output | |

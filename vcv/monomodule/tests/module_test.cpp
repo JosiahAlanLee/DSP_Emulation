@@ -22,7 +22,7 @@ static void drain(){std::this_thread::sleep_for(std::chrono::milliseconds(5));}
 static void flip(Module& m){if(m.leftExpander.messageFlipRequested){std::swap(m.leftExpander.producerMessage,m.leftExpander.consumerMessage);m.leftExpander.messageFlipRequested=false;}}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
-    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.1";modelMonomodule->plugin=&receiverPlugin;
+    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.2";modelMonomodule->plugin=&receiverPlugin;
     {
         // TRIG: track 3 plays V/OCT's note while its gate is high, and ends when it falls.
         Trace trace;auto mm=std::make_unique<Monomodule>(factory(trace));auto& m=*mm;m.model=modelMonomodule;ready(m);
@@ -129,6 +129,32 @@ int main(){
             assert(notes[0].hit.values[0]==99&&notes[1].release&&notes[1].hit.track==5);}
         m.leftExpander.module=nullptr;
         std::cout<<"Sound link: lane 6's note, machine and lock, then its release, passed\n";
+    }
+    {
+        // A panic (a stop, seek, RESET or restart) ends every note and keeps every machine (review #9):
+        // track 4 THRU on INP A, track 5 SAW, track 6 REVERB on NEIBOR. Tracks on host-model voices, no OS.
+        std::array<HostVoice,tracks> voices;Tracks<HostVoice> state;
+        for(int t=0;t<tracks;++t)state.attach(t,voices[size_t(t)]);
+        uint8_t settings[emu_rack::trackSettings]={};settings[3]=INP_A;settings[5]=NEIBOR;state.configure(settings);
+        auto hit=[&](int track,MnmMachine machine){Hit h;h.track=uint8_t(track);h.machine=int16_t(machine);h.note=60;h.bpm=120;return state.fire(h);};
+        assert(hit(3,MnmMachine::THRU)&&hit(4,MnmMachine::SAW)&&hit(5,MnmMachine::REVERB));
+        voices[4].host().setParam(mnm::host::Page::AMP,2,99);   // a setting a machine assign would reset to 64
+        float in[nativeFrames][inputs]={},out[nativeFrames][channels];
+        for(auto& f:in)f[0]=.5f;
+        auto block=[&](int n){for(int b=0;b<n;++b){state.input(&in[0][0]);state.render(out);}};
+        auto level=[&](int track){return out[nativeFrames-1][trackLeft+track];};
+        block(6);
+        assert(level(3)==.5f&&level(4)==.25f&&level(5)==.25f);
+        state.panic();block(6);
+        assert(level(4)==0);   // SAW's note ended
+        assert(state.machine(3)==MnmMachine::THRU&&state.machine(4)==MnmMachine::SAW&&state.machine(5)==MnmMachine::REVERB);
+        assert(voices[4].host().machine()==MnmMachine::SAW&&voices[4].host().param(mnm::host::Page::AMP,2)==99);
+        assert(level(3)==.5f);   // THRU still passes INP A
+        {const auto bits=mnm::host::dspInputBits(mnm::host::FxInput::InpA);assert((voices[3].host().routingWord()&bits)==bits);}
+        // Track 5's next note plays SAW with its settings, and REVERB on track 6 hears it with no hit of its own.
+        assert(hit(4,MnmMachine::SAW));block(6);
+        assert(voices[4].host().param(mnm::host::Page::AMP,2)==99&&level(4)==.25f&&level(5)==.25f);
+        std::cout<<"Panic: notes end, machines and FX inputs stay, FX tracks keep processing, passed\n";
     }
 #ifdef GORGON_SOURCE
     {
