@@ -41,8 +41,9 @@ struct Switch {
     clock_owner::ClockOwner owner;
     uint8_t held = 0;
     bool owned = false;
+    bool fresh = true;       // no result computed from a clocked A since the reset
 
-    void clear() { owner.clear(); held = 0; owned = false; }
+    void clear() { owner.clear(); held = 0; owned = false; fresh = true; }
     Output tick(const Parameters& p, const Inputs& in, double sampleRate) {
         // B and C are read as raw lines at the output's sample instants, whatever their own clocks.
         uint8_t b = in.b.connected ? in.b.rawWord : p.b, c = in.c.connected ? in.c.rawWord : p.c;
@@ -53,12 +54,16 @@ struct Switch {
             owned = false;
             out.clocked = in.a.connected && in.a.clocked;
             out.clk = out.clocked && in.a.clk;
-            if (!out.clocked || in.a.rising) { held = apply(p.op, p.bit, in.a.rawWord, b, c); out.evaluated = true; }
+            // After a reset (a reload or Initialize) the first sample of a clocked A computes the result
+            // of the present lines, without an edge, so a stopped A does not leave the output at 00.
+            if (!out.clocked || in.a.rising || fresh) { held = apply(p.op, p.bit, in.a.rawWord, b, c); out.evaluated = true; }
+            if (out.clocked) fresh = false;
             out.word = held;
             return out;
         }
         // Taking the clock over publishes the current result first, as a load does.
         if (!owned) { owner.clear(); owned = true; }
+        fresh = false;
         clock_owner::Inputs clock;
         clock.clockConnected = in.clockConnected; clock.clock = in.clock;
         auto mode = source == Source::Jack ? clock_owner::ClockMode::Jack :

@@ -60,6 +60,13 @@ each shape's ratios. It is FAMILY 10. The grids are named after the Via SYNC's
 ratio grid categories (integers, odds, multiples of three, rhythmic harmonics,
 no-triplet, triplet, dotted); their contents here are original.
 
+The knob's saved family is kept, but the FAMILY CV range is not: FAMILY + CV
+clamps to 0–10 (0–6 before 2.7, 0–9 before 2.11). In a patch from an earlier
+version, a FAMILY + CV sum above that version's top now reaches the newer
+families: a sum from 6.5 up plays Envelope, Sequence, Density or Ratio where a
+patch from before 2.7 stayed on Custom, and from 9.5 up it plays Ratio where a
+patch from before 2.11 stayed on Density.
+
 The functional role reference is the public [Xaoc Jena manual, rev.
 1989/XJ/1.3](https://xaocdevices.com/manuals/xaoc_jena_manual_A4.pdf): byte lookup,
 phase modulation, audio/CV transforms, Walsh functions, rhythm generation and

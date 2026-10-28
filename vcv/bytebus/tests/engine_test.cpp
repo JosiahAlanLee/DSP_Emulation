@@ -474,7 +474,7 @@ static void switching() {
     {
         sw::Switch s; sw::Parameters p; p.op = Op::Select; p.bit = 7; sw::Inputs in;
         in.a = bus(0x11, true, false, false); in.b = bus(0x22); in.c = bus(0x00);
-        auto o = s.tick(p, in, 48000); assert(!o.owned && !o.evaluated);
+        auto o = s.tick(p, in, 48000); assert(!o.owned && o.evaluated && o.word == 0x11 && !o.clk);   // first sample after a reset
         in.clockConnected = true;
         o = s.tick(p, in, 48000); assert(o.owned && o.evaluated && o.word == 0x11 && o.clk && o.clocked);
         o = s.tick(p, in, 48000); assert(!o.clk && !o.evaluated);
@@ -1402,10 +1402,99 @@ static void rouletteResetRegression() {
     }
 }
 
+// Review 2026-10-27 #11: a change of who owns Fan's address puts the new word on BUS OUT after a
+// low CLK sample, so a clocked reader downstream latches it (MANUAL.md: if CLK was high, insert a
+// low sample before publishing).
+static void fanOwnershipRegression() {
+    namespace fn = dspemu::fan;
+    auto bus = [](uint8_t word, bool clk, bool rising) {
+        bus::Sample s; s.connected = s.clocked = true; s.clk = clk; s.rising = rising;
+        s.rawWord = word; s.word = word; s.updated = rising; return s;
+    };
+    // A clocked reader on Fan's BUS OUT, through the real Writer and Reader.
+    struct Downstream {
+        Port cable; bus::Reader reader; bool lastClk = false, gap = true; int prev = -1;
+        bus::Sample hear(const fn::Output& o) {
+            bus::Writer{}.write(cable, o.address, o.clocked, o.clk);
+            gap &= !(lastClk && o.clk && o.address != prev); prev = o.address; lastClk = o.clk;
+            return reader.process(cable);
+        }
+    };
+    // Release: BUS IN unpatched on a sample where its CLK (passed through) is high.
+    for (double sr : {44100., 48000., 96000.}) {
+        fn::Fan f; f.clear(9); fn::Parameters p; p.mode = ClockMode::Internal; p.rateHz = .125; fn::Inputs in;
+        Downstream d;
+        for (int t = 0; t < 4; ++t) d.hear(f.tick(p, in, sr));
+        in.address = bus(7, false, false); d.hear(f.tick(p, in, sr));
+        in.address = bus(7, true, true); auto o = f.tick(p, in, sr); auto heard = d.hear(o);
+        assert(o.following && o.clk && heard.word == 7);
+        in.address = bus::Sample{};
+        o = f.tick(p, in, sr); d.hear(o);
+        assert(!o.following && !o.clk);                                   // the low sample first
+        o = f.tick(p, in, sr); heard = d.hear(o);
+        assert(o.loaded && o.clk && o.address == 9 && heard.rising && heard.word == 9 && d.gap);
+        // The RESET gate on release is unchanged (the open "Fan held-RESET" decision).
+    }
+    // Take-over: BUS IN patched, CLK high, on the sample Fan's own strobe was high.
+    for (bool held : {false, true}) {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 2048; fn::Inputs in; fn::Output o;
+        Downstream d;
+        for (int t = 0; t < 1000; ++t) { o = f.tick(p, in, 48000); d.hear(o); if (o.clk && !o.loaded) break; }
+        assert(o.clk && o.address != 20);
+        in.address = bus(20, true, true); o = f.tick(p, in, 48000); auto heard = d.hear(o);
+        assert(o.following && o.clocked && !o.clk);                       // the low sample first
+        in.address = bus(20, held, false); o = f.tick(p, in, 48000); heard = d.hear(o);
+        assert(o.clk && o.address == 20 && heard.rising && heard.word == 20 && d.gap);
+        in.address = bus(20, false, false); o = f.tick(p, in, 48000); d.hear(o); assert(!o.clk);
+        // Then transparent again: the bus's next strobe passes on its own sample.
+        in.address = bus(21, true, true); o = f.tick(p, in, 48000); heard = d.hear(o);
+        assert(o.clk && o.address == 21 && heard.word == 21 && d.gap);
+    }
+    // A bus strobing every other sample across the take-over: no strobe merges with the next.
+    {
+        fn::Fan f; f.clear(); fn::Parameters p; p.mode = ClockMode::Internal; p.rateHz = 2048; fn::Inputs in; fn::Output o; Downstream d;
+        for (int t = 0; t < 1000; ++t) { o = f.tick(p, in, 48000); d.hear(o); if (o.clk && !o.loaded) break; }
+        std::vector<int> heard;
+        for (int t = 0; t < 12; ++t) {
+            bool clk = t % 2 == 0; uint8_t w = uint8_t(t / 2);
+            in.address = bus(w, clk, clk); o = f.tick(p, in, 48000);
+            auto s = d.hear(o); if (s.rising) heard.push_back(s.word);
+        }
+        in.address = bus(5, false, false); o = f.tick(p, in, 48000); auto s = d.hear(o); if (s.rising) heard.push_back(s.word);
+        assert(d.gap && heard == std::vector<int>({0, 1, 2, 3, 4, 5}));
+    }
+}
+
+// Review 2026-10-27 #20: after a reset, Switch in Follow A with a clocked, stopped A publishes the
+// result of its present inputs on the first sample, without a CLK edge.
+static void switchReloadRegression() {
+    namespace sw = dspemu::byte_switch;
+    auto clockedA = [](uint8_t word, bool clk = false, bool rising = false) {
+        bus::Sample s; s.connected = s.clocked = true; s.clk = clk; s.rising = rising;
+        s.rawWord = word; s.updated = rising; return s;
+    };
+    sw::Switch s; s.clear(); sw::Parameters p; p.op = sw::Op::Bits; p.source = sw::Source::FollowA; p.b = 0xf0; p.c = 0x3c;
+    sw::Inputs in; in.a = clockedA(0x0f);
+    auto o = s.tick(p, in, 48000);
+    assert(o.word == sw::apply(sw::Op::Bits, 0, 0x0f, 0xf0, 0x3c) && o.clocked && !o.clk);
+    in.a = clockedA(0x55); o = s.tick(p, in, 48000);                     // held until A's edge
+    assert(o.word == sw::apply(sw::Op::Bits, 0, 0x0f, 0xf0, 0x3c) && !o.evaluated);
+    in.a = clockedA(0x55, true, true); o = s.tick(p, in, 48000);
+    assert(o.evaluated && o.word == sw::apply(sw::Op::Bits, 0, 0x55, 0xf0, 0x3c) && o.clk);
+    // Unpatched A on the first samples (Rack before its cables carry data): the first clocked
+    // sample still computes from A's lines.
+    s.clear(); in.a = bus::Sample{}; s.tick(p, in, 48000);
+    in.a = clockedA(0x81); o = s.tick(p, in, 48000);
+    assert(o.word == sw::apply(sw::Op::Bits, 0, 0x81, 0xf0, 0x3c) && !o.clk);
+    in.a = clockedA(0x18); o = s.tick(p, in, 48000); assert(o.word == sw::apply(sw::Op::Bits, 0, 0x81, 0xf0, 0x3c));
+}
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetRegression(); return 0; }
-    latticeGapRegression(); rouletteResetRegression();
+    if (argc == 2 && std::string(argv[1]) == "fan-ownership") { fanOwnershipRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "switch-reload") { switchReloadRegression(); return 0; }
+    latticeGapRegression(); rouletteResetRegression(); fanOwnershipRegression(); switchReloadRegression();
 
     conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling(); rouletting();
     std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks; Roulette: counts as exact divisions, the resting state, the spin and coast against the closed form with one RESULT per stop at 44.1/48/96 kHz, the filter against a fine integration, the VCO capped at half the engine rate with every count strobed, ROULETTE replacing the comparator, XOR and edge tracking, RANGE CV and its lag, RESET and strobes under random edges\n";

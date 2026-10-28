@@ -597,6 +597,54 @@ static void counter2Module(float sr) {
     r.process(args_); assert(word(r.outputs[K::BUS_OUT]) == 0);
 }
 
+// Review 2026-10-27 #8: a clocked RATIO that has not latched a word since it was connected (or since
+// a load) keeps the ratio Counter 2 had, and the accumulator keeps its fraction.
+static void counter2RatioRegression(float sr) {
+    using K = ByteCounter2; auto a = args(sr);
+    const uint8_t r57 = uint8_t(4 << 4 | 6), r38 = uint8_t(2 << 4 | 7);      // 5/7 and 3/8
+    auto pulse = [](K& m, int t) { m.inputs[K::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0); };
+    // Reload mid-sequence: RATIO clocked with 5/7, its CLK low after the load.
+    K o; connectOutputs(o); o.model = modelCounter2;
+    o.params[K::CLOCK_MODE].setValue(1); o.inputs[K::CLOCK_IN].channels = 1;
+    putBus(o.inputs[K::RATIO_IN], r57, true, true); o.process(a);
+    putBus(o.inputs[K::RATIO_IN], r57, true, false);
+    for (int t = 0; t < 8 * 11; ++t) { pulse(o, t); o.process(a); }
+    assert(o.ratio.load() == (5 << 8 | 7) && o.state.acc % 7 != 0);         // a fraction below the word
+    json_t* saved = o.toJson(); K r; connectOutputs(r); r.model = modelCounter2; r.fromJson(saved); json_decref(saved);
+    r.inputs[K::CLOCK_IN].channels = 1;
+    r.inputs[K::RATIO_IN].channels = 0; pulse(r, 0); r.process(a);          // Rack's cables not yet carrying
+    pulse(o, 0); o.process(a);
+    assert(word(r.outputs[K::BUS_OUT]) == word(o.outputs[K::BUS_OUT]) && r.state.acc == o.state.acc);
+    putBus(r.inputs[K::RATIO_IN], r57, true, false);
+    for (int t = 1; t < 8 * 30; ++t) {
+        bool strobe = t == 8 * 20 + 1;                                       // RATIO's first CLK, long after
+        putBus(r.inputs[K::RATIO_IN], r57, true, strobe); putBus(o.inputs[K::RATIO_IN], r57, true, strobe);
+        pulse(o, t); pulse(r, t); o.process(a); r.process(a);
+        assert(word(r.outputs[K::BUS_OUT]) == word(o.outputs[K::BUS_OUT]) && r.state.acc == o.state.acc);
+        assert(r.outputs[K::CARRY_OUT].getVoltage() == o.outputs[K::CARRY_OUT].getVoltage());
+        assert(r.ratio.load() == (5 << 8 | 7));
+    }
+    r.inputs[K::RATIO_IN].channels = 0; r.process(a); assert(r.ratio.load() == (1 << 8 | 16));   // unpatched: the knobs
+    // A patch saved before 2.16.2 has no numerator: the N knob stands in until RATIO latches.
+    json_t* old = json_pack("{s:i,s:i}", "accumulator", 0x50 * 7 + 3, "denominator", 7);
+    K q; connectOutputs(q); q.model = modelCounter2; q.params[K::N_PARAM].setValue(2); q.dataFromJson(old); json_decref(old);
+    putBus(q.inputs[K::RATIO_IN], r38, true, false); q.process(a);
+    assert(q.ratio.load() == (2 << 8 | 7) && q.state.acc == 0x50 * 7 + 3);
+    // A fresh connection while RATIO's CLK is low: the knobs' ratio stays, exactly, until the first latch.
+    K f, g; for (K* m : {&f, &g}) {
+        connectOutputs(*m); m->model = modelCounter2; m->params[K::CLOCK_MODE].setValue(1); m->inputs[K::CLOCK_IN].channels = 1;
+        m->params[K::N_PARAM].setValue(5); m->params[K::D_PARAM].setValue(7);
+    }
+    for (int t = 0; t < 8 * 9; ++t) { pulse(f, t); pulse(g, t); f.process(a); g.process(a); }
+    for (int t = 0; t < 8 * 6; ++t) {
+        putBus(f.inputs[K::RATIO_IN], r38, true, false);
+        pulse(f, t); pulse(g, t); f.process(a); g.process(a);
+        assert(f.state.acc == g.state.acc && f.state.d == 7 && f.ratio.load() == (5 << 8 | 7));
+        assert(f.outputs[K::CARRY_OUT].getVoltage() == g.outputs[K::CARRY_OUT].getVoltage());
+    }
+    putBus(f.inputs[K::RATIO_IN], r38, true, true); f.process(a); assert(f.ratio.load() == (3 << 8 | 8) && f.state.d == 8);
+}
+
 // Counter 2's RATIO input and Lookup's Ratio family (library v3): a ratio word replaces N and D, and
 // a control byte through Lookup Ratio picks a ratio from a grid, through one-sample cables in random
 // order: the Counter then carries n times every d edges.
@@ -1155,7 +1203,9 @@ int main(int argc, char** argv) {
     rack::plugin::plugins.push_back(&plugin);
     if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapPortsRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetPortsRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "counter2-ratio") { for (float sr : {44100.f, 48000.f, 96000.f}) counter2RatioRegression(sr); return 0; }
     latticeGapPortsRegression(); rouletteResetPortsRegression();
+    for (float sr : {44100.f, 48000.f, 96000.f}) counter2RatioRegression(sr);
     portsAndState();
     counterPorts();
     counterRunModes();

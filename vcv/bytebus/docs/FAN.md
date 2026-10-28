@@ -79,6 +79,12 @@ counter keeps its count; RESET, LOAD and the clock do nothing to it. When
 BUS IN is unpatched, the held count is published at once, with a strobe, as a
 load is.
 
+A change of owner never puts a new address under a CLK that stays high. If
+BUS OUT's CLK was high when BUS IN is unpatched, the held count is published
+after one low sample. If Fan's own strobe was high when a clocked BUS IN takes
+over on its CLK edge, BUS OUT gives a low sample first and the strobe on the
+next sample; from then on the bus's CLK passes through unchanged.
+
 ## Routing
 
 On every sample the address selects one output channel and one input channel
@@ -154,7 +160,9 @@ and the DIR gate; routing at every address with COM IN unpatched and patched,
 Zero and Hold; GLITCH's two overlaps and two dropouts per direction, with COM
 OUT's mean; BUS IN addressing for all 256 unclocked words and a clocked word
 with its CLK passed through, RESET ignored while following and the held count
-published on release; RESET with a seed past LENGTH; strobe gaps under random
+published on release; a low sample before the new address when BUS IN is
+unpatched, or takes over, under a high CLK, with a clocked reader downstream
+latching it; RESET with a seed past LENGTH; strobe gaps under random
 clocks, resets, lengths and direction gates; the internal clock at
 44.1/48/96 kHz.
 

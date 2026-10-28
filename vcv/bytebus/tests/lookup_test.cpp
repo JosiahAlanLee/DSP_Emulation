@@ -385,9 +385,25 @@ static void twoWords() {
     }
 }
 
+// Review 2026-10-27 #20: after a reset, Lookup2 with a clocked, stopped A publishes the result of its
+// present inputs on the first sample, without a CLK edge.
+static void lookup2ReloadRegression() {
+    namespace l2 = dspemu::lookup2;
+    l2::Engine g; l2::Parameters p; p.family = l2::Logic; p.shape = 2;               // OR
+    bus::Sample a; a.connected = a.clocked = true; a.rawWord = 0x0f;
+    auto o = g.tick(p, a, 0x30); assert(o.word == 0x3f && o.clocked && !o.clk);
+    a.rawWord = 0x40; o = g.tick(p, a, 0x01); assert(o.word == 0x3f && !o.evaluated);  // held until A's edge
+    a.clk = a.rising = true; o = g.tick(p, a, 0x01); assert(o.evaluated && o.word == 0x41 && o.clk);
+    // After reset(), as on reload; an unpatched A first (Rack before its cables carry data).
+    g.reset(); a = bus::Sample{}; g.tick(p, a, 0x30);
+    a.connected = a.clocked = true; a.rawWord = 0x81; o = g.tick(p, a, 0x02);
+    assert(o.word == 0x83 && !o.clk);
+    a.rawWord = 0; o = g.tick(p, a, 0); assert(o.word == 0x83);
+}
+
 int main() {
     auto library = lu::Library::load("../res/lookup-v1.bin");
-    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2(); libraryV3(); twoWords();
+    maps(library); patterns(library); audio(library); clocking(library); tracking(library); compiler(); jumps(); libraryV2(); libraryV3(); twoWords(); lookup2ReloadRegression();
     bool rejected = false; try { lu::Library::load("../res/no-such-library.bin"); } catch (const std::runtime_error&) { rejected = true; }
     assert(rejected);
     lu::Engine engine; lu::Parameters p; auto s = input(73);
