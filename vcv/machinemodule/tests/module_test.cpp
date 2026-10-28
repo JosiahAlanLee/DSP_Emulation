@@ -153,12 +153,51 @@ static void linkSourceChanges(Plugin& providerPlugin){
     // Rack may reuse a module address: the engine ID also identifies the sender.
     second.id=12;tick(8,0,false);assert(m->block.count==5&&m->block.events[4].panic);
     tick(9,10);assert(m->block.count==5);
+    // Initialize also seeds a connected Gorgon's held gate and precedes its next real hit.
+    m->onReset(Module::ResetEvent{});
+    tick(10,10);assert(m->block.count==1&&m->block.events[0].initialize);
+    tick(11,10);assert(m->block.count==1);
+    tick(12,0);tick(13,10);
+    assert(m->block.count==2&&!m->block.events[1].initialize&&m->block.events[1].hit.track==0);
+}
+// Initialize retains the backend and paths, discards queued hits/audio, and seeds held gates.
+static void initialize(){
+    for(bool bus:{false,true}){
+        Trace trace;auto m=std::make_unique<Machinemodule>(factory(trace));m->model=modelMachinemodule;ready(*m);
+        m->firmwarePath="fake-os";m->samplePath="fake-samples";
+        for(auto& out:m->outputs)out.channels=1;
+        Module::ProcessArgs args{};args.sampleRate=48000;args.sampleTime=1.f/48000;
+        auto drive=[&](float gate,int frames){play(*m,args,frames,[&](int){m->inputs[Machinemodule::TRIG].channels=16;
+            for(int t=0;t<16;++t)m->inputs[Machinemodule::TRIG].setVoltage(gate,t);});};
+        drive(0,128);drive(10,1600);assert(hitTracks(trace).size()==16);
+        assert(m->outputs[Machinemodule::TRACKS].getVoltage(15)>0);
+        m->trigMode=bus?Machinemodule::TRIG_BUS:Machinemodule::TRIG_TRACKS;
+        m->params[Machinemodule::P1].setValue(70);
+        auto loaded=m->worker.loaded.load();auto generation=m->generation;
+        int resets;{std::lock_guard<std::mutex> guard(trace.mutex);resets=trace.resets;}
+        // An unsubmitted hit must not survive Initialize.
+        m->appendHit(0,1,gorgon_sound::Sound{},int(m->frame%md_rack::frames));
+        m->onReset(Module::ResetEvent{});
+        assert(m->trigMode==Machinemodule::TRIG_TRACKS);
+        assert(m->params[Machinemodule::P1].getValue()==0);
+        ++args.frame;m->process(args);
+        for(auto& out:m->outputs)for(int c=0;c<out.getChannels();++c)assert(out.getVoltage(c)==0);
+        assert(m->block.count==1&&m->block.events[0].initialize);
+        drive(10,1600);
+        assert(m->generation>generation&&m->worker.loaded.load()==loaded&&m->worker.ready);
+        assert(m->firmwarePath=="fake-os"&&m->samplePath=="fake-samples");
+        assert(hitTracks(trace).size()==16);
+        {std::lock_guard<std::mutex> guard(trace.mutex);assert(trace.resets>resets);}
+        for(int t=0;t<16;++t)assert(m->outputs[Machinemodule::TRACKS].getVoltage(t)==0);
+        drive(0,128);drive(10,128);assert(hitTracks(trace).size()==32);
+    }
 }
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
     Plugin receiverPlugin;receiverPlugin.slug="MachinemoduleRack";receiverPlugin.version="2.0.0";modelMachinemodule->plugin=&receiverPlugin;
     Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.4.0";
     Model providerModel;providerModel.slug="Gorgon";providerModel.plugin=&providerPlugin;
+    initialize();
     linkSourceChanges(providerPlugin);
     {
         Trace trace;Machinemodule m(factory(trace));m.model=modelMachinemodule;ready(m);

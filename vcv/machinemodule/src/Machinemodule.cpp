@@ -24,6 +24,7 @@ struct Machinemodule : Module {
     std::array<md_rack::Edge,16> gates;
     md_rack::Edge reset;
     std::atomic<int> trigMode{TRIG_TRACKS};
+    std::atomic<bool> initializePending{false};
     int lastTrigMode=TRIG_TRACKS;
     dspemu::bus::Reader busReader;
     bool busClocked=false,busArmed=false;
@@ -48,6 +49,11 @@ struct Machinemodule : Module {
         configOutput(LEFT,"Main left · 5 V per full scale");configOutput(RIGHT,"Main right · 5 V per full scale");
         configOutput(TRACKS,"16 individual tracks after track effects · polyphonic audio");
         leftExpander.producerMessage=&messages[0];leftExpander.consumerMessage=&messages[1];
+    }
+    void onReset(const ResetEvent& e) override {
+        Module::onReset(e);
+        trigMode=TRIG_TRACKS;
+        initializePending.store(true,std::memory_order_release);
     }
     float cv(int input,int lane) {return emu_rack::trackCv(inputs[input],lane);}
     void loadFirmware(const std::string& path,bool samples=false) {
@@ -96,6 +102,12 @@ struct Machinemodule : Module {
         }
         auto loaded=worker.loaded.load(std::memory_order_acquire);
         if(!active||args.sampleRate!=previousRate||loaded!=lastLoaded){restart(args.sampleRate);lastLoaded=loaded;active=true;}
+        if(initializePending.exchange(false,std::memory_order_acq_rel)){
+            // Discard queued audio/events and initialize the retained backend before any new hit.
+            // restart also seeds the link and external gates from their current levels.
+            restart(args.sampleRate);
+            block.events[0].initialize=true;block.events[0].panic=false;
+        }
         int offset=int(frame%md_rack::frames);
         bool patched=inputs[TRIG].isConnected();
         const auto* packet=patched?nullptr:soundPacket(args.frame);
