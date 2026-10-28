@@ -104,7 +104,7 @@ static void linkSourceChanges(Plugin& providerPlugin){
 }
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
-    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.4";modelMonomodule->plugin=&receiverPlugin;
+    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.5";modelMonomodule->plugin=&receiverPlugin;
     Plugin linkPlugin;linkPlugin.slug="GorgonBridge";linkPlugin.version="2.4.0";
     linkSourceChanges(linkPlugin);
     {

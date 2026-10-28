@@ -11,7 +11,7 @@ all: deps
 deps:
 	./tools/fetch-core.sh "$(CORE_DIR)" "$(DSP56300_DIR)"
 test: all
-	$(CMAKE) --build $(BUILD_DIR) --target renderer_test firmware_test module_test plugin_load_test -j2
+	$(CMAKE) --build $(BUILD_DIR) --target renderer_test firmware_test module_test plugin_load_test mmu_test -j2
 	$(CMAKE) -E env LD_LIBRARY_PATH=$(abspath $(RACK_DIR)) $(CMAKE) --build $(BUILD_DIR) --target test
 source:
 	python3 tools/source_bundle.py "$(CORE_DIR)" "$(DSP56300_DIR)"
