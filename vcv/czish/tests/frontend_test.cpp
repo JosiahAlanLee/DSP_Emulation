@@ -138,6 +138,41 @@ static void portamento() {
     assert(std::abs(fifth - twoOctaves) <= tick);
     assert(std::abs(fifth - expected) <= 2 * tick && std::abs(twoOctaves - expected) <= 2 * tick);
 }
+// Review finding #28: the glide advanced while the gate was low, so a V/OCT
+// change between notes had settled before the next gate and that note started
+// in tune. The glide now starts at gate-on from the last sounding pitch.
+static void portamentoAfterRelease() {
+    cz::VoiceEngine e;
+    cz::Tone t;
+    t.vibrato = false;
+    t.portamento = true;
+    t.portamentoTime = 30; // 40 ms
+    std::array<cz::Input, 8> in{};
+    in[0].gate = 10;
+    run(e, in, 1, t, 4800); // C4
+    uint16_t c4 = cz::pitchRegister(0), c5 = cz::pitchRegister(1);
+    assert(e.chip.voice[0].pitch == c4);
+    in[0].gate = 0;
+    run(e, in, 1, t, 480);
+    in[0].pitch = 1; // C5 with the gate low for 0.5 s
+    run(e, in, 1, t, 24000);
+    assert(e.chip.voice[0].pitch == c4);
+    in[0].gate = 10;
+    e.process(in, 1, t, 0, 48000, true);
+    if (e.chip.voice[0].pitch == c5)
+        std::cerr << "portamento: the note after a gate-low V/OCT change starts at its target\n";
+    assert(e.chip.voice[0].pitch < c4 + (c5 - c4) / 20);
+    double expected = .005 * std::exp2(3.) * 48000, tick = 64. / 40000 * 48000;
+    int frames = -1;
+    for (int i = 2; i < 48000 && frames < 0; ++i) {
+        e.process(in, 1, t, 0, 48000, true);
+        if (i == int(expected / 2))
+            assert(e.chip.voice[0].pitch > c4 && e.chip.voice[0].pitch < c5);
+        if (e.chip.voice[0].pitch == c5)
+            frames = i;
+    }
+    assert(frames > 0 && std::abs(frames - expected) <= 2 * tick);
+}
 static void modes() {
     for (int mode = 0; mode < 4; ++mode) {
         cz::VoiceEngine e;
@@ -292,6 +327,55 @@ static void sysex() {
     data[40] = 0x10;
     assert(!cz::sysex::decode(data, decoded, error));
 }
+// Review finding #27: the wave word was preserved when only CHIP mute or
+// pitch modulation changed, so switching them off still exported the bits.
+static void sysexChipBits() {
+    cz::Tone t;
+    t.line[0].env[2].end = 1;
+    auto data = cz::sysex::encode(t);
+    for (int bits : {0x04, 0x10, 0x14, 0x34}) {
+        std::array<uint8_t, 128> p{};
+        for (int i = 0; i < 128; ++i)
+            p[i] = uint8_t(data[6 + 2 * i] | (data[7 + 2 * i] << 4));
+        p[14] |= uint8_t(bits);
+        cz::Tone imported;
+        std::string error;
+        assert(cz::sysex::decodePayload(p, imported, error));
+        assert(imported.muteOther == bool(bits & 4) && imported.chipPitchMod == (bits & 0x10 ? 2 : 0));
+        // An unedited import keeps its bytes, CHIP bits included.
+        assert(cz::sysex::encodePayload(imported) == p);
+        imported.muteOther = false;
+        imported.chipPitchMod = 0;
+        assert(cz::sysex::hardwareTone(imported));
+        auto out = cz::sysex::encodePayload(imported);
+        if (out[14] & 0x1c)
+            std::cerr << "sysex: CHIP bits switched off still exported, word " << int(out[14]) << "\n";
+        assert((out[14] & 0x1c) == 0);
+        assert((out[14] & 0x20) == (bits & 0x20)); // ring stays
+        assert(out[15] == p[15]);
+        for (int i = 16; i < 128; ++i)
+            assert(out[i] == p[i]);
+    }
+}
+// Review finding #33 (DeepSeek g5 B5): a window on an alternating pair of
+// resonance and an ordinary wave is the CZ-101's own pairing (the line has one
+// window field, which the chip applies to both waves), so export accepts it.
+// A window without any resonance wave, or a resonance-resonance pair, is not.
+static void exportGuardWindows() {
+    auto guard = [](int wave, int second, bool alternate, int window) {
+        cz::Tone t;
+        t.line[0].wave = wave;
+        t.line[0].second = second;
+        t.line[0].alternate = alternate;
+        t.line[0].window = window;
+        return cz::sysex::hardwareTone(t);
+    };
+    assert(guard(6, 0, false, 1));
+    assert(guard(0, 6, true, 1) && guard(6, 0, true, 3) && guard(4, 6, true, 2));
+    assert(!guard(0, 0, false, 1) && !guard(0, 0, true, 1) && !guard(0, 6, false, 1));
+    assert(!guard(6, 6, true, 1) && !guard(6, 0, false, 4) && !guard(0, 6, true, 5));
+    assert(guard(0, 0, true, 0) && guard(0, 6, true, 0));
+}
 static double component(const std::vector<float> &a, double f, double rate) {
     double r = 0, i = 0;
     for (size_t n = 0; n < a.size(); ++n) {
@@ -385,9 +469,12 @@ int main() {
     envelopes();
     ramps();
     portamento();
+    portamentoAfterRelease();
     modes();
     tuningAndControls();
     sysex();
+    sysexChipBits();
+    exportGuardWindows();
     converter();
     std::cout << "PASS: complete front end, documented MIDI maps, SysEx framing/roundtrip, minimum-phase "
                  "HOLD, extreme-ratio AA, transparency and noise\n";

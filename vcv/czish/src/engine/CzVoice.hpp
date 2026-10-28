@@ -260,14 +260,18 @@ class VoiceEngine {
         std::array<uint16_t, 8> regs{};
         for (int slot = 0; slot < noteLimit(t); ++slot) {
             double pitch = std::clamp(double(in[slot].pitch), -8., 8.);
+            bool high = gates[slot].high;
             if (!pitchInitialized_[slot] || !t.portamento) {
                 glide_[slot] = glideTarget_[slot] = pitch;
                 glideStep_[slot] = 0;
-                pitchInitialized_[slot] = true;
-            } else {
+                // Until a note has sounded there is no pitch to glide from.
+                pitchInitialized_[slot] = pitchInitialized_[slot] || high;
+            } else if (high) {
                 // Constant time, as the CZ-101 manual documents: a new target (or
                 // a TIME change) restarts the glide from the current pitch, and
                 // every interval takes duration(TIME). The curve is provisional.
+                // While the gate is low the glide holds the last sounding pitch,
+                // so a V/OCT change between notes glides from gate-on.
                 if (pitch != glideTarget_[slot] || t.portamentoTime != glideTime_[slot]) {
                     double duration = .005 * std::exp2(t.portamentoTime / 10.);
                     glideTarget_[slot] = pitch;

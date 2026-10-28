@@ -44,10 +44,14 @@ No scanned manual text or manufacturer tones are redistributed here.
   vibrato delay and DCW/key-follow bounds. DCO, DCW and DCA ramps rise and
   fall monotonically, at most one chip step per host sample, across control
   passes and from a level above half the next target. Portamento takes the
-  same time for a fifth and for two octaves. V/OCT is checked across eight octaves
+  same time for a fifth and for two octaves, and a V/OCT change made while
+  the gate is low glides from the next gate-on. V/OCT is checked across eight octaves
   to the chip's quantized pitch table tolerance.
 - Manual-derived SysEx anchors, 300 randomized tone round-trips in both nibble
   orders, malformed headers/nibbles/truncated input, and byte preservation.
+  CHIP mute and pitch-modulation bits switched off after import are not
+  exported; the export guard accepts a window only with a resonance wave and
+  rejects it when no resonance wave is selected or both waves are resonance.
 - Rack ports and parameters at 44.1/48/96 kHz, note release, polyphony and
   overflow, saved-tone/source restoration, old-patch migration, effective bit
   CV, and 16-channel low-rate AA conversion. DAC Stage profile switches give

@@ -196,7 +196,13 @@ inline std::array<uint8_t, 128> encodePayload(const Tone &t) {
             w |= t.mod == 1 ? 32 : (t.mod == 2 ? 24 : 0);
         p[at] = uint8_t(w);
         p[at + 1] = uint8_t(w >> 8);
-        preserve(at, 2, waveRegister(line) == waveRegister(old) && (l || t.mod == original.mod));
+        // Line 1's word also carries ring/noise, CHIP mute (bit 2) and CHIP pitch
+        // modulation (bits 4:3). Keep the source word only when all of them are
+        // unchanged; otherwise write it from the tone, which has no CHIP bits.
+        preserve(at, 2,
+                 waveRegister(line) == waveRegister(old) &&
+                     (l || (t.mod == original.mod && t.muteOther == original.muteOther &&
+                            t.chipPitchMod == original.chipPitchMod)));
         p[at + 2] = uint8_t(std::clamp(line.dcaKey, 0, 9));
         p[at + 3] = amp[p[at + 2]];
         preserve(at + 2, 2, line.dcaKey == old.dcaKey);

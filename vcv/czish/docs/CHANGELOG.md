@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.2
+
+- CZish: a portamento glide now runs only while the gate is high. A V/OCT
+  change made between notes glides from the last sounding pitch when the next
+  gate arrives, over the usual TIME; before, the glide finished while the gate
+  was low and the next note started in tune.
+- CZish: exporting an imported tone after switching off CHIP mute partner or
+  CHIP pitch modulation no longer writes those bits. An unedited import still
+  exports byte-identical.
+- CZish: the README now says that a window on Resonance alternating with an
+  ordinary wave shapes both waves, and that export accepts that CZ-101 pairing.
+
 ## 2.1.1
 
 - CZish: rising DCW segments now ramp all the way to their target. The voice
