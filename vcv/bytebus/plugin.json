@@ -1,12 +1,18 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.16.5",
+  "version": "2.17.0",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
   "sourceUrl": "https://github.com/JosiahAlanLee/DSP_Emulation",
   "modules": [
+    {
+      "slug": "Adapter",
+      "name": "Adapter",
+      "description": "Explicit CZ/Yamaha/signed byte codecs, bit routing and masks, selectable reclocking, and gate/trigger/bipolar/level outputs.",
+      "tags": ["Utility", "Logic", "Sample and hold", "Polyphonic"]
+    },
     {
       "slug": "Converter",
       "name": "Converter",

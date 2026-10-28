@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate ByteBusLab's ten outlined panels, layouts and component previews."""
+"""Generate ByteBusLab's fourteen outlined panels, layouts and component previews."""
 from pathlib import Path
 import argparse
 import sys
@@ -467,6 +467,35 @@ def roulette(font):
     return p
 
 
+def adapter(font):
+    p = Panel(240, font)
+    p.title('Adapter', 'BYTE FORMATS / ROUTING / RECLOCK', 4)
+    p.component('WORD', 'readout', 16, 58, 208, 25, 'IN 00    OUT 00')
+    for bit in range(8):
+        p.component(f'BIT{bit}', 'light', 43 + 22 * (7-bit), 90)
+    for name, x, label in [('INPUT_FORMAT', 16, 'INPUT FORMAT'), ('OUTPUT_FORMAT', 124, 'OUTPUT FORMAT')]:
+        p.text(label, x+50, 104, 6.5)
+        p.component(name, 'selector', x, 111, 100, 22, 'OFFSET / RAW')
+    p.text('CLOCK SOURCE', 79, 151, 7)
+    p.component('SOURCE', 'selector', 16, 158, 126, 22, 'FOLLOW BUS')
+    p.component('RATE', 'knob', 190, 166)
+    p.text('RATE / Hz', 190, 197, 7)
+    for name, x in [('KEEP', 45), ('XOR', 120), ('IDLE', 195)]:
+        p.component(name, 'knob', x, 216)
+        p.text(name, x, 247, 7)
+    p.rule(254)
+    for name, x, label in [('BUS_IN', 34, 'BUS IN'), ('CLOCK_IN', 91, 'CLOCK'), ('RESET_IN', 148, 'RESET')]:
+        p.jack(name, x, 278, label)
+    p.component('LOAD', 'button', 205, 278)
+    p.text('LOAD', 205, 260, 7)
+    p.block(16, 296, 208, 78)
+    for name, x, label in [('BUS_OUT', 42, 'BUS'), ('CLOCK_OUT', 120, 'CLK'), ('GATES_OUT', 198, 'GATES')]:
+        p.jack(name, x, 320, label, True)
+    for name, x, label in [('TRIG_OUT', 42, 'TRIG'), ('BIPOLAR_OUT', 120, 'BIPOLAR'), ('LEVEL_OUT', 198, 'LEVEL')]:
+        p.jack(name, x, 362, label, True)
+    return p
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font', default=DEFAULT_FONT)
@@ -476,14 +505,15 @@ def main():
               'pipeline': pipeline(args.font), 'lookup2': lookup2(args.font),
               'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font),
               'parallel_sum': parallel_sum(args.font), 'wheel': wheel(args.font),
-              'roulette': roulette(args.font)}
+              'roulette': roulette(args.font), 'adapter': adapter(args.font)}
     for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
                            ('byte_switch', 'Switch'), ('pipeline', 'Pipeline'),
                            ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice'),
-                           ('parallel_sum', 'ParallelSum'), ('wheel', 'Wheel'), ('roulette', 'Roulette')]:
+                           ('parallel_sum', 'ParallelSum'), ('wheel', 'Wheel'), ('roulette', 'Roulette'),
+                           ('adapter', 'Adapter')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote thirteen ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote fourteen ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':

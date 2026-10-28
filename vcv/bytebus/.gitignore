@@ -11,6 +11,8 @@
 /tests/lookup_module_test
 /tests/io_test
 /tests/io_module_test
+/tests/adapter_test
+/tests/adapter_module_test
 /tools/compile_vastish_backend
 /tools/compile_vastish_backend.exe
 **/__pycache__/
