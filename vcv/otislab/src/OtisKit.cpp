@@ -15,6 +15,9 @@
 #include <mutex>
 
 using otis::kit::SLOTS;
+// The highest slot rate a saved kit may hold: Rack 2's highest engine rate, so every take Capture
+// records can be reloaded.
+constexpr double MAX_SAVED_RATE = 768000;
 
 struct OtisKit : Module {
     enum Params { ENUMS(TUNE, SLOTS), ENUMS(DECAY, SLOTS), ENUMS(LEVEL, SLOTS), ENUMS(FILTER, SLOTS),
@@ -35,8 +38,9 @@ struct OtisKit : Module {
     otis::kit::CaptureRequest captureBuffers[2]; // owned here; Otis Capture on the right writes them
     bool captureWanted = false, captureBlocked = false, noRoom = false, lastTruncated = false;
     int lastSlot = -1, roomCountdown = 0; int32_t lastFrames = 0, room = 0; uint32_t takes = 0;
-    // UI thread: what syncTakes() last copied.
-    uint32_t syncedSerial = ~0u; std::array<otis::kit::Region, SLOTS> syncedTake{}; int takeNumber = 0;
+    // UI thread: what syncTakes() last copied. Slots are compared by generation, not region: a new
+    // take can land exactly where an older one of the same length was.
+    uint32_t syncedSerial = ~0u; std::array<uint32_t, SLOTS> syncedGeneration{}; int takeNumber = 0;
     dspemu::bus::Reader slotReader;
     std::array<dsp::SchmittTrigger, 16> gates;
     std::array<float, SLOTS> hitPitch{}, hitLevel{}; // latched from the hit's channel
@@ -65,42 +69,51 @@ struct OtisKit : Module {
         install(false);
     }
     // UI thread: copy finished takes out of sample memory into slots, without stopping the audio thread.
-    void syncTakes() {
+    // A take for a slot in `keep` (a bit per slot) is passed over: the caller has just set that slot.
+    void syncTakes(unsigned keep = 0) {
         if (exchange.read().serial == syncedSerial) return;
         std::array<std::vector<int16_t>, SLOTS> copies;
         const std::vector<int16_t>& memory = engine.sample.pcm;   // replaced only by install(), on this thread
-        auto m = exchange.copyTakes([&](int s, otis::kit::Region r) {
+        auto changed = [&](int s, uint32_t generation) { return generation != syncedGeneration[size_t(s)] && !(keep >> s & 1); };
+        auto m = exchange.copyTakes([&](int s, otis::kit::Region r, uint32_t generation) {
             auto& out = copies[size_t(s)]; out.clear();
-            if (r != syncedTake[size_t(s)] && r.playable() && r.end <= int32_t(memory.size()))
+            if (changed(s, generation) && r.playable() && r.end <= int32_t(memory.size()))
                 out.assign(memory.begin() + r.begin, memory.begin() + r.end);
         });
-        for (int s = 0; s < SLOTS; ++s) if (m.take[size_t(s)] != syncedTake[size_t(s)]) {
+        for (int s = 0; s < SLOTS; ++s) if (changed(s, m.generation[size_t(s)])) {
             slots[size_t(s)].pcm = std::move(copies[size_t(s)]); slots[size_t(s)].rate = m.rate[size_t(s)];
             slots[size_t(s)].name = string::f("Capture take %d", ++takeNumber); layout.truncated[size_t(s)] = false;
         }
-        syncedTake = m.take; syncedSerial = m.serial;
+        syncedGeneration = m.generation; syncedSerial = m.serial;
     }
     // UI thread: pack the slots into one memory image and hand it to the engine. Sounding hits stop and
-    // a take in progress is dropped. keepTakes first copies finished takes into slots.
-    void install(bool keepTakes = true) {
-        if (keepTakes) syncTakes();
-        std::vector<int16_t> image;
-        auto packed = otis::kit::pack(slots, image);
-        std::lock_guard<std::mutex> guard(engineMutex);
-        engine.install(image, otis::kit::BANK_RATE, otis::memoryWords, false);   // all memory addressable
-        bank.reset(packed); voiceTake = {}; captureWanted = false;
-        captureBlocked = true;                  // discard the rest of any request spanning this install
-        exchange.publish(bank.map);
-        syncedSerial = bank.map.serial; syncedTake = bank.map.take;
-        layout = packed;
+    // a take in progress is dropped. keepTakes first copies finished takes into slots (except those in
+    // `keep`, see syncTakes), including any that finish while this packs: if one has finished once
+    // the lock is held, copy and pack again. The audio thread only try-locks, so it never waits here.
+    void install(bool keepTakes = true, unsigned keep = 0) {
+        for (;;) {
+            if (keepTakes) syncTakes(keep);
+            std::vector<int16_t> image;
+            auto packed = otis::kit::pack(slots, image);
+            std::lock_guard<std::mutex> guard(engineMutex);
+            // Under the lock bank.map is what the audio thread last published; its serial differs from
+            // the copied one only if a take finished after syncTakes() read the exchange.
+            if (keepTakes && bank.map.serial != syncedSerial) continue;
+            engine.install(image, otis::kit::BANK_RATE, otis::memoryWords, false);   // all memory addressable
+            bank.reset(packed); voiceTake = {}; captureWanted = false;
+            captureBlocked = true;                  // discard the rest of any request spanning this install
+            exchange.publish(bank.map);
+            syncedSerial = bank.map.serial; syncedGeneration = bank.map.generation;
+            layout = packed;
+            return;
+        }
     }
     void loadSlot(int s, const std::string& path) {
         try {
             auto wav = dspemu::loadWav(path, otis::memoryWords, false);   // mono: two channels are averaged
-            syncTakes();
             slots[size_t(s)].pcm = std::move(wav.pcm); slots[size_t(s)].rate = wav.rate;
             slots[size_t(s)].name = dspemu::baseName(path); lastError.clear();
-            install(false);
+            install(true, 1u << s);
         } catch (const std::exception& e) { lastError = e.what(); WARN("Otis Kit: %s", e.what()); }
     }
     // A folder's WAVs, in name order, fill slots 1-8.
@@ -111,16 +124,17 @@ struct OtisKit : Module {
             if (ext == ".wav" && system::isFile(entry)) wavs.push_back(entry);
         }
         std::sort(wavs.begin(), wavs.end());
-        lastError.clear(); syncTakes();
+        lastError.clear(); unsigned loaded = 0;
         for (size_t k = 0; k < wavs.size() && k < size_t(SLOTS); ++k) {
             try {
                 auto wav = dspemu::loadWav(wavs[k], otis::memoryWords, false);
                 slots[k].pcm = std::move(wav.pcm); slots[k].rate = wav.rate; slots[k].name = dspemu::baseName(wavs[k]);
+                loaded |= 1u << k;
             } catch (const std::exception& e) { lastError = e.what(); }
         }
-        install(false);
+        install(true, loaded);
     }
-    void clearSlot(int s) { syncTakes(); slots[size_t(s)] = {}; install(false); }
+    void clearSlot(int s) { slots[size_t(s)] = {}; install(true, 1u << s); }
     std::string slotLabel(int s) const {
         const auto& slot = slots[size_t(s)];
         if (slot.pcm.size() < 2) return string::f("Slot %d: empty", s + 1);
@@ -200,8 +214,11 @@ struct OtisKit : Module {
             flash[size_t(s)] = 0;
         }
     }
+    // A take in progress is dropped, as install() drops it: its rate is fixed when it starts, so the
+    // rest of it would play at the wrong pitch and speed.
     void onSampleRateChange(const SampleRateChangeEvent& e) override {
         std::lock_guard<std::mutex> guard(engineMutex); engine.setHostRate(e.sampleRate);
+        if (bank.active()) { bank.cancel(); captureBlocked = true; }
     }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e);
@@ -239,7 +256,7 @@ struct OtisKit : Module {
             const char* text = json_is_object(o) ? json_string_value(json_object_get(o, "pcm16le")) : nullptr;
             if (!text) continue;
             double rate = json_number_value(json_object_get(o, "rate"));
-            if (!std::isfinite(rate) || rate < 1000 || rate > 384000) continue;
+            if (!std::isfinite(rate) || rate < 1000 || rate > MAX_SAVED_RATE) continue;
             // A damaged slot is left empty; the others still load.
             try { slots[size_t(s)].pcm = dspemu::decodePcm16(text, otis::memoryWords); }
             catch (const std::exception& e) { lastError = e.what(); continue; }

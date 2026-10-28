@@ -135,6 +135,12 @@ voices take the panel's settings, including REV, at once. With PATCH patched,
 the display shows the patch the last hit chose
 (**PATCH 2**, or **PATCH 2: PANEL** while patch 2 isn't stored).
 
+**REWORK** and **Export selected frame to Lookup** work on voice 1's window,
+and that window comes from voice 1's current patch: the one its last hit chose.
+With PATCH patched, they can work on a stored patch's START, END, POSITION and
+SIZE rather than the panel's. To work on the panel's window, play voice 1 with
+patch 0 (all PATCH bits low) first.
+
 Any byte source can choose. With its BUS OUT source set to **Hit mask**, Gorgon
 carries lane n's hit on bit n, on the same sample as the row's gates. Patched
 straight into PATCH, a hit on a row where lane 1 also hits plays patch 1, where
@@ -208,7 +214,7 @@ Start with a small CV range: POS CV adds to the knob, and the combined position 
 
 REWORK changes the selected window in **stored sample memory**. It uses randomized, overlapping grains and seam smoothing to redistribute the existing sound. It is an original process inspired by sample-reworking workflows.
 
-1. Select the region or window you want to change.
+1. Select the region or window you want to change. REWORK uses voice 1's window, from voice 1's current patch: with PATCH patched that can be a stored patch rather than the panel (see [Patch select](#patch-select)).
 2. Set **COARSE / FINE** and **AMOUNT**.
 3. Press **REWORK** or send a rising trigger to **TRIG**.
 4. Wait for BUSY to finish before making another request.

@@ -10,6 +10,7 @@
 #include <cassert>
 #include <iostream>
 #include <random>
+#include <thread>
 Plugin* pluginInstance=nullptr;
 static Module::ProcessArgs args(float sr=48000) { Module::ProcessArgs a{}; a.sampleRate=sr; a.sampleTime=1/sr; return a; }
 static std::vector<int16_t> noise(size_t n,unsigned seed) {
@@ -37,7 +38,7 @@ static void frame(OtisKit& k,OtisCapture* c,const Module::ProcessArgs& a,bool ca
 static void hit(OtisKit& k,int slot,bool high) { k.inputs[OtisKit::GATE_IN].setVoltage(high ? 10.f : 0.f,slot); }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.2"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.3"; plugin.addModel(modelOtisKit); plugin.addModel(modelOtisCapture);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Without a kit on the left, Capture says so and never records.
@@ -215,6 +216,101 @@ int main() {
         assert(recorded==end && dones==1 && k->takes==1 && take.size()==end);
         for(int i=take.begin;i<take.end;++i) assert(k->engine.sample.pcm[size_t(i)]==otis::quantize(.5f));
     }
+    // Review #2: a take that lands exactly in the region of the take last copied out is still copied.
+    // A nearly full bank and equal-length takes make largestGap() hand A's freed region to C.
+    {
+        auto k=std::make_unique<OtisKit>(); k->model=modelOtisKit; k->outputs[OtisKit::OUT].channels=1;
+        size_t F=(otis::memoryWords-60000)/7;   // slot 3 starts empty; 60,000 frames free
+        for(int s=0;s<8;++s) if(s!=3) k->slots[size_t(s)].pcm.assign(F,int16_t(100*(s+1)));
+        k->install(false);
+        auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(3); c->params[OtisCapture::LENGTH].setValue(2);   // 1 beat, TEMPO 120
+        c->inputs[OtisCapture::AUDIO_IN].channels=1;
+        for(int n=0;n<10;++n) frame(*k,c.get(),a,true);
+        auto take=[&](float volts) {
+            c->inputs[OtisCapture::AUDIO_IN].setVoltage(volts);
+            c->params[OtisCapture::ARM_BUTTON].setValue(1); frame(*k,c.get(),a,true); c->params[OtisCapture::ARM_BUTTON].setValue(0);
+            while(c->recording) frame(*k,c.get(),a,true);
+            for(int n=0;n<10;++n) frame(*k,c.get(),a,true);
+            return k->exchange.read().take[3];
+        };
+        auto A=take(1.f);
+        k->syncTakes();                          // e.g. Rack's autosave, or opening the kit's menu
+        assert(k->slots[3].pcm.size()==24000 && k->slots[3].pcm[0]==otis::quantize(.2f));
+        auto B=take(2.f);                        // replaces A, which is freed
+        auto C=take(3.f);                        // lands in A's old region
+        assert(B!=A && C==A && k->takes==3);
+        json_t* saved=k->toJson();               // dataToJson syncs first
+        assert(k->slots[3].pcm.size()==24000 && k->slots[3].pcm[0]==otis::quantize(.6f) && k->slots[3].name=="Capture take 2");
+        auto restored=makeKit(); restored->fromJson(saved); json_decref(saved);
+        assert(restored->slots[3].pcm==k->slots[3].pcm);
+        k->install(true);                        // Compact keeps C
+        auto r=k->exchange.read().take[3];
+        assert(r.size()==24000 && k->engine.sample.pcm[size_t(r.begin)]==otis::quantize(.6f));
+    }
+    // Review #12: a take that finishes after Compact (or a WAV load) has copied the takes but before
+    // it takes the engine lock is kept. The test holds the lock, lets install() copy and block on it,
+    // then finishes the take as the audio thread would. If install() hasn't reached the lock within
+    // the sleep, it copies the finished take anyway, so the test can't fail falsely with the fix.
+    for(bool load:{false,true}) {
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(5); c->params[OtisCapture::LENGTH].setValue(0);   // 6000 samples
+        c->inputs[OtisCapture::AUDIO_IN].channels=1; c->inputs[OtisCapture::AUDIO_IN].setVoltage(2.5f);
+        c->params[OtisCapture::ARM_BUTTON].setValue(1);
+        for(int n=0;n<1000;++n) { frame(*k,c.get(),a,true); c->params[OtisCapture::ARM_BUTTON].setValue(0); }
+        assert(k->bank.active() && k->bank.slot==5 && k->bank.recording.size()>900);
+        std::thread ui;
+        {
+            std::lock_guard<std::mutex> audio(k->engineMutex);
+            ui=std::thread([&] { if(load) k->loadSlot(0,"examples/bright-demo.wav"); else k->install(true); });
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            if(k->bank.finish()) { ++k->takes; k->exchange.publish(k->bank.map); }   // OtisKit::process
+        }
+        ui.join();
+        auto r=k->exchange.read().take[5]; size_t n=k->slots[5].pcm.size();
+        assert(k->takes==1 && n>900 && n<1100 && k->slots[5].name=="Capture take 1" && r.size()==int32_t(n));
+        for(int i=r.begin;i<r.end;++i) assert(k->engine.sample.pcm[size_t(i)]==otis::quantize(.5f));
+        assert(k->slots[0].name==(load ? "bright-demo.wav" : "s0"));
+    }
+    // Review #13: a take recorded at Rack's highest rate, 768 kHz, is saved and reloads at that rate.
+    {
+        auto hi=args(768000);
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(6); c->params[OtisCapture::LENGTH].setValue(0);   // 1/4 beat = 96000 samples
+        c->inputs[OtisCapture::AUDIO_IN].channels=1; c->inputs[OtisCapture::AUDIO_IN].setVoltage(-1.5f);
+        c->params[OtisCapture::ARM_BUTTON].setValue(1); frame(*k,c.get(),hi,true); c->params[OtisCapture::ARM_BUTTON].setValue(0);
+        while(c->recording) frame(*k,c.get(),hi,true);
+        for(int n=0;n<10;++n) frame(*k,c.get(),hi,true);
+        auto m=k->exchange.read(); assert(m.take[6].size()==96000 && m.rate[6]==768000);
+        json_t* saved=k->toJson(); auto restored=makeKit(); restored->fromJson(saved); json_decref(saved);
+        assert(restored->slots[6].rate==768000 && restored->slots[6].pcm==k->slots[6].pcm && restored->slots[6].pcm.size()==96000);
+        assert(restored->exchange.read().rate[6]==768000 && restored->exchange.read().take[6].size()==96000);
+    }
+    // Review #14: a sample-rate change mid-take drops the take, as an install does; the rest of the
+    // request is ignored, and the next take records at the new rate.
+    for(bool captureFirst:{true,false}) {
+        auto k=makeKit(); auto c=makeCapture(); wire(*k,*c);
+        c->params[OtisCapture::SLOT].setValue(4); c->params[OtisCapture::LENGTH].setValue(2);   // 1 beat = 24000 samples at 48 kHz
+        c->inputs[OtisCapture::AUDIO_IN].channels=1; c->inputs[OtisCapture::AUDIO_IN].setVoltage(2.5f);
+        auto before=k->exchange.read(); auto old=k->slots[4].pcm;
+        c->params[OtisCapture::ARM_BUTTON].setValue(1);
+        for(int n=0;n<5000;++n) { frame(*k,c.get(),a,captureFirst); c->params[OtisCapture::ARM_BUTTON].setValue(0); }
+        assert(k->bank.active());
+        auto a96=args(96000);
+        Module::SampleRateChangeEvent rate; rate.sampleRate=96000; rate.sampleTime=1/96000.f;
+        k->onSampleRateChange(rate); c->onSampleRateChange(rate);
+        assert(!k->bank.active());
+        while(c->recording) { frame(*k,c.get(),a96,captureFirst); assert(!k->bank.active()); }
+        for(int n=0;n<10;++n) frame(*k,c.get(),a96,captureFirst);
+        auto after=k->exchange.read();
+        assert(k->takes==0 && after.take==before.take && after.serial==before.serial);
+        k->syncTakes(); assert(k->slots[4].pcm==old);
+        c->params[OtisCapture::LENGTH].setValue(0);                                             // 1/4 beat = 12000 samples at 96 kHz
+        c->params[OtisCapture::ARM_BUTTON].setValue(1); frame(*k,c.get(),a96,captureFirst); c->params[OtisCapture::ARM_BUTTON].setValue(0);
+        while(c->recording) frame(*k,c.get(),a96,captureFirst);
+        for(int n=0;n<10;++n) frame(*k,c.get(),a96,captureFirst);
+        auto m=k->exchange.read(); assert(k->takes==1 && m.take[4].size()==12000 && m.rate[4]==96000);
+    }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback\n";
+    std::cout<<"PASS: Otis Capture with Otis Kit: no kit, clock-quantized takes of exact length and content in either processing order, old take sounding on and other slots untouched while the new one lands, new hits on the take, save/restore, resampling the kit at GAIN, no room, truncation, save mid-take, TEMPO length, link loss, compaction, install cancellation without tails, latched clock mode and tempo fallback, a take reusing the last-copied region, a take finishing during an install, 768 kHz takes reloaded, sample-rate change mid-take\n";
 }

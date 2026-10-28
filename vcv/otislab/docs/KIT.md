@@ -79,7 +79,8 @@ LEVEL CV are held from the hit.
   sound. Off by default.
 - How much of the bank is in use, and **Compact the bank**, which packs every
   slot, takes included, back into one run of memory (it stops sounding hits).
-  Loading or compacting during a take discards it; nothing more is recorded
+  Loading or compacting during a take discards it (a take that has already
+  finished is kept); nothing more is recorded
   until Capture ends that request and starts a new take. REC and DONE keep
   their timing.
 
@@ -89,7 +90,9 @@ The patch saves the eight slots' audio (16-bit PCM, as OTIS saves its sample),
 names and rates, the chip clock and the drop-sample setting, so a kit reopens
 exactly as it was. Takes from Otis Capture are saved the same way, copied out of
 memory without stopping the audio thread. An empty slot is saved as `null`. A slot whose saved rate
-is outside 1,000–384,000 Hz is silently left empty. Invalid saved audio
+is outside 1,000–768,000 Hz is silently left empty. Capture records at Rack's
+sample rate, which is never above 768,000 Hz, so every take reloads. (A WAV
+file above 384,000 Hz is still refused when loaded.) Invalid saved audio
 encoding or length also leaves the slot empty, with the error in the menu.
 The other slots still load. Rack's Initialize empties the bank and restores
 the controls.
