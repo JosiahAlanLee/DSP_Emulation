@@ -1,9 +1,9 @@
 name: Byte bus instruments native Linux
 on:
   push:
-    paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'vcv/otislab/src/**', 'docs/BYTE_BUS_SPEC.md', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/bytebus.yml']
+    paths: ['vcv/bytebus/**', 'vcv/shared/**', 'vcv/czish/src/**', 'vcv/vastish/**', 'vcv/otislab/src/**', 'vcv/seance/src/engine/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
   pull_request:
-    paths: ['vcv/bytebus/**', 'vcv/shared/ByteBus.hpp', 'vcv/vastish/**', 'vcv/otislab/src/**', 'docs/BYTE_BUS_SPEC.md', 'vcv/shared/PanelWidgets.hpp', 'vcv/shared/panels/**', 'vcv/shared/glyphs/**', '.github/workflows/bytebus.yml']
+    paths: ['vcv/bytebus/**', 'vcv/shared/**', 'vcv/czish/src/**', 'vcv/vastish/**', 'vcv/otislab/src/**', 'vcv/seance/src/engine/**', 'docs/BYTE_BUS_SPEC.md', '.github/workflows/bytebus.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,9 @@ jobs:
           make -C vcv/bytebus -j2 RACK_DIR=/tmp/Rack-SDK
           make -C vcv/bytebus/tests check RACK_DIR=/tmp/Rack-SDK
       - name: Verify original library and Vastish table compiler
-        run: make -C vcv/bytebus/tests tools-check
+        run: |
+          make -C vcv/bytebus/tests tools-check
+          python3 vcv/bytebus/tools/make_adapter_patches.py --check
       - name: Address and undefined-behavior sanitizers
         env:
           ASAN_OPTIONS: detect_leaks=0

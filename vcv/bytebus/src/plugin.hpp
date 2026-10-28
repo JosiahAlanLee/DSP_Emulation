@@ -15,3 +15,4 @@ extern Model* modelLattice;
 extern Model* modelParallelSum;
 extern Model* modelWheel;
 extern Model* modelRoulette;
+extern Model* modelAdapter;

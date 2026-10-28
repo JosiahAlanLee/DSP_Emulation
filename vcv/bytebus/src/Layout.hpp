@@ -463,4 +463,38 @@ constexpr float CLOCK_OUT_X = 35, CLOCK_OUT_Y = 356;
 constexpr float CLOCK_LIGHT_X = 53, CLOCK_LIGHT_Y = 344;
 } // namespace roulette
 
+namespace adapter {
+constexpr float WIDTH = 240;
+constexpr float WORD_X = 16, WORD_Y = 58;
+constexpr float WORD_W = 208, WORD_H = 25;
+constexpr float BIT0_X = 197, BIT0_Y = 90;
+constexpr float BIT1_X = 175, BIT1_Y = 90;
+constexpr float BIT2_X = 153, BIT2_Y = 90;
+constexpr float BIT3_X = 131, BIT3_Y = 90;
+constexpr float BIT4_X = 109, BIT4_Y = 90;
+constexpr float BIT5_X = 87, BIT5_Y = 90;
+constexpr float BIT6_X = 65, BIT6_Y = 90;
+constexpr float BIT7_X = 43, BIT7_Y = 90;
+constexpr float INPUT_FORMAT_X = 16, INPUT_FORMAT_Y = 111;
+constexpr float INPUT_FORMAT_W = 100, INPUT_FORMAT_H = 22;
+constexpr float OUTPUT_FORMAT_X = 124, OUTPUT_FORMAT_Y = 111;
+constexpr float OUTPUT_FORMAT_W = 100, OUTPUT_FORMAT_H = 22;
+constexpr float SOURCE_X = 16, SOURCE_Y = 158;
+constexpr float SOURCE_W = 126, SOURCE_H = 22;
+constexpr float RATE_X = 190, RATE_Y = 166;
+constexpr float KEEP_X = 45, KEEP_Y = 216;
+constexpr float XOR_X = 120, XOR_Y = 216;
+constexpr float IDLE_X = 195, IDLE_Y = 216;
+constexpr float BUS_IN_X = 34, BUS_IN_Y = 278;
+constexpr float CLOCK_IN_X = 91, CLOCK_IN_Y = 278;
+constexpr float RESET_IN_X = 148, RESET_IN_Y = 278;
+constexpr float LOAD_X = 205, LOAD_Y = 278;
+constexpr float BUS_OUT_X = 42, BUS_OUT_Y = 320;
+constexpr float CLOCK_OUT_X = 120, CLOCK_OUT_Y = 320;
+constexpr float GATES_OUT_X = 198, GATES_OUT_Y = 320;
+constexpr float TRIG_OUT_X = 42, TRIG_OUT_Y = 362;
+constexpr float BIPOLAR_OUT_X = 120, BIPOLAR_OUT_Y = 362;
+constexpr float LEVEL_OUT_X = 198, LEVEL_OUT_Y = 362;
+} // namespace adapter
+
 } // namespace bytebus_layout

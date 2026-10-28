@@ -131,6 +131,12 @@ The wire carries *n* ∈ 0..255. Modules agree on these readings of it:
 | bipolar | (*n* − 128)/128 | −1..+0.9921875 | audio, bipolar CV; 0x80 is exactly 0 |
 | volts | 5 × bipolar | −5 V..+4.96 V | DAC output |
 
+The cable does not tag a word's meaning. CZish/DAC Stage's encoded high bytes
+need explicit conversion before these numeric readings represent the original
+signal. [Adapter](../vcv/bytebus/docs/ADAPTER.md) provides CZ/Yamaha/signed
+codecs, bit routing, trigger extraction and local reclocking. A frame address,
+hit mask, ratio word or encoded device word is not automatically bipolar audio.
+
 Conversions:
 
 - DAC: V = (*n* − 128) × 5/128. One LSB is 39.0625 mV.
@@ -242,6 +248,7 @@ Each module's manual states:
 | Role (hardware counterpart, reference only) | Kind | Here |
 |---|---|---|
 | Converter: ADC in, DAC out (Drezno II) | transparent; sample-and-hold when clocked | **Converter**, with independent ranges, trims and clock policies; [contract](../vcv/bytebus/docs/CONVERTER.md). Vastish also reads/exports its own signals |
+| Format and destination adaptation (original extension) | latching, explicit clock source | **Adapter**: CZ/Yamaha/signed codecs, routing and masks, gate/trigger/CV outputs; [contract](../vcv/bytebus/docs/ADAPTER.md) |
 | Bit logic: invert, toggle, AND mask (Lipsk, Gera) | transparent | **Lookup2** Logic: all sixteen two-input functions on whole words, on A's clock; [contract](../vcv/bytebus/docs/LOOKUP2.md). Vastish LANE A/B + FUN, with optional per-FUN BIT normalization, still composes logic inside a voice |
 | Transfunction: byte → byte through a shape, with shape and phase CV (Jena) | transparent; optional explicit ramp follower | **Lookup**: original generated families, JUMP shape steps from a bus bit, and Vastish/OTIS table import; [contract](../vcv/bytebus/docs/LOOKUP.md). **Vastish BUS**: gate-free pre-amp DSP and stateful transforms; [contract](../vcv/vastish/BUS_SPEC.md) |
 | Counter / phase accumulator (Erfurt) | latching, internal clock | **Counter**: increment from INC or a bus, modulus, Loop/One-shot/Pendulum, seed and carry, with Register's clock ownership; [contract](../vcv/bytebus/docs/COUNTER.md). **Counter 2**: a phase at N/D of the clock, or of a ratio word from Lookup's Ratio family; [contract](../vcv/bytebus/docs/COUNTER2.md) |

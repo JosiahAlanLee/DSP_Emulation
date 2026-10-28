@@ -1,10 +1,11 @@
 # ByteBusLab
 
-Thirteen modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Fourteen modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
 |---|---|---|
+| **Adapter**, 16 HP | CZ/Yamaha/signed byte codecs, bit routing and masks, explicit reclocking, and gate/trigger/bipolar/level outputs. Presets connect encoded DAC words, Gorgon hits, frame addresses and masks. | [Adapter](docs/ADAPTER.md) |
 | **Converter**, 14 HP | Independent ADC/DAC paths, +/-5 or +/-10 V ranges, gain/offset trims and explicit clock policies. | [Converter](docs/CONVERTER.md) |
 | **Clocked Register**, 12 HP | One word of state, selectable clock and reset word; an explicit sampling point for feedback. | [Register](docs/MANUAL.md) |
 | **Lookup**, 16 HP | Ten generated waveform/CV/Walsh/rhythm/envelope/sequence/density/ratio families, numeric morphs, ramp tracking, analog or byte input, and a raw DAC output. JUMP steps SHAPE from a bus bit or a gate. Imports original Vastish tables. | [Lookup](docs/LOOKUP.md) |
@@ -19,7 +20,7 @@ explicit clocking and original table content:
 | **Wheel**, 14 HP | A 24-stage noise register that visits every 24-bit state once, and a loop of 1–24 steps that recirculates until CAPTURE refills it from the noise; both read through an eight-stage window as byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo. | [Wheel](docs/WHEEL.md) |
 | **Roulette**, 14 HP | A phase-locked loop driving a 12-bit counter on two overlapping byte buses: a gate spins the VCO up and the loop filter lets it coast to rest, publishing the count at rest on RESULT; or it tracks an input, loosely or tightly, or divides a clock, after the Nonlinearcircuits Wangernumb. | [Roulette](docs/ROULETTE.md) |
 
-Plugin **ByteBusLab**, version **2.16.5**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.17.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -57,8 +58,25 @@ Vastish patches and includes an original sine recipe and importable example.
 Prototype: not in the release bundles or the VCV Library.
 Hardware clock paths are outside these software tests.
 
+For CZish or DAC Stage BUS -> Converter/Vastish, insert Adapter and select
+the matching CZ, Yamaha or Linear audio preset. Raw device words have a
+different zero/sign convention from standard audio bytes. For Gorgon hits,
+use the drum-trigger preset and TRIG -> Tracks, or BUS -> Bus mode; it removes
+FILL from the hit lanes. See the [Adapter manual](docs/ADAPTER.md) and
+`examples/adapter-cz-audio.vcv` / `examples/adapter-repeated-triggers.vcv`.
+
 Converter's outlined panel labels use DejaVu Sans; its
 [font license](docs/DEJAVU-LICENSE.txt) accompanies the generated SVG.
+
+## Changes in 2.17.0
+
+- Add Adapter with explicit format conversion, post-conversion bit mapping,
+  KEEP/XOR masks, idle words, CZ tracking, and Follow/Jack/Internal/Engine clocks.
+- Provide eight held gates and eight per-publication triggers, bipolar and
+  unipolar monitors, ten presets, and two reproducible example patches.
+- Add exhaustive portable codec/routing tests and actual Rack-module chains
+  through CZish/DAC Stage, Converter, Vastish and OTIS at 44.1/48/96 kHz.
+  Check Gorgon lane/FILL mappings and Seance masks, plus lifecycle and sanitizers.
 
 ## Changes in 2.16.5
 

@@ -1,0 +1,96 @@
+{
+  "version": "2.6.4",
+  "modules": [
+    {
+      "id": 1,
+      "plugin": "ByteBusLab",
+      "model": "ClockedRegister",
+      "version": "2.17.0",
+      "pos": [
+        0,
+        0
+      ],
+      "params": [
+        {
+          "id": 0,
+          "value": 3.0
+        },
+        {
+          "id": 1,
+          "value": 3.0
+        },
+        {
+          "id": 2,
+          "value": 65.0
+        }
+      ],
+      "data": {
+        "word": 65
+      }
+    },
+    {
+      "id": 2,
+      "plugin": "ByteBusLab",
+      "model": "Adapter",
+      "version": "2.17.0",
+      "pos": [
+        12,
+        0
+      ],
+      "params": [
+        {
+          "id": 4,
+          "value": 63.0
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "plugin": "Fundamental",
+      "model": "Split",
+      "version": "2.6.4",
+      "pos": [
+        28,
+        0
+      ],
+      "params": []
+    },
+    {
+      "id": 4,
+      "plugin": "Fundamental",
+      "model": "Split",
+      "version": "2.6.4",
+      "pos": [
+        32,
+        0
+      ],
+      "params": []
+    }
+  ],
+  "cables": [
+    {
+      "id": 1,
+      "outputModuleId": 1,
+      "outputId": 0,
+      "inputModuleId": 2,
+      "inputId": 0,
+      "color": "#80ddc7"
+    },
+    {
+      "id": 2,
+      "outputModuleId": 2,
+      "outputId": 2,
+      "inputModuleId": 3,
+      "inputId": 0,
+      "color": "#80ddc7"
+    },
+    {
+      "id": 3,
+      "outputModuleId": 2,
+      "outputId": 3,
+      "inputModuleId": 4,
+      "inputId": 0,
+      "color": "#80ddc7"
+    }
+  ]
+}

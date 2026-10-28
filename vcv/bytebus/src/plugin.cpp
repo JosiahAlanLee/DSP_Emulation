@@ -15,4 +15,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelParallelSum);
     plugin->addModel(modelWheel);
     plugin->addModel(modelRoulette);
+    plugin->addModel(modelAdapter);
 }
