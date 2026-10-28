@@ -95,9 +95,8 @@ With BUS IN unpatched, the JUMP selector decides what a jump does.
 
 ## Order within a sample
 
-1. RESET or LOAD loads SEED. On that sample, V's edge and the jumps are
-   ignored. H's clock edges are ignored until the seed has been published and
-   a low sample has followed, as on every ClockOwner module.
+1. RESET or LOAD loads SEED. On that sample, H's clock edge, V's edge and the
+   jumps are ignored (RESET priority, as ClockOwner gives it over H's edge).
 2. H counts on its edge, then V on its own edge or H's wrap.
 3. The jumps, from the state the clocks left.
 
