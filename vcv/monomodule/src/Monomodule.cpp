@@ -104,6 +104,10 @@ struct Monomodule : Module {
         if(!active||args.sampleRate!=previousRate||loaded!=lastLoaded){restart(args.sampleRate);lastLoaded=loaded;active=true;}
         int offset=int(frame%mnm_rack::frames);
         bool patched=inputs[TRIG].isConnected();
+        // The TRIG cable was pulled out (or the link takes over): its held gates fall here, so their notes
+        // end rather than sustain until the track's next note.
+        if(external&&!patched)
+            for(int t=0;t<mnm_rack::tracks;++t)if(gates[size_t(t)].high){gates[size_t(t)].high=false;appendRelease(t,offset);}
         const auto* packet=patched?nullptr:emu_rack::soundPacket(leftExpander.module,leftExpander.consumerMessage,args.frame);
         auto linked=link.update(packet,args.frame);
         lights[LINK].setBrightness(link.connected?1.f:0.f);
@@ -222,6 +226,7 @@ struct MonomoduleWidget:ModuleWidget {
         }
         menu->addChild(createMenuLabel(module->worker.status()));
         menu->addChild(createMenuLabel("Latency: "+std::to_string(mnm_rack::queueLatency+module->worker.converterDelay.load())+" host samples"));
+        menu->addChild(createMenuLabel("Through an FX machine: one engine block more, 15–16 samples at 44.1 kHz (about 0.35 ms)"));
         menu->addChild(createMenuLabel("Missed audio blocks: "+std::to_string(module->underruns.load())+" · dropped input blocks: "+std::to_string(module->lostEvents.load())));
         menu->addChild(createMenuLabel("Queue overflows: "+std::to_string(module->worker.overflows.load())+" · coalesced notes: "+std::to_string(module->worker.coalesced.load())));
         menu->addChild(createMenuLabel("Unavailable machine notes: "+std::to_string(module->worker.unavailable.load())));
