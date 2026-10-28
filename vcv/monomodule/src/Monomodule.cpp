@@ -25,6 +25,7 @@ struct Monomodule : Module {
     int64_t frame=0,missedBlock=-1;
     double previousRate=0;
     bool external=false,active=false;
+    std::atomic<bool> initializePending{false};
     std::atomic<uint64_t> underruns{0},lostEvents{0};
     std::mutex pathMutex;
     std::string firmwarePath;
@@ -45,10 +46,15 @@ struct Monomodule : Module {
         for(int i=0;i<8;++i){configParam(P1+i,-127,127,0,"P"+std::to_string(i+1)+" raw offset (SYN page)");configInput(P1_CV+i,"P"+std::to_string(i+1)+" offset · 10 V = 127 · sampled at each note");}
         configInput(INP_A,"INP A · audio for FX machines · 5 V = full scale");
         configInput(INP_B,"INP B · audio for FX machines · 5 V = full scale");
-        for(int t=0;t<mnm_rack::tracks;++t)fxSource[size_t(t)]=t?mnm_rack::NEIBOR:mnm_rack::INP_AB;
+        resetFxInputs();
         configOutput(LEFT,"Main left (OUT BUS AB) · 5 V per full scale");configOutput(RIGHT,"Main right (OUT BUS AB) · 5 V per full scale");
         configOutput(TRACKS_L,"Tracks 1–6, left · polyphonic audio");configOutput(TRACKS_R,"Tracks 1–6, right · polyphonic audio");
         leftExpander.producerMessage=&messages[0];leftExpander.consumerMessage=&messages[1];
+    }
+    void resetFxInputs() {for(int t=0;t<mnm_rack::tracks;++t)fxSource[size_t(t)]=mnm_rack::defaultFxSource(t);}
+    void onReset(const ResetEvent& e) override {
+        Module::onReset(e);
+        resetFxInputs();initializePending.store(true,std::memory_order_release);
     }
     float cv(int input,int track) {return emu_rack::trackCv(inputs[input],track);}
     void loadFirmware(const std::string& path) {
@@ -65,8 +71,8 @@ struct Monomodule : Module {
         json_t* sources=json_object_get(root,"fxInputs");
         for(int t=0;t<mnm_rack::tracks;++t){
             json_t* s=json_array_get(sources,size_t(t));
-            int v=json_is_integer(s)?int(json_integer_value(s)):-1;
-            fxSource[size_t(t)]=v>=mnm_rack::NEIBOR&&v<=mnm_rack::INP_AB?v:(t?mnm_rack::NEIBOR:mnm_rack::INP_AB);
+            json_int_t v=json_is_integer(s)?json_integer_value(s):-1;
+            fxSource[size_t(t)]=v>=mnm_rack::NEIBOR&&v<=mnm_rack::INP_AB?int(v):int(mnm_rack::defaultFxSource(t));
         }
         if(const char* path=json_string_value(json_object_get(root,"firmwarePath")))loadFirmware(path);
     }
@@ -102,6 +108,12 @@ struct Monomodule : Module {
         }
         auto loaded=worker.loaded.load(std::memory_order_acquire);
         if(!active||args.sampleRate!=previousRate||loaded!=lastLoaded){restart(args.sampleRate);lastLoaded=loaded;active=true;}
+        if(initializePending.exchange(false,std::memory_order_acq_rel)){
+            // Invalidate queued audio/events, then initialize the retained backend before any new hit.
+            restart(args.sampleRate);
+            block.events[0].initialize=true;block.events[0].panic=false;
+            for(int t=0;t<mnm_rack::tracks;++t)gates[size_t(t)].high=cv(TRIG,t)>.1f;
+        }
         int offset=int(frame%mnm_rack::frames);
         bool patched=inputs[TRIG].isConnected();
         // The TRIG cable was pulled out (or the link takes over): its held gates fall here, so their notes

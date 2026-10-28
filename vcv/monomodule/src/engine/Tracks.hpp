@@ -29,7 +29,13 @@ template<class Voice> class Tracks {
     }
 public:
     // Track t plays on `voice` (which must outlive this), starting on GND.
-    void attach(int t,Voice& voice) {voices[size_t(t)]=&voice;assign(t,MnmMachine::GND);}
+    void attach(int t,Voice& voice) {voices[size_t(t)]=&voice;initializeTrack(t);}
+    void initializeTrack(int t) {
+        source[size_t(t)]=defaultFxSource(t);
+        voices[size_t(t)]->host().noteOff();
+        assign(t,MnmMachine::GND);
+    }
+    void initialize() {for(int t=0;t<tracks;++t)initializeTrack(t);}
     MnmMachine machine(int t) const {return current[size_t(t)];}
     bool fire(const Hit& hit) {
         const auto* def=machineDef(hit.machine);

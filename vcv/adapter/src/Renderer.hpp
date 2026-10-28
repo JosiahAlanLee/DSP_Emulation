@@ -24,6 +24,8 @@ public:
     virtual void configure(const uint8_t (&/*settings*/)[trackSettings]) {}   // per-track settings, every block
     // The input frames for the next render(), at the native rate: nativeFrames x L::inputs, interleaved.
     virtual void input(const float* /*frames*/) {}
+    // Explicit module Initialize, distinct from a transport panic. Runs on the worker.
+    virtual void initialize() {panic();}
     virtual void panic()=0;
     virtual void render(float (&out)[L::nativeFrames][L::channels])=0;
 };
@@ -90,7 +92,8 @@ public:
             std::array<bool,tracks> fired{};
             while(pendingRead<pendingWrite&&pending[pendingRead%pending.size()].frame<=native){
                 const auto& ev=pending[pendingRead++%pending.size()].event;
-                if(ev.panic){backend.panic();fired.fill(false);}
+                if(ev.initialize){backend.initialize();fired.fill(false);}
+                else if(ev.panic){backend.panic();fired.fill(false);}
                 else if(ev.release){if(ev.hit.track<tracks)backend.release(ev.hit.track);}
                 else if(ev.hit.velocity&&ev.hit.track<tracks){
                     if(fired[ev.hit.track])++coalesced;

@@ -29,6 +29,7 @@ public:
     }
     void configure(const uint8_t (&settings)[emu_rack::trackSettings]) override {inner->configure(settings);}
     void input(const float* frames) override {inner->input(frames);}
+    void initialize() override {started.fill(false);held.fill(false);inner->initialize();}
     void panic() override {started.fill(false);held.fill(false);inner->panic();}
     void render(float (&out)[nativeFrames][channels]) override {
         inner->render(out);

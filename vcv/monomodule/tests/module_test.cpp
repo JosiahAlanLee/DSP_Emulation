@@ -20,9 +20,106 @@ static mnm_rack::Worker::Factory factory(Trace& trace){return [&trace](const std
 static void ready(Monomodule& m){m.worker.load("fake");auto end=std::chrono::steady_clock::now()+std::chrono::seconds(5);while(!m.worker.ready){assert(std::chrono::steady_clock::now()<end);std::this_thread::sleep_for(std::chrono::milliseconds(1));}}
 static void drain(){std::this_thread::sleep_for(std::chrono::milliseconds(5));}
 static void flip(Module& m){if(m.leftExpander.messageFlipRequested){std::swap(m.leftExpander.producerMessage,m.leftExpander.consumerMessage);m.leftExpander.messageFlipRequested=false;}}
+// Publish worker-owned host state under a mutex; the test never reads a live backend directly.
+struct HostTrace {
+    std::mutex mutex;
+    std::array<MnmMachine,tracks> machines{};
+    std::array<bool,tracks> gates{};
+    std::array<uint8_t,tracks> settings{};
+    int loads=0;
+};
+class HostBackend:public Backend {
+    HostTrace& trace;
+    std::array<HostVoice,tracks> voices;
+    Tracks<HostVoice> state;
+public:
+    explicit HostBackend(HostTrace& t):trace(t){for(int i=0;i<tracks;++i)state.attach(i,voices[i]);std::lock_guard<std::mutex> lock(trace.mutex);++trace.loads;}
+    bool fire(const Hit& h) override{return state.fire(h);}
+    void release(int t) override{state.release(t);}
+    void initialize() override{state.initialize();}
+    void panic() override{state.panic();}
+    void configure(const uint8_t (&s)[emu_rack::trackSettings]) override{state.configure(s);std::lock_guard<std::mutex> lock(trace.mutex);std::copy(s,s+tracks,trace.settings.begin());}
+    void input(const float* in) override{state.input(in);}
+    void render(float (&out)[nativeFrames][channels]) override{
+        state.render(out);std::lock_guard<std::mutex> lock(trace.mutex);
+        for(int t=0;t<tracks;++t){trace.machines[t]=state.machine(t);trace.gates[t]=voices[t].gate;}
+    }
+};
+struct RoutingVoice:HostVoice {
+    std::array<float,nativeFrames> receivedL{},receivedR{};
+    float level=0;
+    void process(float* l,float* r,int n){step();std::fill(l,l+n,level);std::fill(r,r+n,-level);}
+    void processFx(const float* l,const float* r,float* outL,float* outR,int n){
+        std::copy(l,l+n,receivedL.begin());std::copy(r,r+n,receivedR.begin());HostVoice::processFx(l,r,outL,outR,n);
+    }
+};
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
-    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.2";modelMonomodule->plugin=&receiverPlugin;
+    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.3";modelMonomodule->plugin=&receiverPlugin;
+    {
+        // Rack Initialize must reach the live worker without reconstructing its OS-backed engine.
+        HostTrace trace;
+        auto m=std::make_unique<Monomodule>([&](const std::string&,const std::string&){return std::make_unique<HostBackend>(trace);});
+        m->model=modelMonomodule;ready(*m);m->inputs[Monomodule::TRIG].channels=6;
+        Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+        auto run=[&](int count){for(int f=0;f<count;++f){++args.frame;m->process(args);if(f%128==127)drain();}drain();};
+        run(2000);
+        for(int t=0;t<tracks;++t){m->fxSource[t]=INP_B;m->inputs[Monomodule::TRIG].setVoltage(10,t);}
+        m->params[Monomodule::MACHINE].setValue(4);run(2000);
+        {std::lock_guard<std::mutex> lock(trace.mutex);for(int t=0;t<tracks;++t)assert(trace.machines[t]!=MnmMachine::GND&&trace.gates[t]);}
+        Module::ResetEvent reset;m->onReset(reset);run(3000);
+        {std::lock_guard<std::mutex> lock(trace.mutex);
+            assert(trace.loads==1&&m->worker.ready&&m->worker.loaded==1);
+            for(int t=0;t<tracks;++t){assert(trace.machines[t]==MnmMachine::GND&&!trace.gates[t]);assert(trace.settings[t]==(t?NEIBOR:INP_AB));}}
+        // An FX machine must also lose its continuous trig on Initialize.
+        for(int t=0;t<tracks;++t)m->inputs[Monomodule::TRIG].setVoltage(0,t);run(1000);
+        m->params[Monomodule::MACHINE].setValue(21);
+        for(int t=0;t<tracks;++t)m->inputs[Monomodule::TRIG].setVoltage(10,t);run(2000);
+        {std::lock_guard<std::mutex> lock(trace.mutex);for(auto machine:trace.machines)assert(mnm::host::isFxMachine(machine));}
+        m->onReset(reset);run(3000);
+        {std::lock_guard<std::mutex> lock(trace.mutex);assert(trace.loads==1);for(int t=0;t<tracks;++t)assert(trace.machines[t]==MnmMachine::GND&&!trace.gates[t]);}
+        std::cout<<"Initialize: every track GND, default FX inputs, no notes, OS retained, passed\n";
+    }
+    {
+        std::array<RoutingVoice,tracks> voices;Tracks<RoutingVoice> state;
+        for(int t=0;t<tracks;++t){state.attach(t,voices[t]);voices[t].level=float(t+1)/10;}
+        auto fire=[&](int t){Hit h;h.track=t;h.machine=int16_t(MnmMachine::THRU);h.note=60;assert(state.fire(h));};
+        float in[nativeFrames][inputs],out[nativeFrames][channels];
+        for(int f=0;f<nativeFrames;++f){in[f][0]=float(f+1)/100;in[f][1]=-float(f+1)/50;}
+        uint8_t settings[emu_rack::trackSettings]={};
+        const mnm::host::FxInput sources[]={mnm::host::FxInput::Neighbor,mnm::host::FxInput::InpA,mnm::host::FxInput::InpB,mnm::host::FxInput::InpAB};
+        fire(1);
+        for(int source=NEIBOR;source<=INP_AB;++source){
+            settings[1]=source;state.configure(settings);
+            HostVoice expected;expected.host().setRouting(mnm::host::dspInputBits(sources[source]));
+            assert(voices[1].host().routingWord()==expected.host().routingWord());
+            voices[0].level+=.1f;state.input(&in[0][0]);state.render(out);
+            for(int f=0;f<nativeFrames;++f){assert(voices[1].receivedL[f]==(source==NEIBOR?voices[0].level:in[f][0]));assert(voices[1].receivedR[f]==(source==NEIBOR?-voices[0].level:in[f][1]));}
+        }
+        // Two adjacent FX tracks prove a neighbour uses this block, including stereo and the first-track boundary.
+        fire(2);settings[1]=INP_AB;settings[2]=NEIBOR;state.configure(settings);state.input(&in[0][0]);state.render(out);
+        for(int f=0;f<nativeFrames;++f){assert(voices[2].receivedL[f]==in[f][0]);assert(voices[2].receivedR[f]==in[f][1]);}
+        fire(0);state.render(out);
+        for(int f=0;f<nativeFrames;++f)assert(voices[0].receivedL[f]==0&&voices[0].receivedR[f]==0);
+        std::cout<<"FX routing: all source bits, external stereo buffers, same-block neighbour, first-track silence passed\n";
+    }
+    {
+        // Patch values are validated before narrowing to int; every invalid/missing entry uses its default.
+        auto m=std::make_unique<Monomodule>();
+        auto check=[&](const char* text,const std::array<int,tracks>& expected){
+            json_error_t error;auto* root=json_loads(text,0,&error);assert(root);
+            m->dataFromJson(root);json_decref(root);
+            for(int t=0;t<tracks;++t)assert(m->fxSource[t]==expected[t]);
+        };
+        check("{}",{INP_AB,NEIBOR,NEIBOR,NEIBOR,NEIBOR,NEIBOR});
+        check("{\"fxInputs\":[1,2]}",{INP_A,INP_B,NEIBOR,NEIBOR,NEIBOR,NEIBOR});
+        check("{\"fxInputs\":[-1,4,1.0,\"2\",null,4294967297]}",{INP_AB,NEIBOR,NEIBOR,NEIBOR,NEIBOR,NEIBOR});
+        check("{\"fxInputs\":7}",{INP_AB,NEIBOR,NEIBOR,NEIBOR,NEIBOR,NEIBOR});
+        for(int t=0;t<tracks;++t)m->fxSource[t]=t%4;
+        auto* saved=m->dataToJson();auto copy=std::make_unique<Monomodule>();copy->dataFromJson(saved);json_decref(saved);
+        for(int t=0;t<tracks;++t)assert(copy->fxSource[t]==t%4);
+        std::cout<<"FX inputs: round trip and malformed patches passed\n";
+    }
     {
         // TRIG: track 3 plays V/OCT's note while its gate is high, and ends when it falls.
         Trace trace;auto mm=std::make_unique<Monomodule>(factory(trace));auto& m=*mm;m.model=modelMonomodule;ready(m);

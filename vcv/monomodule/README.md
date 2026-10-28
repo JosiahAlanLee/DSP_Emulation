@@ -36,7 +36,7 @@ Loading an OS, as opening a patch does, starts every track on GND.
 | TEMPO | The engine tempo for synced LFOs and delays. Set it to Gorgon's. |
 | GAIN | Output level. |
 | P1–P8 + CV | Raw offsets to the SYN page, added to each note's locks or the machine's defaults, sampled at the note. The menu lists the selected machine's parameter names. |
-| RESET | A rising edge ends every note. Each track keeps its machine and settings, and an FX track keeps processing its input. |
+| RESET | A rising edge ends every note. Each track keeps its machine and settings, and an FX track keeps processing its input. Patching Gorgon’s RESET output here ends held notes at every loop wrap; use the sound link, or a gate that fires only on stop/seek, to preserve held notes across loops. |
 | INP A / INP B | Audio for the FX machines. |
 
 | Output | |
@@ -118,6 +118,18 @@ prints a note and exits 77 (skipped). It passed on 2026-10-27 with OS 1.32B, at
 
 `make dist` writes the `.vcvplugin` and its corresponding-source archive. The shared
 emulated-instrument adapter is `../adapter` (its README draws the AGPL/BSD boundary).
+
+## Changes in 2.0.3
+
+Rack’s **Initialize** returns every track to GND, ends its note (including an FX
+track’s continuous trig), and restores FX inputs: INP A+B on track 1, NEIBOR on
+tracks 2–6. It keeps the loaded OS and its engines. A held TRIG must fall and rise
+again to start a new note. Transport panics and the RESET jack retain their existing
+behavior.
+
+Patch FX inputs round-trip in `fxInputs`. Missing entries, a missing or non-array
+`fxInputs`, and values that are not integers in 0–3 use that track’s default;
+extra entries are ignored. Valid entries in a short or mixed array are preserved.
 
 ## License
 
