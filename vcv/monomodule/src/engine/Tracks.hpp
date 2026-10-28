@@ -46,6 +46,7 @@ public:
         host.noteOn(hit.note>=0?hit.note:60);
         return true;
     }
+    // An FX machine's trig is what lets it pass audio, so neither a gate's fall nor a panic ends it.
     void release(int track) {if(!fx[size_t(track)])voices[size_t(track)]->host().noteOff();}
     void configure(const uint8_t (&settings)[emu_rack::trackSettings]) {
         for(int t=0;t<tracks;++t){
@@ -56,9 +57,9 @@ public:
     void input(const float* frames) {
         for(int f=0;f<nativeFrames;++f){inA[f]=frames[f*inputs];inB[f]=frames[f*inputs+1];}
     }
-    void panic() {
-        for(int t=0;t<tracks;++t){voices[size_t(t)]->host().noteOff();assign(t,MnmMachine::GND);}
-    }
+    // A stop, seek, RESET or restart ends every note and nothing else, as on the hardware: each track keeps
+    // its machine, its settings and its FX input, and an FX track keeps processing that input.
+    void panic() {for(int t=0;t<tracks;++t)release(t);}
     // Tracks render in index order, so an FX track on NEIBOR reads the track before it as rendered this
     // block. On INP A/B the DSP takes INP A as its left input and INP B as its right; the routing bits
     // choose which it hears, as on the hardware.

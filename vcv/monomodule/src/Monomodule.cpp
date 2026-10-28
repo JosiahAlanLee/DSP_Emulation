@@ -41,7 +41,7 @@ struct Monomodule : Module {
         configInput(TRIG,"Gates · 6 polyphonic tracks; each gate is a note, held until it falls · cable overrides Gorgon link");
         configInput(VOCT,"V/OCT · the note at each TRIG gate, C4 = 0 V · mono reaches every track");
         configInput(MACHINE_CV,"Machine · 0–10 V spans the 22 machines · overrides the selector when the hit has no machine");
-        configInput(RESET,"Panic · rising edge ends every note before simultaneous hits");
+        configInput(RESET,"Panic · rising edge ends every note before simultaneous hits · machines and FX tracks stay");
         for(int i=0;i<8;++i){configParam(P1+i,-127,127,0,"P"+std::to_string(i+1)+" raw offset (SYN page)");configInput(P1_CV+i,"P"+std::to_string(i+1)+" offset · 10 V = 127 · sampled at each note");}
         configInput(INP_A,"INP A · audio for FX machines · 5 V = full scale");
         configInput(INP_B,"INP B · audio for FX machines · 5 V = full scale");
@@ -112,7 +112,8 @@ struct Monomodule : Module {
         auto linked=link.update(packet,args.frame);
         lights[LINK].setBrightness(link.connected?1.f:0.f);
         // Gorgon pulses RESET at every loop wrap. For drums that is a panic (Machinemodule); here it would
-        // end every held note and FX tail each loop, so only a seek, a stop or a disconnect is.
+        // end every held note each loop, so only a seek, a stop or a disconnect is. A panic ends notes
+        // only: every track keeps its machine and an FX track keeps processing (Tracks::panic).
         if(linked.panic&&!linked.resetOnly)appendPanic(offset);
         if(reset.process(inputs[RESET].getVoltage()))appendPanic(offset);
         if(patched){
