@@ -190,9 +190,14 @@ struct ByteLookup : Module {
         libraryV2Mismatch.store(json_is_string(id2) && std::string(json_string_value(id2)) != dspemu::lookup::LIBRARY_V2_SHA256);
         auto* id3 = json_object_get(root,"library_v3_sha256");   // absent before ByteBusLab 2.11
         libraryV3Mismatch.store(json_is_string(id3) && std::string(json_string_value(id3)) != dspemu::lookup::LIBRARY_V3_SHA256);
-        if (auto* table = json_object_get(root,"custom")) try { loadJson(table,false); tableError.clear(); }
-        catch (const std::exception& error) { tableError = error.what(); }
-        else {
+        // With no table, or one that fails to load, Custom plays Identity; a failure's message stays
+        // for the menu.
+        bool loaded = false;
+        if (auto* table = json_object_get(root,"custom")) {
+            try { loadJson(table,false); tableError.clear(); loaded = true; }
+            catch (const std::exception& error) { tableError = error.what(); }
+        }
+        if (!loaded) {
             auto slot = std::make_unique<LookupTableSlot>(); for (int n = 0; n < 256; ++n) slot->values[n] = n;
             slot->name = "Identity"; publish(slot.release());
         }

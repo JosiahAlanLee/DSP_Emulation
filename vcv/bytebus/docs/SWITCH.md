@@ -92,7 +92,10 @@ RATE, and Engine rate as every sample with no clock channel. On each of its
 edges it evaluates the operation from A's, B's and C's raw lines; A's clock is
 ignored like the others. Taking the clock over (patching CLOCK in Auto, or
 choosing one of these sources) publishes the current result first, as a LOAD
-does on Register, with the following low sample before the next edge. There is
+does on Register, with the following low sample before the next edge. If BUS
+OUT's CLK was high on the last Follow A sample (A's CLK level), a low sample is
+inserted first and the result, computed then, is published on the sample after,
+so a clocked reader downstream sees a rising edge. There is
 no RESET input: nothing is held that a reset would restore.
 
 Changing SOURCE back to Follow A, or unpatching CLOCK in Auto, returns to A's

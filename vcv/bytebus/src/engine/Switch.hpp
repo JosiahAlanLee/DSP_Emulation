@@ -42,8 +42,9 @@ struct Switch {
     uint8_t held = 0;
     bool owned = false;
     bool fresh = true;       // no result computed from a clocked A since the reset
+    bool lastClk = false;    // BUS OUT's CLK on the previous sample
 
-    void clear() { owner.clear(); held = 0; owned = false; fresh = true; }
+    void clear() { owner.clear(); held = 0; owned = false; fresh = true; lastClk = false; }
     Output tick(const Parameters& p, const Inputs& in, double sampleRate) {
         // B and C are read as raw lines at the output's sample instants, whatever their own clocks.
         uint8_t b = in.b.connected ? in.b.rawWord : p.b, c = in.c.connected ? in.c.rawWord : p.c;
@@ -59,10 +60,12 @@ struct Switch {
             if (!out.clocked || in.a.rising || fresh) { held = apply(p.op, p.bit, in.a.rawWord, b, c); out.evaluated = true; }
             if (out.clocked) fresh = false;
             out.word = held;
+            lastClk = out.clk;
             return out;
         }
-        // Taking the clock over publishes the current result first, as a load does.
-        if (!owned) { owner.clear(); owned = true; }
+        // Taking the clock over publishes the current result first, as a load does. Follow A's
+        // CLK level was A's, not the owner's: if it was high, the owner inserts a low sample first.
+        if (!owned) { owner.clear(); owner.strobe = lastClk; owned = true; }
         fresh = false;
         clock_owner::Inputs clock;
         clock.clockConnected = in.clockConnected; clock.clock = in.clock;
@@ -71,6 +74,7 @@ struct Switch {
         auto step = owner.tick(mode, p.rateHz, clock, sampleRate);
         if (step.loaded || step.acquire) { held = apply(p.op, p.bit, in.a.rawWord, b, c); out.evaluated = true; }
         out.word = held; out.clocked = step.clocked; out.clk = step.clk; out.owned = true;
+        lastClk = out.clocked && out.clk;
         return out;
     }
 };

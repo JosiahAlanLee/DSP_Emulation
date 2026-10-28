@@ -238,6 +238,36 @@ static std::vector<uint8_t> feedback(std::shared_ptr<const lu::Library> library,
     for (size_t i=0;i<first.size();++i) assert(first[i]==(i&1 ? 0x5a : 0xa5));
     return first;
 }
+// Review 2026-10-27 #26: a patch whose embedded table fails to load plays Custom as Identity,
+// keeps the error for the menu, and saves the identity table.
+static void damagedTableRegression(std::shared_ptr<const lu::Library> library) {
+    auto a = args();
+    auto damaged = [] {
+        json_t* table = custom(); json_array_set_new(json_object_get(table,"values"),0,json_integer(7));
+        json_t* root = json_object(); json_object_set_new(root,"custom",table); return root;
+    };
+    // A fresh module (patch load).
+    ByteLookup m(library); outputs(m); m.model = modelLookup;
+    json_t* patch = damaged(); m.dataFromJson(patch); json_decref(patch);
+    assert(!m.tableError.empty() && m.uiTable && m.uiTable->name == "Identity");
+    m.params[ByteLookup::FAMILY].setValue(lu::Custom); m.params[ByteLookup::SHAPE].setValue(32);
+    set(m.inputs[ByteLookup::BUS_IN],0x42); m.process(a);
+    assert(word(m.outputs[ByteLookup::BUS_OUT])==0x42);
+    json_t* saved = m.dataToJson(); json_t* table = json_object_get(saved,"custom");
+    assert(table && json_integer_value(json_array_get(json_object_get(table,"values"),0x42))==0x42);
+    ByteLookup reopened(library); outputs(reopened); reopened.model = modelLookup;
+    reopened.dataFromJson(saved); json_decref(saved);
+    assert(reopened.tableError.empty() && reopened.uiTable && reopened.uiTable->name == "Identity");
+    // A live module playing another table (preset load or undo) does not keep playing it.
+    ByteLookup live(library); outputs(live); live.model = modelLookup;
+    auto* good = custom(); live.loadJson(good,true); json_decref(good); live.process(a);
+    set(live.inputs[ByteLookup::BUS_IN],0x42); live.process(a);
+    assert(word(live.outputs[ByteLookup::BUS_OUT])==255-0x42);
+    patch = damaged(); live.dataFromJson(patch); json_decref(patch);
+    live.process(a); live.collect(); live.process(a);
+    assert(!live.tableError.empty() && word(live.outputs[ByteLookup::BUS_OUT])==0x42);
+}
+
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug="ByteBusLab"; plugin.version="2.1.0"; plugin.path=std::filesystem::absolute("..").string();
@@ -245,6 +275,7 @@ int main() {
     auto library=std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
     { ByteLookup packaged; assert(packaged.library->ready && packaged.library->readyV2 && packaged.library->readyV3 && packaged.libraryError.empty()); }
     libraryV2Module();
+    damagedTableRegression(library);
     adapter(library);
     lookup2Module();
     for (float sr : {44100.f,48000.f,96000.f}) jump(library,sr);

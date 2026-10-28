@@ -227,7 +227,9 @@ Successful loading selects Custom with SHAPE 32. The file must declare
 and a matching `fnv1a64:…` hash. Name and source recipe are retained, and the
 complete table is embedded in saved patches. Reload does not need the source
 file. The import validates that fingerprint; the compiler additionally records
-SHA-256 for provenance.
+SHA-256 for provenance. A patch whose embedded table fails these checks (a
+hand-edited value, say) loads with Custom as identity and shows the reason in
+the context menu; saving it then embeds the identity table.
 
 The compiler uses the repository's existing Vastish implementation, including
 its acknowledged Pure Data-derived DSP equations. See
