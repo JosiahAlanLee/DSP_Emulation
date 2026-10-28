@@ -114,11 +114,17 @@ channels), ±5 V is full scale before DRIVE, and the final output is bounded at
 
 RATE is displayed in Hz at the nominal Yamaha clock; changing the menu's chip
 clock scales it. RATE CV is 1 V/octave; DRIVE CV is 6 dB/V; BITS CV is 1 bit/V,
-rounded and clamped. The readout shows effective Hz and bits. On first selecting
-LINEAR at the untouched default RATE, it adopts the current host rate; leaving
+rounded and clamped. The readout shows effective Hz and bits. When selecting
+LINEAR from the panel selector at the untouched default RATE, it adopts the
+current host rate (clamped to the RATE knob’s 1–96 kHz range); leaving
 LINEAR with that rate unchanged restores the exact YM default. CZ
 selects a 20 kHz TONE default when TONE was still at the previous profile's
-default. Saved/user-edited settings take precedence.
+default. The selector (left or right click; double-click resets the profile)
+applies these defaults on the UI thread as one undo step, including RATE and
+TONE. Saved/user-edited settings take precedence. Patch/preset loading and
+direct PROFILE parameter writes (including automation and randomization) keep
+RATE and TONE unchanged. There is no PROFILE CV input or module context-menu
+profile setting. Initialize restores YM FP and all factory parameter defaults.
 
 **AA OFF** uses four-point Hermite input sampling, with one host-sample delay.
 **AA ON** uses sinc filtering and a continuously maintained cascade of half-band

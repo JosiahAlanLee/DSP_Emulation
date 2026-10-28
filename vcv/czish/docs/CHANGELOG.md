@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.3
+
+- DAC Stage: profile defaults are applied by the panel selector on the UI
+  thread, as one undoable change including RATE and TONE. Audio processing
+  never writes parameters. Patch/preset loads and direct parameter automation
+  preserve saved RATE and TONE; Initialize restores the module defaults.
+- DAC Stage: the selected LINEAR host rate is clamped to the RATE knob range
+  before being remembered, so leaving LINEAR restores the YM default even
+  when the host rate exceeds 96 kHz.
+
 ## 2.1.2
 
 - CZish: a portamento glide now runs only while the gate is high. A V/OCT
