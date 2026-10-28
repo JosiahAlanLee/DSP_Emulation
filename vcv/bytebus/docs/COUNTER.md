@@ -128,14 +128,14 @@ Both:
 
 ## Clock, reset and strobe timing
 
-Identical to Clocked Register's [clock ownership](MANUAL.md#clock-ownership)
-and [clock and reset timing](MANUAL.md#clock-and-reset-timing): Auto
-selection by connection, external edge detectors tracked while unselected, an
-initially high clock counting as its first edge, one-sample strobes with a
-mandatory low sample, RESET priority over a simultaneous edge, seed
-publication after LOAD/RESET with acquisition suppressed for that strobe and
-the following low sample, held-high RESET not reloading. Engine rate counts
-every sample and emits no clock channel.
+Identical to Clocked Register's [clock ownership](MANUAL.md#clock-ownership) and
+[clock and reset timing](MANUAL.md#clock-and-reset-timing): Auto selection by
+connection, external edge detectors tracked while unselected, publication of the
+held state before acquisition after a fresh start, Initialize or restore,
+one-sample strobes with a mandatory low sample, RESET priority over a
+simultaneous edge, seed publication after LOAD/RESET with acquisition suppressed
+for that strobe and the following low sample, held-high RESET not reloading.
+Engine rate counts every sample and emits no clock channel.
 
 Both modules run the same state machine, `src/engine/ClockOwner.hpp`; Counter
 adds only its word and what an edge does to it.
@@ -200,3 +200,12 @@ Lookup Rhythm → Split producing the gate sequence the portable Lookup engine
 computes directly, with a low half-step between steps, at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start at 00; restore starts from the saved word.
+The first sample publishes that word without acquiring from an already-high
+clock. A RESET or LOAD already high on that sample takes priority and loads
+SEED instead; holding it high does not reload or block later clock edges. BUS IN
+replaces INC from its raw lines on the next acquisition, including when its
+own CLK is stopped.

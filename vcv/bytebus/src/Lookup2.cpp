@@ -69,6 +69,7 @@ struct ByteLookup2 : Module {
     void dataFromJson(json_t* root) override {
         auto* steps = json_object_get(root,"jump");
         int saved = json_is_integer(steps) ? int(std::max<json_int_t>(0,std::min<json_int_t>(63,json_integer_value(steps)))) : 0;
+        resetGate.reset(); resetButtonHigh = false;
         engine.reset(); readerA.reset(); readerB.reset(); jumpReader.reset();
         jump.clear(); jump.steps = saved; jumpSteps.store(saved);
     }

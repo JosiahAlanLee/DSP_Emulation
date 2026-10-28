@@ -264,3 +264,17 @@ at a fractional address, and that Lookup Ratio into Counter 2's RATIO gives the
 chosen ratio's carries through one-sample cables in random order. The audio
 path performs no heap allocations. GUI and physical device behavior require
 separate workstation checks.
+
+## First sample after Initialize or restore
+
+Fresh instances, Initialize and restore reset the held Map/Follow result
+to neutral 80. With clocked BUS IN initially low, that result holds until
+the first rising CLK; initially high CLK latches and maps the word immediately.
+This follows the bus input clock, rather than generating an acquisition strobe.
+Unclocked BUS IN, SIGNAL, Map/Engine and Track evaluate immediately (Track
+starts unlocked). A connected BUS IN takes priority over SIGNAL.
+JUMP already high does not step: an unclocked bit is primed at its current
+level, and the first clocked publication only arms JUMP. Restored JUMP steps
+are kept unless RESET is already high, which clears them once and resets
+the follower. Held RESET allows later JUMP edges. Restore rearms RESET,
+including when loading into a running instance.

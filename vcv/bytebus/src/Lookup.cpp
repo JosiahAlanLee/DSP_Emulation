@@ -201,6 +201,7 @@ struct ByteLookup : Module {
             auto slot = std::make_unique<LookupTableSlot>(); for (int n = 0; n < 256; ++n) slot->values[n] = n;
             slot->name = "Identity"; publish(slot.release());
         }
+        resetGate.reset(); resetButtonHigh = false;
         engine.reset(); reader.reset();
         // Patches before ByteBusLab 2.5 have no JUMP steps.
         auto* steps = json_object_get(root,"jump");

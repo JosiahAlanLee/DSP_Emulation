@@ -268,12 +268,64 @@ static void damagedTableRegression(std::shared_ptr<const lu::Library> library) {
     assert(!live.tableError.empty() && word(live.outputs[ByteLookup::BUS_OUT])==0x42);
 }
 
-int main() {
+static void firstLookupSamples(std::shared_ptr<const lu::Library> library) {
+    for (int lifecycle = 0; lifecycle < 3; ++lifecycle) for (int busMode = 0; busMode < 3; ++busMode) {
+        ByteLookup m(library); ByteLookup2 n; m.model = modelLookup; n.model = modelLookup2;
+        outputs(m); outputs(n); auto a = args();
+        if (lifecycle == 1) { m.onReset(Module::ResetEvent{}); n.onReset(Module::ResetEvent{}); }
+        if (lifecycle == 2) {
+            json_t* j = json_pack("{s:i}", "jump", 7);
+            m.dataFromJson(j); n.dataFromJson(j); json_decref(j);
+        }
+        m.params[m.FAMILY].setValue(lu::Curve); m.params[m.SHAPE].setValue(0);
+        set(m.inputs[m.BUS_IN], 0x42, busMode != 0, busMode == 2);
+        set(n.inputs[n.A_IN], 0x42, busMode != 0, busMode == 2);
+        set(n.inputs[n.B_IN], 0xa5, true, false);
+        set(m.inputs[m.JUMP_IN], 1, busMode != 0, busMode == 2);
+        set(n.inputs[n.JUMP_IN], 1, busMode != 0, busMode == 2);
+        m.process(a); n.process(a);
+        assert(m.jump.steps == (lifecycle == 2 ? 7 : 0));
+        assert(n.jump.steps == (lifecycle == 2 ? 7 : 0));
+        // Offset affects the operation, so compare against each module's actual evaluator.
+        assert(word(m.outputs[m.BUS_OUT]) == (busMode == 1 ? 128 :
+            lu::evaluate(*library, lu::Parameters{lu::Curve, double(m.jump.steps)}, 0x42, m.jump.steps)));
+        assert(word(n.outputs[n.BUS_OUT]) == dspemu::lookup2::logic(n.jump.steps, 0x42, 0xa5));
+        assert(m.outputs[m.BUS_OUT].getVoltage(8) == (busMode == 2 ? 10 : 0));
+        assert(n.outputs[n.BUS_OUT].getVoltage(8) == (busMode == 2 ? 10 : 0));
+    }
+}
+
+// Restoring into a running module must rearm RESET just as a fresh patch load does.
+// Otherwise a pre-restore high RESET leaves the saved JUMP offset uncleared.
+template<class M> static void restoreReset(M& m, bool button = false) {
+    outputs(m); auto a = args();
+    m.inputs[M::RESET_IN].channels = 1;
+    m.inputs[M::RESET_IN].setVoltage(button ? 0 : 10);
+    m.params[M::RESET_BUTTON].setValue(button ? 1 : 0);
+    m.process(a); // detector is high before loading a preset/undo snapshot
+    json_t* saved = json_pack("{s:i}", "jump", 7);
+    m.dataFromJson(saved); json_decref(saved);
+    m.process(a);
+    assert(m.jump.steps == 0); // same as loading this snapshot into a fresh module
+    // A held RESET is still edge-triggered: a later JUMP is allowed.
+    set(m.inputs[M::JUMP_IN], 0); m.process(a);
+    set(m.inputs[M::JUMP_IN], 1); m.process(a);
+    assert(m.jump.steps == 1);
+}
+
+int main(int argc, char** argv) {
     Context context; context.engine=new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug="ByteBusLab"; plugin.version="2.1.0"; plugin.path=std::filesystem::absolute("..").string();
     plugin.addModel(modelLookup); plugin.addModel(modelLookup2); plugin.addModel(modelClockedRegister); pluginInstance=&plugin; rack::plugin::plugins.push_back(&plugin);
     auto library=std::make_shared<lu::Library>(lu::Library::load("../res/lookup-v1.bin"));
+    if (argc == 2) {
+        if (std::string(argv[1]) == "restore-reset-lookup") { ByteLookup m(library); restoreReset(m); }
+        else { ByteLookup2 m; restoreReset(m); }
+        return 0;
+    }
+    { ByteLookup m(library); restoreReset(m); restoreReset(m, true); ByteLookup2 n; restoreReset(n); restoreReset(n, true); }
     { ByteLookup packaged; assert(packaged.library->ready && packaged.library->readyV2 && packaged.library->readyV3 && packaged.libraryError.empty()); }
+    firstLookupSamples(library);
     libraryV2Module();
     damagedTableRegression(library);
     adapter(library);

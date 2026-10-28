@@ -97,12 +97,12 @@ Both buses read eight stages through one window: bit *k* of the word is stage
 ## Clock, reset and strobe timing
 
 Clock ownership is the shared `src/engine/ClockOwner.hpp`, as on Counter: Auto
-selection by connection, an initially high clock counting as its first edge,
-one-sample strobes with a mandatory low sample, RESET priority over a
-simultaneous edge, the seed published after RESET or LOAD with acquisition
-suppressed for that strobe and the low sample after it. Both buses share one
-strobe. Engine rate steps every sample and emits no clock channel. Each cable
-hop costs one engine sample.
+selection by connection, publication of the held state before acquisition after
+a fresh start, Initialize or restore, one-sample strobes with a mandatory low
+sample, RESET priority over a simultaneous edge, the seed published after RESET
+or LOAD with acquisition suppressed for that strobe and the low sample after it.
+Both buses share one strobe. Engine rate steps every sample and emits no clock
+channel. Each cable hop costs one engine sample.
 
 ## Saving and reset
 
@@ -145,3 +145,12 @@ Counter's clock and CARRY driving Wheel's CLOCK and CAPTURE, in random module
 order, identical at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
+
+## First sample after Initialize or restore
+
+A fresh instance and Initialize start both registers at 000000. Restore
+publishes the saved registers through the current window. An already-high
+CLOCK does not shift them. RESET or LOAD already high loads SEED once
+instead; held RESET does not block later clocks. CAPTURE already high arms
+a capture immediately, including across RESET; it copies the newly advanced
+FREE register on the next acquisition, not the initial publication.
