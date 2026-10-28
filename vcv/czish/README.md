@@ -68,12 +68,15 @@ chip's high-pitch DCW limit. **VIB CV** adds vibrato depth (10 V spans 0–99).
 and enable, detune direction, bend range, master tuning and portamento.
 As the CZ-101 manual describes, a portamento glide takes the same time whatever
 the interval; TIME sets that time (provisional curve: 5 ms at 0, about 4.8 s
-at 99).
+at 99). The glide runs only while the gate is high: a V/OCT change made
+between notes glides from the last sounding pitch when the next gate arrives.
 
 The **CHIP** options expose raw waves 3 and 7, extra windows, other-voice pitch
 modulation and partner cancellation. These are outside the CZ-101 firmware.
-The silent wave produces DC, not numerical silence. Extra windows on ordinary
-waves are also chip extensions. All settings are saved in Rack patches.
+The silent wave produces DC, not numerical silence. A window on an ordinary
+wave with no resonance partner is also a chip extension. When Resonance
+alternates with an ordinary wave, the line's one window shapes both waves'
+cycles, as on the chip; export treats that pairing as a CZ-101 tone. All settings are saved in Rack patches.
 
 ## Tone files
 
