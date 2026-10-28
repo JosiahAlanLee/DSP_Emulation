@@ -95,8 +95,9 @@ With BUS IN unpatched, the JUMP selector decides what a jump does.
 
 ## Order within a sample
 
-1. RESET or LOAD loads SEED. On that sample, H's clock edge, V's edge and the
-   jumps are ignored (RESET priority, as ClockOwner gives it over H's edge).
+1. RESET or LOAD loads SEED. On that sample, V's edge and the jumps are
+   ignored. H's clock edges are ignored until the seed has been published and
+   a low sample has followed, as on every ClockOwner module.
 2. H counts on its edge, then V on its own edge or H's wrap.
 3. The jumps, from the state the clocks left.
 
@@ -128,7 +129,8 @@ slews, which restart at CV OUT. Rack's Initialize restores the defaults
 ## First patch
 
 1. **Lattice** with nothing patched: Internal at 8 Hz. The step lights walk
-   1 … 16 and the readout counts `00`, `01` … with V moving every fourth step.
+   1 … 16 and the readout reads `00`, `01`, `02`, `03`, `14`, `15` …: H moves
+   on every step and V every fourth.
 2. Set the sixteen knobs and CV → an oscillator's V/OCT: a 16-step sequence.
    STEPS 1–8 → Core **Split** gives a gate per step.
 3. A slower clock (a Counter's CARRY, or a clock divider) → V CLOCK: the row

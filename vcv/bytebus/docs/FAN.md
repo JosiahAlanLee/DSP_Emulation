@@ -37,7 +37,7 @@ The panel, names and the bus side are original.
 |---|---|
 | SOURCE | Selector: Auto (CLOCK jack, else Internal), CLOCK jack, Internal, Engine rate. The internal counter's clock. There is no Bus CLK choice: a patched BUS IN replaces the counter. |
 | DIR | Selector: Up (default), Down. The DIR gate inverts it while high. |
-| UNSELECTED | Selector: Zero (default) or Hold. See [Routing](#routing). |
+| UNSELECTED | Selector, UNSEL on the panel: Zero (default) or Hold. See [Routing](#routing). |
 | GLITCH | Latching button with a light. See [GLITCH](#glitch). |
 | RATE | Internal clock, 0.125–2048 Hz, default 8 Hz. Used only when Internal owns the clock. |
 | LENGTH | Integer 1–32, default 32. The counter visits steps 1 … LENGTH. |
@@ -49,7 +49,7 @@ The panel, names and the bus side are original.
 | BUS IN | Address byte bus: bits 0–4 of its word; bits 5–7 are ignored. Patched, it replaces the internal counter. |
 | COM IN | Mono. Routed to the selected output. Unpatched, 10 V. |
 | IN 1–16, IN 17–32 | Polyphonic; channel *k* is input *k* + 1 of that half. Missing channels read 0 V. |
-| BUS OUT | The address as a word, bits 5–7 zero: 9 channels with a strobe on each change, or 8 at Engine rate or when following an unclocked BUS IN. |
+| BUS OUT | The address as a word, bits 5–7 zero: 9 channels with a strobe on each step, or 8 at Engine rate or when following an unclocked BUS IN. |
 | CLK OUT | The CLK channel of BUS OUT as a gate. |
 | EOC | One-engine-sample pulse on each counter wrap. |
 | COM OUT | The selected input. |
@@ -152,10 +152,11 @@ returning to range; the selection for every (previous, address) pair with and
 without GLITCH; the full cycle at Engine rate for six lengths, both directions
 and the DIR gate; routing at every address with COM IN unpatched and patched,
 Zero and Hold; GLITCH's two overlaps and two dropouts per direction, with COM
-OUT's mean; BUS IN addressing for all 256 words, clocked and unclocked, RESET
-ignored while following and the held count published on release; RESET with a
-seed past LENGTH; strobe gaps under random clocks, resets, lengths and
-direction gates; the internal clock at 44.1/48/96 kHz.
+OUT's mean; BUS IN addressing for all 256 unclocked words and a clocked word
+with its CLK passed through, RESET ignored while following and the held count
+published on release; RESET with a seed past LENGTH; strobe gaps under random
+clocks, resets, lengths and direction gates; the internal clock at
+44.1/48/96 kHz.
 
 Rack API tests (`tests/module_test.cpp`): real ports and lights, both 16-channel
 cables, short input cables reading 0 V, the one-hot counter mode, Hold and the

@@ -155,11 +155,11 @@ Portable tests (`tests/engine_test.cpp`): every count bit an exact division
 of DIVIDE, LO and HI; the resting state, a stopped-high VCO coming to rest, and
 the XOR's own square keeping a running VCO going at high FILTER but not at 0;
 the spin and coast at three FILTER settings, VCOIN against the closed form
-within 1e-9 and the stop within a sample of it, one RESULT per stop with the
+within 1e-9 and the stop within a sample and a half of it, one RESULT per stop with the
 count at rest, at 44.1/48/96 kHz; the filter against a fine integration under a
 continuously varying ROULETTE; the VCO at half the engine rate with every
-count strobed; ROULETTE replacing the comparator; XOR and edge tracking from
-50 Hz to near RANGE at three engine rates; RANGE CV at one volt an octave and
+count strobed; ROULETTE replacing the comparator; XOR tracking from 50 Hz to
+1 kHz and edge tracking from 50 Hz to near RANGE, at three engine rates; RANGE CV at one volt an octave and
 its lag; RESET priority and strobe gaps under random DIVIDE edges and resets.
 
 Rack API tests (`tests/module_test.cpp`): real ports and lights against an
