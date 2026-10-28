@@ -105,6 +105,10 @@ struct OtisKit : Module {
             exchange.publish(bank.map);
             syncedSerial = bank.map.serial; syncedGeneration = bank.map.generation;
             layout = packed;
+            // NO ROOM describes the bank before this install: drop it once a take fits again, and
+            // measure ROOM on the next sample.
+            if (bank.largestGap().size() >= 2) noRoom = false;
+            roomCountdown = 0;
             return;
         }
     }
@@ -220,8 +224,9 @@ struct OtisKit : Module {
         std::lock_guard<std::mutex> guard(engineMutex); engine.setHostRate(e.sampleRate);
         if (bank.active()) { bank.cancel(); captureBlocked = true; }
     }
-    // An emptied bank has no last take: Capture shows READY and the next take is named from 1, and
-    // ROOM is measured again on the next sample. Audio-thread state: called only where process() can't
+    // An emptied bank has no last take: Capture shows READY and the next take is named from 1 (a
+    // loaded patch then continues from its highest "Capture take n"), and ROOM is measured again on
+    // the next sample. Audio-thread state: called only where process() can't
     // run (Initialize, and a patch or preset load, which Rack runs under the engine's exclusive lock).
     void clearTakeStatus() {
         takes = 0; lastSlot = -1; lastFrames = 0; lastTruncated = noRoom = false; roomCountdown = 0;
@@ -272,6 +277,18 @@ struct OtisKit : Module {
             slots[size_t(s)].name = name ? name : "RESTORED";
         }
         install(false); clearTakeStatus();
+        // New takes are named on from the highest loaded "Capture take n", so none repeats a name.
+        for (const auto& slot : slots) if (slot.pcm.size() >= 2) takeNumber = std::max(takeNumber, captureTakeNumber(slot.name));
+    }
+    // n for a name that is exactly "Capture take n", as syncTakes() writes it (n >= 1, no leading
+    // zeros, at most nine digits); otherwise 0.
+    static int captureTakeNumber(const std::string& name) {
+        static const std::string prefix = "Capture take ";
+        if (name.compare(0, prefix.size(), prefix) != 0) return 0;
+        std::string digits = name.substr(prefix.size());
+        if (digits.empty() || digits.size() > 9 || digits[0] == '0') return 0;
+        for (char ch : digits) if (ch < '0' || ch > '9') return 0;
+        return std::stoi(digits);
     }
 };
 

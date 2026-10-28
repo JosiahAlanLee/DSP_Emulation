@@ -42,9 +42,14 @@ sounding keeps the take it started with.
   IN + KIT sums those two signals. SLOT is read when the kit receives the start;
   SOURCE and GAIN are read throughout the take. LENGTH, PPQN and TEMPO set the
   duration when Capture starts. A take started with CLOCK ends on pulses while
-  CLOCK remains patched. If CLOCK is removed, it ends at its TEMPO duration
-  measured from the start (at once if that duration has already elapsed). A
-  take started without CLOCK ignores a clock patched part-way.
+  CLOCK remains patched. If the clock stops, so that no pulse arrives for two
+  beats at TEMPO (`2 × 60 / TEMPO` seconds, TEMPO read at the start), the take
+  ends there, after that many samples without a pulse. It keeps everything
+  recorded up to then and lands as an ordinary take (not CUT), and DONE
+  pulses. A slow clock that pulses within that window still ends on its
+  pulses. If CLOCK is removed, the take ends at its TEMPO duration measured
+  from the start (at once if that duration has already elapsed). A take
+  started without CLOCK ignores a clock patched part-way.
 - ARM while a take is running does nothing; it cannot restart a take part-way.
 - Clock pulses per beat (1, 2, 4, 8, 12 or 24) are in the context menu and saved
   with the patch.
@@ -68,15 +73,21 @@ offset, as for a loaded WAV, so it plays back at its recorded pitch at TUNE 0.
 - **No room:** a take that cannot start (no free stretch of two frames) is not
   made; the slot keeps its take. REC still stays high for the requested duration
   and DONE pulses at its end; **NO ROOM** appears once REC and ARMED are off.
+  It stays until a take starts, or until Compact, a WAV load or Clear leaves
+  room for a take.
 - **A take that outgrows its stretch** is cut at the end of it and still lands;
   the display marks it **CUT** after the requested duration ends. REC and DONE
   keep their scheduled timing even after memory fills.
 - **Moving Capture away** mid-take ends the take there.
 - **Initialize** on Otis Kit, or loading a patch or preset into it, empties the
   bank and forgets the last take: the display shows **READY** with the empty
-  bank's room, and the next take is named "Capture take 1".
+  bank's room. After Initialize the next take is named "Capture take 1". After a
+  patch or preset load, names continue from the highest *n* among the loaded
+  slots named exactly "Capture take *n*" (other names don't count), so a new
+  take never repeats a loaded take's name.
 - **Compact the bank** (Otis Kit's menu) packs every slot, takes included, back
-  into one run of memory, which joins the free stretches. It stops sounding hits
+  into one run of memory, which joins the free stretches, and clears **NO ROOM**
+  once a take fits again. It stops sounding hits
   and drops a take in progress, as loading a WAV does; a take that finishes
   while it packs is kept. Changing Rack's sample rate also drops a take in
   progress. Nothing more is recorded
@@ -101,7 +112,7 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
 | LENGTH | 1/4, 1/2, 1, 2, 3, 4 (default), 6, 8, 12, 16 or 32 beats. |
 | SOURCE | IN (default), KIT or IN + KIT. |
 | GAIN | 0–200% of the recorded signal, default 100%; clipped to 16-bit PCM full scale. |
-| TEMPO | 40–240 BPM in whole BPM, default 120; used only without CLOCK. |
+| TEMPO | 40–240 BPM in whole BPM, default 120. Without CLOCK it sets a take's duration; with CLOCK, a take ends if the clock stops for two beats at TEMPO. |
 | ARM | Button and trigger input (rising at 2 V, falling at 0.1 V): arm the next take. The light shows it is waiting for a pulse. |
 | IN | Audio, ±5 V full scale. |
 | CLOCK | Pulses (rising at 2 V, falling at 0.1 V). |
@@ -134,7 +145,11 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
   - loading or compacting during a take discards it without recording its tail,
     with REC and DONE unchanged and the next take recording normally;
   - CLOCK removed before or after the TEMPO deadline, CLOCK patched during an
-    unclocked take, and a slow clock kept patched past the TEMPO deadline.
+    unclocked take, and a slow clock kept patched past the TEMPO deadline;
+  - a clock that stops mid-take: the take ends two beats at TEMPO after the
+    last pulse with all it recorded, not CUT; a slow clock pulsing within that
+    window ends on its pulses; CLOCK removed after the clock stops, past the
+    TEMPO duration, ends the take at once;
   - three equal-length takes into one slot of a nearly full bank, the third in
     the first's region: save and Compact keep the third;
   - a take finishing while Compact or a WAV load waits for the engine lock is
@@ -144,7 +159,13 @@ is only the pulses-per-beat setting. Arming and recording state are not saved.
     new rate;
   - Initialize on the kit, or a patch loaded into it, after a take: the
     display shows READY (no slot, length, CUT or NO ROOM) and the empty
-    bank's room, and the next take is "Capture take 1".
+    bank's room, and the next take is "Capture take 1";
+  - a patch loaded into a used kit or a fresh one: take names continue from
+    its highest "Capture take *n*", ignoring near matches; Initialize then
+    starts again from 1;
+  - Compact after NO ROOM, freeing a replaced take that was still sounding,
+    clears NO ROOM and the next take records; a Compact that leaves no room
+    keeps it.
 - `tests/plugin_test.cpp`: the compiled plugin has OTIS Sampler, Otis Kit and
   Otis Capture.
 - OTIS Sampler's legacy trace is unchanged.

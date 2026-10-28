@@ -1,5 +1,18 @@
 # OTIS change history
 
+## 2.11.5
+
+- After a patch or preset load, Otis Kit names new takes on from the highest
+  *n* among the loaded slots named "Capture take *n*", instead of from
+  "Capture take 1" again, which repeated names already in the patch.
+  Initialize still starts from 1.
+- A take started on Otis Capture's CLOCK now ends when no pulse arrives for two
+  beats at TEMPO, keeping what it recorded. Before, a transport that stopped
+  mid-take left REC high, and the kit recorded until its memory ran out (CUT).
+  A slow clock that pulses within that window still ends the take on pulses.
+- Compact the bank (or a WAV load or Clear) clears Capture's NO ROOM once a
+  take fits again. Before, NO ROOM stayed until the next take started.
+
 ## 2.11.4
 
 - Initializing Otis Kit, or loading a patch or preset into it, now clears the

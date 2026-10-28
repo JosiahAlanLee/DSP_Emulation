@@ -48,7 +48,7 @@ static void same(OtisSampler& x,OtisSampler& y,int word,int samples=30000) {
 }
 int main() {
     Context context; context.engine=new engine::Engine; contextSet(&context);
-    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.4"; plugin.addModel(modelOtisSampler);
+    Plugin plugin; plugin.slug="OtisLab"; plugin.version="2.11.5"; plugin.addModel(modelOtisSampler);
     rack::plugin::plugins.push_back(&plugin);
     auto a=args();
     {   // Unpatched, or patched at 0, stored patches change nothing: the panel plays.
