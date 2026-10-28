@@ -265,6 +265,84 @@ static void persistence() {
     assert(b.params[CzishModule::ENV_BASE + 16 + 1].getValue() == 99);
 }
 
+// Profile writes from automation or loading must never make the audio callback
+// rewrite a second parameter, even at the previous profile's default values.
+static void profileProcessPreservesParams(float sr) {
+    DacStageModule m;
+    m.model = modelDacStage;
+    connectedOutputs(m);
+    for (int profile : {1, 2, 0, 1, 0}) {
+        m.params[DacStageModule::PROFILE].setValue(float(profile));
+        float tone = m.params[DacStageModule::TONE].getValue();
+        float rate = m.params[DacStageModule::RATE].getValue();
+        for (int i = 0; i < 4; ++i)
+            m.process(args(sr));
+        assert(m.params[DacStageModule::TONE].getValue() == tone);
+        assert(m.params[DacStageModule::RATE].getValue() == rate);
+    }
+}
+
+static void profileUiAndPersistence(float sr) {
+    DacStageModule m;
+    m.model = modelDacStage;
+    connectedOutputs(m);
+    auto *change = m.selectProfile(1, sr);
+    assert(change && m.params[DacStageModule::TONE].getValue() == 20000);
+    assert(m.params[DacStageModule::PROFILE].getValue() == 1);
+    // Exercise exactly the snapshots Rack's ModuleChange restores on undo/redo.
+    m.fromJson(change->oldModuleJ);
+    assert(m.params[DacStageModule::PROFILE].getValue() == 0);
+    assert(m.params[DacStageModule::TONE].getValue() == 24000);
+    m.fromJson(change->newModuleJ);
+    assert(m.params[DacStageModule::PROFILE].getValue() == 1);
+    assert(m.params[DacStageModule::TONE].getValue() == 20000);
+    delete change;
+    delete m.selectProfile(2, sr);
+    assert(m.params[DacStageModule::TONE].getValue() == 24000);
+    assert(m.params[DacStageModule::RATE].getValue() == sr);
+    assert(!m.selectProfile(2, sr));
+    // RATE and its remembered provenance must also round-trip in one action.
+    delete m.selectProfile(0, sr);
+    change = m.selectProfile(2, sr);
+    m.fromJson(change->oldModuleJ);
+    assert(m.params[DacStageModule::RATE].getValue() == DacStageModule::defaultRate);
+    assert(!std::isfinite(m.autoRate.load()));
+    m.fromJson(change->newModuleJ);
+    assert(m.params[DacStageModule::RATE].getValue() == sr);
+    assert(m.autoRate.load() == sr);
+    delete change;
+    delete m.selectProfile(0, sr);
+    delete m.selectProfile(2, 192000);
+    assert(m.params[DacStageModule::RATE].getValue() == 96000);
+    assert(m.autoRate.load() == 96000);
+    delete m.selectProfile(0, sr);
+    assert(m.params[DacStageModule::RATE].getValue() == DacStageModule::defaultRate);
+    // Saved TONE at the previous default used to be vulnerable to processing
+    // after load; both ordinary saves and legacy data without autoRate survive.
+    for (int profile : {0, 1, 2}) {
+        m.params[DacStageModule::PROFILE].setValue(float(profile));
+        m.params[DacStageModule::TONE].setValue(24000);
+        m.params[DacStageModule::RATE].setValue(32123);
+        auto *j = m.toJson();
+        json_object_del(json_object_get(j, "data"), "autoRate");
+        DacStageModule loaded;
+        loaded.model = modelDacStage;
+        connectedOutputs(loaded);
+        loaded.fromJson(j);
+        json_decref(j);
+        for (int i = 0; i < 4; ++i)
+            loaded.process(args(sr));
+        assert(loaded.params[DacStageModule::TONE].getValue() == 24000);
+        assert(loaded.params[DacStageModule::RATE].getValue() == 32123);
+    }
+    m.onReset(Module::ResetEvent{});
+    m.process(args(sr));
+    assert(m.params[DacStageModule::PROFILE].getValue() == 0);
+    assert(m.params[DacStageModule::TONE].getValue() == 24000);
+    assert(m.params[DacStageModule::RATE].getValue() == DacStageModule::defaultRate);
+    assert(!std::isfinite(m.autoRate.load()));
+}
+
 // Review finding #17: visiting LINEAR gives YM FP back its exact default
 // clock, and a RATE the user set survives profile switches.
 static void profileRoundTrip(float sr) {
@@ -278,18 +356,18 @@ static void profileRoundTrip(float sr) {
     auto a = args(sr);
     auto *m = make();
     auto &rate = m->params[DacStageModule::RATE];
-    auto &profile = m->params[DacStageModule::PROFILE];
+    auto select = [m, sr](int value) { delete m->selectProfile(value, sr); };
     const float ym = 55930.39f;
     m->process(a);
     assert(rate.getValue() == ym);
     for (int via : {2, 1}) {
-        profile.setValue(2); // LINEAR follows the host rate
+        select(2); // LINEAR follows the host rate
         m->process(a);
         m->process(a);
         assert(rate.getValue() == sr && m->activeRate.load() == sr);
-        profile.setValue(float(via)); // straight back, or through Casio
+        select(float(via)); // straight back, or through Casio
         m->process(a);
-        profile.setValue(0);
+        select(0);
         m->process(a);
         m->process(a);
         if (rate.getValue() != ym)
@@ -297,28 +375,28 @@ static void profileRoundTrip(float sr) {
         assert(rate.getValue() == ym && std::abs(m->activeRate.load() - ym) < .01f);
     }
     // A saved patch remembers that LINEAR chose the rate.
-    profile.setValue(2);
+    select(2);
     m->process(a);
     json_t *j = m->toJson();
     auto *loaded = make();
     loaded->fromJson(j);
     json_decref(j);
     assert(loaded->params[DacStageModule::RATE].getValue() == sr);
-    loaded->params[DacStageModule::PROFILE].setValue(0);
+    delete loaded->selectProfile(0, sr);
     loaded->process(a);
     assert(loaded->params[DacStageModule::RATE].getValue() == ym);
     delete loaded;
     // The user's own RATE survives, in LINEAR and in YM FP.
     rate.setValue(30000);
-    profile.setValue(0);
+    select(0);
     m->process(a);
     assert(rate.getValue() == 30000);
-    profile.setValue(2);
+    select(2);
     m->process(a);
     assert(rate.getValue() == 30000);
-    profile.setValue(1);
+    select(1);
     m->process(a);
-    profile.setValue(0);
+    select(0);
     m->process(a);
     assert(rate.getValue() == 30000);
     delete m;
@@ -378,7 +456,9 @@ int main() {
         voice(sr);
         byteBusFeedback(sr);
         fullModule(sr);
+        profileProcessPreservesParams(sr);
         profileRoundTrip(sr);
+        profileUiAndPersistence(sr);
     }
     persistence();
     endStepSelection();

@@ -32,10 +32,10 @@ struct DacStageModule : Module {
     dspemu::bus::Writer writer;
     std::atomic<unsigned> displayed{0};
     float lastTone = -1, lastRate = -1, alpha = 1;
-    int lastProfile = 0;
     static constexpr float defaultRate = 55930.39f;
-    // The host rate LINEAR wrote into RATE automatically, or NaN.
-    float autoRate = NAN;
+    // The clamped host rate selected by the UI for LINEAR, or NaN.
+    // Serialization/reset can run independently of the selector.
+    std::atomic<float> autoRate{NAN};
     std::atomic<float> activeRate{55930.39f};
     std::atomic<int> activeBits{12};
 
@@ -72,6 +72,34 @@ struct DacStageModule : Module {
         }
     }
 
+    // Called only by the profile selector's UI actions. Direct parameter writes
+    // (automation, randomize, patch/preset load) deliberately preserve RATE/TONE.
+    // ModuleChange includes autoRate, so undo/redo restores its provenance too.
+    history::ModuleChange *selectProfile(int profileIndex, float hostRate) {
+        int previous = int(std::lround(std::clamp(finite(params[PROFILE].getValue()), 0.f, 2.f)));
+        profileIndex = std::clamp(profileIndex, 0, 2);
+        if (profileIndex == previous)
+            return nullptr;
+        auto *action = new history::ModuleChange;
+        action->name = "change converter profile";
+        action->moduleId = id;
+        action->oldModuleJ = toJson();
+        if (params[TONE].getValue() == (previous == 1 ? 20000.f : 24000.f))
+            params[TONE].setValue(profileIndex == 1 ? 20000.f : 24000.f);
+        float chosenRate = autoRate.load(std::memory_order_relaxed);
+        if (profileIndex == 2 && std::abs(params[RATE].getValue() - defaultRate) < 1) {
+            getParamQuantity(RATE)->setValue(finite(hostRate, 48000.f));
+            autoRate.store(params[RATE].getValue(), std::memory_order_relaxed);
+        } else if (previous == 2 && profileIndex != 2) {
+            if (std::isfinite(chosenRate) && params[RATE].getValue() == chosenRate)
+                params[RATE].setValue(defaultRate);
+            autoRate.store(NAN, std::memory_order_relaxed);
+        }
+        params[PROFILE].setValue(float(profileIndex));
+        action->newModuleJ = toJson();
+        return action;
+    }
+
     static float finite(float x, float fallback = 0) { return std::isfinite(x) ? x : fallback; }
     void process(const ProcessArgs &args) override {
         using namespace dspemu::dac;
@@ -89,21 +117,6 @@ struct DacStageModule : Module {
         if (profile == Profile::Yamaha) {
             double base = finite(params[YM_CLOCK].getValue(), 3579545) / 64.;
             rate = std::clamp(rate * base / (3579545. / 64.), base * .25, std::min(192000., base * 4));
-        }
-        if (profileIndex != lastProfile) {
-            if (params[TONE].getValue() == (lastProfile == 1 ? 20000.f : 24000.f))
-                params[TONE].setValue(profileIndex == 1 ? 20000.f : 24000.f);
-            if (profileIndex == 2 && std::abs(params[RATE].getValue() - defaultRate) < 1) {
-                params[RATE].setValue(float(host));
-                autoRate = float(host);
-            } else if (lastProfile == 2 && profileIndex != 2) {
-                // Give back the YM default if RATE is still the host rate that
-                // LINEAR chose; a rate the user set survives the switch.
-                if (std::isfinite(autoRate) && params[RATE].getValue() == autoRate)
-                    params[RATE].setValue(defaultRate);
-                autoRate = NAN;
-            }
-            lastProfile = profileIndex;
         }
         activeRate.store(float(rate), std::memory_order_relaxed);
         activeBits.store(bits, std::memory_order_relaxed);
@@ -144,14 +157,15 @@ struct DacStageModule : Module {
     json_t *dataToJson() override {
         auto *j = json_object();
         json_object_set_new(j, "schema", json_integer(2));
-        if (std::isfinite(autoRate))
-            json_object_set_new(j, "autoRate", json_real(autoRate));
+        float chosenRate = autoRate.load(std::memory_order_relaxed);
+        if (std::isfinite(chosenRate))
+            json_object_set_new(j, "autoRate", json_real(chosenRate));
         return j;
     }
     void dataFromJson(json_t *j) override {
-        lastProfile = int(params[PROFILE].getValue());
         json_t *a = json_object_get(j, "autoRate");
-        autoRate = lastProfile == 2 && json_is_number(a) ? float(json_number_value(a)) : NAN;
+        autoRate.store(params[PROFILE].getValue() == 2 && json_is_number(a)
+                           ? float(json_number_value(a)) : NAN, std::memory_order_relaxed);
     }
     void onReset(const ResetEvent &e) override {
         Module::onReset(e);
@@ -162,7 +176,6 @@ struct DacStageModule : Module {
         reader.reset();
         displayed.store(0);
         lastTone = lastRate = -1;
-        lastProfile = 0;
         autoRate = NAN;
     }
 };
@@ -202,6 +215,40 @@ struct DacRateDisplay : widget::Widget {
                 nullptr);
     }
 };
+// The profile menu (a left click, as on every Choice) and double-click reset are
+// the UI selections that apply defaults. A right click keeps Rack's parameter
+// menu; like automation, its direct writes leave RATE and TONE alone. Do not
+// observe parameter changes in step(): loads and automation are not UI profile
+// selections and must not trigger defaults on a later UI frame.
+struct DacProfileChoice : dspemu::panel::Choice {
+    void select(int value) {
+        auto *m = dynamic_cast<DacStageModule *>(module);
+        if (!m)
+            return;
+        auto *action = m->selectProfile(value, APP->engine->getSampleRate());
+        if (action && APP->history)
+            APP->history->push(action);
+        else
+            delete action;
+    }
+    void onButton(const event::Button &e) override {
+        if (getParamQuantity() && e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+            auto *menu = createMenu();
+            for (int i = 0; i < int(labels.size()); ++i)
+                menu->addChild(createCheckMenuItem(labels[i], "",
+                    [this, i] { return getParamQuantity()->getValue() == i; },
+                    [this, i] { select(i); }));
+            e.consume(this);
+            return;
+        }
+        ParamWidget::onButton(e);
+    }
+    void onDoubleClick(const event::DoubleClick &e) override {
+        select(0);
+        e.consume(this);
+    }
+};
+
 struct DacStageWidget : ModuleWidget {
     DacStageWidget(DacStageModule *module) {
         using namespace czish_layout::dac;
@@ -210,7 +257,7 @@ struct DacStageWidget : ModuleWidget {
         setPanel(createPanel(asset::plugin(pluginInstance, "res/DacStage.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0, 0)));
         addChild(createWidget<ScrewSilver>(Vec(czish_layout::dac::WIDTH - 15, 365)));
-        auto *profile = createParam<dspemu::panel::Choice>(POS(PROFILE), module, DacStageModule::PROFILE);
+        auto *profile = createParam<DacProfileChoice>(POS(PROFILE), module, DacStageModule::PROFILE);
         profile->box.size = Vec(PROFILE_W, PROFILE_H);
         profile->labels = {"YM FP", "CZ MODEL", "LINEAR"};
         addParam(profile);
