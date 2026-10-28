@@ -93,10 +93,10 @@ struct Lattice {
             case clock_owner::ClockSource::Bus: break;  // BUS IN never clocks H
         }
         // A load published on the sample after RESET or LOAD (a deferred seed) counts this
-        // sample's edge, but the held state's own publication after clear() (a new instance,
-        // a restore, Initialize) shows the held state: a clock already high there does not
-        // count, as on every ClockOwner module.
-        if (s.loaded && !s.seed && !seedBefore) hEdge = false;
+        // sample's edges, but the held state's own publication after clear() (a new instance,
+        // a restore, Initialize) shows the held state: an H or V CLOCK already high there does
+        // not count, as on every ClockOwner module.
+        if (s.loaded && !s.seed && !seedBefore) hEdge = vEdge = false;
         seedBefore = s.seed;
         if (s.seed) { h = p.seed & 15; v = p.seed >> 4 & 15; }
         if (s.loaded) { out.loaded = true; pending = true; }

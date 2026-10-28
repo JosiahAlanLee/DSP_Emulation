@@ -69,6 +69,10 @@ clock latch first. Bus CLK mode samples the data on the bus's rising edge.
 - RESET takes priority over a simultaneous acquisition edge. It loads the seed
   and restarts internal phase at zero. It does not sample feedback on that edge.
 - A new instance or a restored patch also publishes its held word first.
+  On the first sample after Initialize or a restore, the held word is
+  published first, and a clock that is already high is not counted as an
+  edge; only its next rising edge counts. Every ByteBusLab module that owns
+  its clock follows this rule, Lattice's V CLOCK included.
 - Reset/load emits a seed strobe even when the selected clock is stopped. This
   is how a downstream clocked reader receives the initial word. If the previous
   output strobe was high, a low sample is inserted first and the seed strobe

@@ -359,6 +359,12 @@ static void twoWords() {
             for (int v = 0; v < 256; ++v) { byA.insert(f(v, fixed)); byB.insert(f(fixed, v)); }
             assert(byA.size() == 256 && byB.size() == 256);
         }
+        // Every shape is a fixed byte permutation of A XOR B, so equal words give 00 (LOOKUP2.md;
+        // review 2026-10-27 #3, kept so saved patches sound the same).
+        for (int a = 0; a < 256; ++a) {
+            assert(f(a, a) == 0);
+            for (int b = 0; b < 256; ++b) assert(f(a, b) == f(a ^ b, 0));
+        }
         for (int k = 0; k < 200; ++k) {
             int a1 = rng() & 255, a2 = rng() & 255, b1 = rng() & 255, b2 = rng() & 255;
             assert(f(a1 ^ a2, b1 ^ b2) == (f(a1, b1) ^ f(a2, b2)));
@@ -414,5 +420,5 @@ int main() {
         engine.tick(library,p,s,48000);
     }
     assert(allocations.load() == before);
-    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, library v3 Ratio words never blended, Lookup2 Logic/Arithmetic on every (A, B), Walsh linearity and one-to-one shapes, Fold identity and continuity, A-clocked holds, no runtime allocations\n";
+    std::cout << "PASS: Lookup identities, interpolation, 64x256 exhaustive Walsh permutations, rhythm gaps/anchors, audio bounds/seams, clocking, ramp tracking at 44.1/48/96 kHz, actual Vastish Voice compiler parity, JUMP clocked/unclocked steps, arming, seeding and wrap, library v2 Envelope/Sequence/Density tables, morphs and discrete selection, library v3 Ratio words never blended, Lookup2 Logic/Arithmetic on every (A, B), Walsh linearity and one-to-one shapes of A XOR B, Fold identity and continuity, A-clocked holds, no runtime allocations\n";
 }

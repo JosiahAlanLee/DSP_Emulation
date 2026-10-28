@@ -8,7 +8,7 @@ explicit clocking and original table content:
 | **Converter**, 14 HP | Independent ADC/DAC paths, +/-5 or +/-10 V ranges, gain/offset trims and explicit clock policies. | [Converter](docs/CONVERTER.md) |
 | **Clocked Register**, 12 HP | One word of state, selectable clock and reset word; an explicit sampling point for feedback. | [Register](docs/MANUAL.md) |
 | **Lookup**, 16 HP | Ten generated waveform/CV/Walsh/rhythm/envelope/sequence/density/ratio families, numeric morphs, ramp tracking, analog or byte input, and a raw DAC output. JUMP steps SHAPE from a bus bit or a gate. Imports original Vastish tables. | [Lookup](docs/LOOKUP.md) |
-| **Lookup2**, 16 HP | Two words in, one out: all sixteen bit-logic functions, byte arithmetic (mix, ring, compare), a two-input fold and two-word Walsh maps, on A's clock, with JUMP. Computed, so no tables. | [Lookup2](docs/LOOKUP2.md) |
+| **Lookup2**, 16 HP | Two words in, one out: all sixteen bit-logic functions, byte arithmetic (mix, ring, compare), a two-input fold and Walsh maps of A XOR B, on A's clock, with JUMP. Computed, so no tables. | [Lookup2](docs/LOOKUP2.md) |
 | **Switch**, 12 HP | Two words in, one out, under a control word C: Select A or B by a bit of C, take each bit from A or B, or Mix from A to B. Follows A's clock or reclocks on its own. | [Switch](docs/SWITCH.md) |
 | **Counter 2**, 12 HP | A phase word at N/D of its clock (N 1–16, D 1–64, or a ratio word on RATIO from Lookup's Ratio family), exact for ever, with CARRY on each cycle: polymeter and cross rhythms locked to a clock. | [Counter 2](docs/COUNTER2.md) |
 | **Pipeline**, 12 HP | A word returns DELAY (1–64) edges later; SPREAD delays each bit a little more, and LOOP repeats the last DELAY words. The canon of the kit. | [Pipeline](docs/PIPELINE.md) |
@@ -19,7 +19,7 @@ explicit clocking and original table content:
 | **Wheel**, 14 HP | A 24-stage noise register that visits every 24-bit state once, and a loop of 1–24 steps that recirculates until CAPTURE refills it from the noise; both read through an eight-stage window as byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo. | [Wheel](docs/WHEEL.md) |
 | **Roulette**, 14 HP | A phase-locked loop driving a 12-bit counter on two overlapping byte buses: a gate spins the VCO up and the loop filter lets it coast to rest, publishing the count at rest on RESULT; or it tracks an input, loosely or tightly, or divides a clock, after the Nonlinearcircuits Wangernumb. | [Roulette](docs/ROULETTE.md) |
 
-Plugin **ByteBusLab**, version **2.16.3**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.16.4**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:

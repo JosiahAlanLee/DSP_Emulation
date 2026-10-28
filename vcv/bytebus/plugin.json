@@ -1,7 +1,7 @@
 {
   "slug": "ByteBusLab",
   "name": "ByteBusLab",
-  "version": "2.16.3",
+  "version": "2.16.4",
   "license": "BSD-3-Clause",
   "brand": "ByteBusLab",
   "author": "DSP_Emulation contributors",
@@ -46,7 +46,7 @@
     {
       "slug": "Lookup2",
       "name": "Lookup2",
-      "description": "Two byte words in, one out: all sixteen bit-logic functions, byte arithmetic with mix and ring, a two-input fold and two-word Walsh maps, on A's clock, with JUMP shape steps.",
+      "description": "Two byte words in, one out: all sixteen bit-logic functions, byte arithmetic with mix and ring, a two-input fold and Walsh maps of A XOR B, on A's clock, with JUMP shape steps.",
       "tags": ["Logic", "Waveshaper", "Ring modulator", "Polyphonic"]
     },
     {

@@ -1222,6 +1222,37 @@ static void latticeHeldPortsRegression() {
     }
 }
 
+// Review 2026-10-28 (findings #29): Initialize or a restore with V CLOCK patched and already high
+// publishes the held state on the first sample; the next rising edge steps V once.
+static void latticeHeldVPortsRegression() {
+    using L = ByteLattice;
+    for (float sr : {44100.f, 48000.f, 96000.f}) {
+        auto a = args(sr);
+        L m; m.model = modelLattice; connectOutputs(m);
+        m.inputs[L::H_CLOCK_IN].channels = 1; m.inputs[L::V_CLOCK_IN].channels = 1;
+        for (int t = 0; t < 5; ++t) { m.inputs[L::V_CLOCK_IN].setVoltage(t % 2 ? 0 : 10); m.process(a); }
+        assert(word(m.outputs[L::BUS_OUT]) != 0);
+        m.inputs[L::V_CLOCK_IN].setVoltage(10);                    // high when Initialize is pressed
+        m.onReset(Module::ResetEvent{});
+        m.process(a);
+        assert(word(m.outputs[L::BUS_OUT]) == 0 && m.outputs[L::CLOCK_OUT].getVoltage() == 10);
+        m.process(a); assert(word(m.outputs[L::BUS_OUT]) == 0);
+        m.inputs[L::V_CLOCK_IN].setVoltage(0); m.process(a);
+        m.inputs[L::V_CLOCK_IN].setVoltage(10); m.process(a);      // the next rising edge: V once
+        assert(word(m.outputs[L::BUS_OUT]) == 0x10);
+
+        for (int held : {0x5c, 0xf3}) {
+            L r; r.model = modelLattice; connectOutputs(r);
+            r.inputs[L::H_CLOCK_IN].channels = 1;
+            r.inputs[L::V_CLOCK_IN].channels = 1; r.inputs[L::V_CLOCK_IN].setVoltage(10);
+            json_t* saved = json_pack("{s:i}", "state", held); r.dataFromJson(saved); json_decref(saved);
+            r.process(a);
+            assert(word(r.outputs[L::BUS_OUT]) == held && r.outputs[L::CLOCK_OUT].getVoltage() == 10);
+            r.process(a); assert(word(r.outputs[L::BUS_OUT]) == held);
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
@@ -1231,7 +1262,8 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetPortsRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "counter2-ratio") { for (float sr : {44100.f, 48000.f, 96000.f}) counter2RatioRegression(sr); return 0; }
     if (argc == 2 && std::string(argv[1]) == "lattice-held") { latticeHeldPortsRegression(); return 0; }
-    latticeGapPortsRegression(); rouletteResetPortsRegression(); latticeHeldPortsRegression();
+    if (argc == 2 && std::string(argv[1]) == "lattice-held-v") { latticeHeldVPortsRegression(); return 0; }
+    latticeGapPortsRegression(); rouletteResetPortsRegression(); latticeHeldPortsRegression(); latticeHeldVPortsRegression();
     for (float sr : {44100.f, 48000.f, 96000.f}) counter2RatioRegression(sr);
     portsAndState();
     counterPorts();

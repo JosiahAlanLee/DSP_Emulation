@@ -6,7 +6,7 @@ Contract for ByteBusLab 2.9. A transparent module under the
 [byte bus](../../../docs/BYTE_BUS_SPEC.md) rules (§5): `f[family][shape](A, B)`
 → byte, evaluated on A's clock. It takes over the bus spec's bit-logic roles
 (Lipsk, Gera) as the Logic family, and adds arithmetic, a two-input fold and
-two-word Walsh maps. JUMP steps SHAPE from logic, as on [Lookup](LOOKUP.md#jump).
+Walsh maps of A XOR B. JUMP steps SHAPE from logic, as on [Lookup](LOOKUP.md#jump).
 
 Every family is computed, not stored, so Lookup2 has no table library and no
 library identity: there is nothing to regenerate, verify or mismatch. The
@@ -23,8 +23,9 @@ words as an address; the functions, orderings and maps here are original.
   whose output is a full byte, ready for BUS TRIG or a gate.
 - **Terrain.** Fold reads (A, B) as a point and folds a surface through it:
   two Counters at different rates trace it, and SHAPE (or JUMP) deforms it.
-- **Two-word Walsh.** Each output bit is the parity of chosen bits of A and B:
-  a different binary rhythm for every pair, and one-to-one in each word.
+- **Two-word Walsh.** Each output bit is the parity of chosen bits of A XOR B:
+  64 scramblings of the difference between two words, one-to-one in each word.
+  Equal words give 00 on every shape.
 
 ## Controls and ports
 
@@ -87,9 +88,12 @@ mixes in, the drive rises to 4 and a product term appears; all of it returns by
 `(A | B << 8) AND mask[k]`. Shape 0's masks pair bit *k* of A with bit *k* of
 B, so shape 0 is `A XOR B`; each later shape applies two more reversible row
 operations (an XOR of one mask into another, sometimes a swap) chosen by an
-original integer hash. Row operations keep the A half and the B half of the
-masks each of full rank, so every shape is linear over GF(2) and one-to-one in A
-for every B, and in B for every A.
+original integer hash. Every mask keeps the form `r | r << 8` (the same bits
+of A and of B), so every one of the 64 shapes is a fixed permutation of
+`A XOR B`: the output depends only on A XOR B, and equal inputs (A = B) give 00
+on every shape. Each shape is linear over GF(2) and one-to-one in A for every
+B, and in B for every A. This is the released behaviour, kept so saved patches
+sound the same.
 
 Logic, Arithmetic and Walsh select a discrete shape with Lookup's hysteresis:
 half a shape plus 0.05. Fold has no selection; SHAPE is continuous.
@@ -124,7 +128,8 @@ Portable tests (`tests/lookup_test.cpp`): all 65,536 (A, B) pairs through every
 Logic function against independent truth tables (all sixteen distinct, four
 passes around SHAPE) and every Arithmetic shape against integer and floating
 references; every Walsh shape linear over GF(2), one-to-one in A for each B and
-in B for each A, all 64 distinct, shape 0 equal to XOR; Fold exactly A at 0 and
+in B for each A, a function of A XOR B with A = B giving 00, all 64 distinct,
+shape 0 equal to XOR; Fold exactly A at 0 and
 64, bounded change for small SHAPE steps, and dependent on B at 32; discrete
 selection with hysteresis; A-clocked evaluation and holds; after a reset, the
 first sample of a clocked, stopped A evaluated without an edge; family clamping.
