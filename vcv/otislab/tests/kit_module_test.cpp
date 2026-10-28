@@ -81,6 +81,23 @@ int main() {
         assert(r->slots[2].pcm.empty() && r->slots[3].pcm.empty() && r->slots[5].pcm.empty() && !r->layout.playable(3) && r->layout.playable(4));
         assert(r->layout.playable(6) && !r->lastError.empty());
     }
+    {   // LEVEL shows dB on an audio taper; a patch saved before 2.12 (no levelTaper) keeps its sound.
+        auto m=makeKit(); m->params[OtisKit::LEVEL+1].setValue(.6f);
+        assert(std::abs(m->paramQuantities[OtisKit::LEVEL]->getDisplayValue())<1e-6f);
+        m->params[OtisKit::LEVEL].setValue(.5f);
+        assert(std::abs(m->paramQuantities[OtisKit::LEVEL]->getDisplayValue()+12.04f)<.01f);
+        json_t* saved=m->toJson();
+        assert(json_is_string(json_object_get(json_object_get(saved,"data"),"levelTaper")));
+        auto now=std::make_unique<OtisKit>(); now->model=modelOtisKit; now->fromJson(saved);
+        assert(now->params[OtisKit::LEVEL+1].getValue()==.6f && now->params[OtisKit::LEVEL].getValue()==.5f);
+        json_object_del(json_object_get(saved,"data"),"levelTaper");          // as 2.11 saved it
+        auto old=std::make_unique<OtisKit>(); old->model=modelOtisKit; old->outputs[OtisKit::OUT].channels=1; old->fromJson(saved);
+        json_decref(saved);
+        float knob=old->params[OtisKit::LEVEL+1].getValue();
+        assert(std::abs(knob-otis::kit::knobForChipLevel(.6f))<1e-6f && knob<.6f && old->params[OtisKit::LEVEL+2].getValue()==1);
+        old->inputs[OtisKit::GATE_IN].channels=8; old->process(a); old->inputs[OtisKit::GATE_IN].setVoltage(10,1); old->process(a);
+        assert(otis::levelRegister(old->engine.controls.level[1],false)==otis::levelRegister(.6f,false));   // the 2.11 register
+    }
     {   // A folder's WAVs fill slots 1-n in name order, as mono at their own rates.
         auto dir=std::filesystem::temp_directory_path()/"otis-kit-folder-test"; std::filesystem::remove_all(dir); std::filesystem::create_directories(dir);
         auto pcm=noise(3000,9);
@@ -100,5 +117,5 @@ int main() {
         assert(m->engineMode==0 && m->params[OtisKit::TUNE].getValue()==0 && m->layout.frames==0 && m->slots[0].pcm.empty());
     }
     rack::plugin::plugins.clear();
-    std::cout<<"PASS: Otis Kit ports, silent empty bank, gate channel to slot, SLOT bits on the same sample and latched, per-hit PITCH/LEVEL latching with TUNE/START/REV, bit-identical bank save/restore with clock and degradation, folder loading, Initialize\n";
+    std::cout<<"PASS: Otis Kit ports, silent empty bank, gate channel to slot, SLOT bits on the same sample and latched, per-hit PITCH/LEVEL latching with TUNE/START/REV, LEVEL in dB with 2.11 patches migrated, bit-identical bank save/restore with clock and degradation, folder loading, Initialize\n";
 }

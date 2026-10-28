@@ -49,6 +49,20 @@ inline double decaySeconds(float knob) {
     if (!std::isfinite(knob) || knob >= 1.f) return 0;
     return 0.02 * std::pow(500.0, clamp(double(knob), 0.0, 1.0));
 }
+// LEVEL: the knob is an audio taper, gain = knob squared, shown as 40 log10(knob) dB (halfway is about -12 dB).
+// The LEVEL CV follows as the chip's log VCA: 10 V is unity and each volt below takes 7.2 dB. The result is
+// the chip-domain level that levelRegister spreads over the volume register, 72 dB from silence to unity.
+constexpr double LEVEL_RANGE_DB = 72;
+inline float chipLevel(float knob, float cv) {
+    if (!(knob > 0) || !(cv > 0)) return 0;
+    double db = 40 * std::log10(std::min(double(knob), 1.0)) + (std::min(double(cv), 1.0) - 1) * LEVEL_RANGE_DB;
+    return float(clamp(1 + db / LEVEL_RANGE_DB, 0.0, 1.0));
+}
+// Before 2.12 the knob was the chip-domain level itself; this is the knob position that sounds the same now.
+inline float knobForChipLevel(float level) {
+    if (!(level > 0)) return 0;
+    return float(std::pow(10.0, (std::min(double(level), 1.0) - 1) * LEVEL_RANGE_DB / 40));
+}
 struct Region {
     int32_t begin = 0, end = 0;                   // [begin, end) frames of sample memory
     int32_t size() const { return end - begin; }

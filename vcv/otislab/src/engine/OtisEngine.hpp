@@ -49,7 +49,8 @@ inline int32_t applyVolume(int32_t x, uint8_t reg) {
     return static_cast<int32_t>(p>=0 ? p>>11 : -((-p+2047)>>11)); // floor, as MAME rshift_signed
 }
 // Level CV (0..1) to a volume register, never above unity.
-// Chip mode: register is linear in CV, so 10 V = 0xc0 and each 0.52 V is about 6 dB (dB-linear, like a log VCA).
+// Chip mode: register is linear in CV, so 10 V = 0xc0 and each 0.83 V (16 registers) is 6 dB (dB-linear, like a
+// log VCA; amplitude is linear within each 6 dB step).
 // Linear mode: nearest register to a linear amplitude CV/10, still quantized through the chip table.
 inline uint8_t levelRegister(float level, bool linear) {
     double v=std::isfinite(level) ? clamp(double(level),0.0,1.0) : 0.0;

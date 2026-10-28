@@ -72,6 +72,28 @@ int main() {
         double viaOffset = kit::BANK_RATE / chipRates[0] * std::exp2(l.octaves[1]), direct = rate / chipRates[0];
         assert(Voice::pitchIncrement(viaOffset) == Voice::pitchIncrement(direct));
     }
+    // LEVEL: an audio taper (gain = knob squared) onto the chip's dB-linear register, then the log VCA CV.
+    {
+        auto gainDb = [](float level) {   // the register's actual gain
+            return 20 * std::log10(volumeTable()[levelRegister(level, false)] / 2048.0);
+        };
+        assert(kit::chipLevel(1, 1) == 1 && kit::chipLevel(0, 1) == 0 && kit::chipLevel(1, 0) == 0);
+        assert(gainDb(kit::chipLevel(1, 1)) == 0);
+        for (float knob : {.75f, .5f, .25f, .1f}) {   // within the register's steps of the taper
+            double want = 40 * std::log10(knob);
+            assert(std::abs(gainDb(kit::chipLevel(knob, 1)) - want) < .6);
+        }
+        assert(std::abs(gainDb(kit::chipLevel(.5f, 1)) + 12) < .6);           // halfway is about -12 dB
+        // The CV at a full knob is the old path: chip level = CV / 10, 6 dB every 16 registers (0.83 V).
+        assert(kit::chipLevel(1, .5f) == .5f && std::abs(gainDb(1 - 16 / 192.f) + 6.02) < .01);
+        assert(std::abs(gainDb(kit::chipLevel(.5f, 1 - 16 / 192.f)) + 18) < .6);   // knob and CV add in dB
+        // A patch from before 2.12 stored the chip level itself: its converted knob plays the same register.
+        for (int r = 0; r <= unityVolume; ++r) {
+            float old = float(r) / unityVolume;
+            assert(levelRegister(kit::chipLevel(kit::knobForChipLevel(old), 1), false) == levelRegister(old, false));
+        }
+        assert(kit::knobForChipLevel(0) == 0 && kit::knobForChipLevel(1) == 1);
+    }
     // DECAY: off at full, otherwise 60 dB in its time; a decaying hit stops below -80 dB.
     {
         assert(kit::decaySeconds(1) == 0 && std::abs(kit::decaySeconds(0) - .02) < 1e-12 && std::abs(kit::decaySeconds(.5f) - .02 * std::sqrt(500.)) < 1e-9);
@@ -97,5 +119,5 @@ int main() {
     // Slot choice: SLOT's bits 0-2 when patched, else the gate channel modulo 8.
     for (int ch = 0; ch < 16; ++ch) assert(kit::slotFor(false, 0xff, ch) == (ch & 7));
     for (int w = 0; w < 256; ++w) assert(kit::slotFor(true, uint8_t(w), 13) == (w & 7));
-    std::cout << "PASS: Otis Kit packing and truncation, every slot equal to OTIS playing its sample alone (forward, reverse, START, pitch, filter, level, three clocks, two host rates), rate offsets, decay time and stop, decay off bit-identical, slot choice\n";
+    std::cout << "PASS: Otis Kit packing and truncation, every slot equal to OTIS playing its sample alone (forward, reverse, START, pitch, filter, level, three clocks, two host rates), rate offsets, LEVEL audio taper and 2.11 register equivalence, decay time and stop, decay off bit-identical, slot choice\n";
 }

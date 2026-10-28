@@ -1,5 +1,17 @@
 # OTIS change history
 
+## 2.12.0
+
+- Otis Kit's slot LEVEL knobs are an audio taper shown in dB: halfway is about
+  −12 dB. Before, the knob drove the chip's dB-linear volume register directly,
+  so it spanned 72 dB evenly while showing 0–100%: 60% was about −29 dB, and
+  the usable range sat in the top third of the knob. Patches and presets saved
+  before 2.12 are converted on load and sound the same.
+- The LEVEL CV is unchanged: the chip's log VCA, 10 V unity, 7.2 dB per volt.
+  With the knob below full, the two now add in dB.
+- OTIS Sampler's VCA menu and the engine notes give the chip-log scale
+  correctly: about 6 dB per 0.83 V (16 volume registers), not per 0.52 V.
+
 ## 2.11.6
 
 - Importing Spoon Bender captures reads display metadata under the engine lock, avoiding a race with recording.
