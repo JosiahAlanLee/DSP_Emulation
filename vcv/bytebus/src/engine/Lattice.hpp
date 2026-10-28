@@ -56,10 +56,11 @@ struct Lattice {
     bus::Gate vGate, dirHGate, dirVGate, jumpHGate, jumpVGate;
     uint8_t h = 0, v = 0;
     bool strobe = false, pending = true;  // a new instance publishes its state
+    bool seedBefore = false;              // RESET or LOAD took the previous sample
 
     void clear(uint8_t state = 0) {
         owner.clear(); vGate.reset(); dirHGate.reset(); dirVGate.reset(); jumpHGate.reset(); jumpVGate.reset();
-        h = state & 15; v = state >> 4 & 15; strobe = false; pending = true;
+        h = state & 15; v = state >> 4 & 15; strobe = false; pending = true; seedBefore = false;
     }
     uint8_t state() const { return uint8_t(v << 4 | h); }
 
@@ -91,6 +92,12 @@ struct Lattice {
             case clock_owner::ClockSource::Internal: hEdge = s.source == sourceBefore && owner.phase < phaseBefore; break;
             case clock_owner::ClockSource::Bus: break;  // BUS IN never clocks H
         }
+        // A load published on the sample after RESET or LOAD (a deferred seed) counts this
+        // sample's edge, but the held state's own publication after clear() (a new instance,
+        // a restore, Initialize) shows the held state: a clock already high there does not
+        // count, as on every ClockOwner module.
+        if (s.loaded && !s.seed && !seedBefore) hEdge = false;
+        seedBefore = s.seed;
         if (s.seed) { h = p.seed & 15; v = p.seed >> 4 & 15; }
         if (s.loaded) { out.loaded = true; pending = true; }
 

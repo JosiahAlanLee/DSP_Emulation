@@ -1489,12 +1489,86 @@ static void switchReloadRegression() {
     in.a = clockedA(0x18); o = s.tick(p, in, 48000); assert(o.word == sw::apply(sw::Op::Bits, 0, 0x81, 0xf0, 0x3c));
 }
 
+// Review 2026-10-27 #25: Switch taking the clock over from Follow A, while A's CLK level (passed
+// through) is high, inserts a low sample before publishing, so a clocked reader downstream sees
+// a rising edge (MANUAL.md: if CLK was high, insert a low sample before publishing).
+static void switchTakeoverRegression() {
+    namespace sw = dspemu::byte_switch;
+    for (auto source : {sw::Source::Internal, sw::Source::Jack}) {
+        sw::Switch s; s.clear(); sw::Parameters p; p.op = sw::Op::Select; p.bit = 0; p.source = sw::Source::FollowA;
+        sw::Inputs in; Port out; bus::Reader down;
+        in.a.connected = in.a.clocked = true; in.a.rawWord = 0x12;
+        in.b.connected = true; in.b.rawWord = 0x34;
+        in.c.connected = true; in.c.rawWord = 0x00;                    // C selects A
+        auto step = [&](bool clk, bool rising) {
+            in.a.clk = clk; in.a.rising = rising;
+            auto o = s.tick(p, in, 48000);
+            bus::Writer{}.write(out, o.word, o.clocked, o.clk);
+            return std::make_pair(o, down.process(out));
+        };
+        step(true, true); step(false, false);
+        auto r = step(true, true);                                     // A's edge: 0x12 downstream
+        assert(r.first.clk && r.second.word == 0x12);
+        r = step(true, false);                                         // A's CLK held high
+        assert(r.first.clk && !r.second.rising);
+        in.c.rawWord = 0x01;                                           // B selected: result 0x34
+        p.source = source; in.clockConnected = source == sw::Source::Jack;
+        r = step(true, false);                                         // take over, A still high
+        assert(r.first.owned && !r.first.clk);                         // the low sample first
+        r = step(true, false);
+        assert(r.first.clk && r.first.word == 0x34 && r.second.rising && r.second.word == 0x34);
+        r = step(false, false); assert(!r.first.clk);
+    }
+    // From a low CLK level, and to Engine rate, the result is published at once.
+    for (auto source : {sw::Source::Internal, sw::Source::Engine}) {
+        sw::Switch s; s.clear(); sw::Parameters p; p.source = sw::Source::FollowA; sw::Inputs in;
+        in.a.connected = in.a.clocked = true; in.a.rawWord = 0x12; in.a.clk = in.a.rising = true; s.tick(p, in, 48000);
+        in.a.clk = in.a.rising = false; s.tick(p, in, 48000);
+        in.a.rawWord = 0x56; p.source = source;
+        auto o = s.tick(p, in, 48000);
+        assert(o.evaluated && o.word == 0x56 && o.clk == (source == sw::Source::Internal));
+    }
+}
+
+// Review 2026-10-27 #29: the held state's own publication after clear() (a new instance, a
+// restore, Initialize) shows the held state even with H CLOCK already high, as on every
+// ClockOwner module; #70's deferred seed and mandatory-low edges still count.
+static void latticeHeldRegression() {
+    for (double sr : {44100., 48000., 96000.}) {
+        // Held state, then the state after the next H edge (H 3 wraps, so the normalled V counts).
+        for (auto [held, next] : {std::pair<uint8_t, uint8_t>{0x00, 0x01}, {0x03, 0x14}, {0x23, 0x34}, {0x5c, 0x5d}}) {
+            lattice::Lattice l; l.clear(held); lattice::Parameters p; p.mode = ClockMode::Jack;
+            lattice::Inputs in; in.clock.clockConnected = true; in.clock.clock = 10;
+            auto o = l.tick(p, in, sr);                                // H CLOCK high on the first sample
+            assert(o.loaded && o.clk && o.state == held && !o.hAdvanced && !o.vAdvanced);
+            o = l.tick(p, in, sr); assert(!o.clk && o.state == held);  // high, already tracked
+            in.clock.clock = 0; o = l.tick(p, in, sr); assert(!o.clk && o.state == held);
+            in.clock.clock = 10; o = l.tick(p, in, sr);                // the next real edge counts
+            assert(o.clk && o.hAdvanced && o.state == next);
+        }
+        // A new instance (no clear()) behaves the same.
+        lattice::Lattice l; lattice::Parameters p; p.mode = ClockMode::Jack;
+        lattice::Inputs in; in.clock.clockConnected = true; in.clock.clock = 10;
+        auto o = l.tick(p, in, sr); assert(o.clk && o.state == 0 && !o.hAdvanced);
+        // #70: an H edge on a deferred seed's publication still counts (RESET while CLK is high).
+        in.clock.clock = 0; l.tick(p, in, sr); in.clock.clock = 10; o = l.tick(p, in, sr);
+        assert(o.clk && o.state == 1);
+        p.seed = 3; in.clock.clock = 0; in.clock.reset = 10;
+        o = l.tick(p, in, sr); assert(!o.clk && o.state == 3);         // seed loaded, low sample
+        in.clock.reset = 0; in.clock.clock = 10; o = l.tick(p, in, sr);
+        assert(o.loaded && o.clk && o.hAdvanced && o.vAdvanced && o.state == 0x14);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "fan-ownership") { fanOwnershipRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "switch-reload") { switchReloadRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "switch-takeover") { switchTakeoverRegression(); return 0; }
+    if (argc == 2 && std::string(argv[1]) == "lattice-held") { latticeHeldRegression(); return 0; }
     latticeGapRegression(); rouletteResetRegression(); fanOwnershipRegression(); switchReloadRegression();
+    switchTakeoverRegression(); latticeHeldRegression();
 
     conversions(); reader(); clocking(); reset(); internal(); counting(); runModes(); switching(); pipelining(); ratios(); fanning(); latticing(); parallelSumming(); wheeling(); rouletting();
     std::cout << "PASS: all 256 words; Schmitt decoding; short cables; clock ownership; raw reclocking; frozen clocks; reset publication/priority; engine mode; internal clocks at 44.1/48/96 kHz; Counter: every word/increment/modulus, INC and BUS IN, reclocking, over-modulus words, reset priority, strobe gaps, carries; run modes: every word/increment/modulus/direction in One-shot and Pendulum, end reflections, held tops, RESET direction, mode changes, envelopes at 44.1/48/96 kHz; Switch: Select, Bits and Mix on every (A, B, C), Follow A, CLOCK jack takeover, Internal and Engine clocks; Pipeline: every DELAY with SPREAD, LOOP periods and release, holds, RESET, strobe gaps, internal clocks; Counter 2: every N/D exactly with carries, polymeter realignment, D changes, RESET, strobe gaps, internal clocks; Fan: every address/length/direction, routing and Hold, GLITCH overlaps and dropouts, BUS IN addressing, RESET and seeds past LENGTH, strobe gaps, internal clocks; Lattice: one tick from every state under every input combination against a reference, Follow and Load against the settled and one-pass jam wiring for every state, counting and wraps, V normalled to H, V CLOCK and DIR, held and simultaneous jumps, BUS IN jumps, RESET, deferred strobes, internal clocks, slew time constants and the control lag; Parallel Sum: every word/mask/sense/inject against a tap-by-tap reference, the sixteen maximal masks, the six six-stage masks, 27 cycle lengths, the hardware's 729 switch settings, convolution of the serial stream, HOT clipping, the INJECT comparator, MASK bus reclocking, RESET and strobes under random clocks, internal clocks; Wheel: the full 2^24 cycle visiting every state once and exactly binomial G, the plain taps maximal, every window, every LENGTH's loop period and the 48-stage Off line, capture on the next edge and under RESET, reset replay, strobes, internal clocks; Roulette: counts as exact divisions, the resting state, the spin and coast against the closed form with one RESULT per stop at 44.1/48/96 kHz, the filter against a fine integration, the VCO capped at half the engine rate with every count strobed, ROULETTE replacing the comparator, XOR and edge tracking, RANGE CV and its lag, RESET and strobes under random edges\n";
