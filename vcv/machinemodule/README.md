@@ -200,6 +200,17 @@ the pin. Not affiliated with Elektron, Akai or VCV.
 
 ## Changelog
 
+### 2.2.3
+
+- Fix an intermittent Rack crash on load (about 1 in 25 loads) when Machinemodule
+  and Monomodule start together. dsp56300 gave each JIT cache block its own memory
+  by unmapping the block and mapping it straight back. In that moment another
+  thread's allocation could land in the gap and was then silently overwritten, so
+  the two emulators shared pages. On Linux and macOS the build now compiles a
+  patched copy of the pinned `mmuhelper.cpp` (`cmake/mmu-remap.cmake`) that
+  replaces the block in one call and keeps its address range reserved. The new
+  `mmu_test` checks this.
+
 ### 2.2.2
 
 - Initialize now silences every voice, discards queued audio and hits, restores

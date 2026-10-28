@@ -10,7 +10,7 @@ all: deps
 deps:
 	./tools/fetch-core.sh "$(CORE_DIR)"
 test: all
-	$(CMAKE) --build $(BUILD_DIR) --target control_test renderer_test worker_test firmware_test module_test plugin_load_test jit_test -j2
+	$(CMAKE) --build $(BUILD_DIR) --target control_test renderer_test worker_test firmware_test module_test plugin_load_test jit_test mmu_test -j2
 	$(CMAKE) -E env LD_LIBRARY_PATH=$(abspath $(RACK_DIR)) $(CMAKE) --build $(BUILD_DIR) --target test
 source:
 	python3 tools/source_bundle.py "$(CORE_DIR)"
