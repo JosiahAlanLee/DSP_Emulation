@@ -9,7 +9,24 @@ struct Tone:Backend{
     bool fire(const Hit&)override{return true;}void panic()override{n=0;}
     void render(float (&out)[32][channels])override{for(auto& frame:out){float v=float(std::sin(6.283185307179586*frequency*n++/44100));for(auto& x:frame)x=v;}}
 };
+// Drums ignore falling gates. A one-sample pulse is one hit, and every hit at a native
+// edge uses its own complete snapshot; all tracks at one edge can sound together.
+static void nativeBoundaries(){
+    for(int offset:{0,1,15,16,31,32,33,127}){
+        Trace trace;Fake fake(&trace);Renderer renderer(fake);InputBlock b;b.generation=1;b.rate=44100;
+        Event panic;panic.offset=uint16_t(offset);panic.panic=true;b.append(panic);
+        for(int t=0;t<16;++t){Event e;e.offset=uint16_t(offset);e.hit.track=uint8_t(t);
+            e.hit.mask=255;for(int p=0;p<8;++p)e.hit.values[p]=float(t+p);b.append(e);}
+        OutputBlock out;renderer.process(b,out);b.count=0;b.start=128;renderer.process(b,out);
+        assert(trace.hits.size()==16&&renderer.coalesced==0);
+        for(int t=0;t<16;++t){assert(trace.hits[t].native==((offset+31)/32)*32);
+            assert(trace.hits[t].hit.track==t);for(int p=0;p<8;++p)assert(trace.hits[t].resolved[p]==t+p);}
+        assert(trace.resets==2); // generation reset and the panic before these simultaneous hits
+        for(int t=0;t<16;++t)assert(out.samples[127][2+t]==float(t)/127);
+    }
+}
 int main(){
+    nativeBoundaries();
     for(double rate:{8000.,22050.,44100.,48000.,48000.5,96000.,192000.}){
         Trace trace;Fake fake(&trace);Renderer render(fake);OutputBlock out;
         InputBlock block;block.generation=1;block.rate=rate;
