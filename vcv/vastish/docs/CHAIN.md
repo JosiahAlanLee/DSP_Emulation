@@ -63,7 +63,11 @@ module. That is the same one-sample cost as a cable.
 ## Saving and limits
 
 Only the on/off setting is saved. The chained Vastish has no memory of the left
-one; moving it away ends the chain at once, and putting it back resumes it.
+one; moving it away ends the chain at once, and putting it back resumes it. On
+the first sample after a Vastish is put back, or a different one takes its place,
+the chained module plays unchained, because the buffers still hold the previous
+neighbour's last message; from the next sample it follows the new one. So a note
+that ended while the two were apart never sounds again as a one-sample blip.
 Turning chain mode on or off hands each voice from one set of gates to the
 other; a voice whose gate is high on both sides continues without retriggering.
 Panic silences the chained voices, but gates still high on the left sound again
@@ -83,7 +87,8 @@ is not sent, so a stereo sample continues as its left channel.
   one's input one and two samples later through their DC blockers; chained
   notes, velocities and gates follow a three-voice keyboard while the chained
   module's own GATE is ignored; chain off, no module on the left, or a different
-  module there all play as unchained; the setting round-trips through the patch
+  module there all play as unchained; a Vastish put back on the left after its
+  note ended while apart never replays that note's gate; the setting round-trips through the patch
   and is off when absent.
 - `tests/plugin_test.cpp`: Rack's Initialize turns it off.
 - The legacy trace of an unchained Vastish is unchanged.
