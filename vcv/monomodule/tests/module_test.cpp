@@ -22,7 +22,7 @@ static void drain(){std::this_thread::sleep_for(std::chrono::milliseconds(5));}
 static void flip(Module& m){if(m.leftExpander.messageFlipRequested){std::swap(m.leftExpander.producerMessage,m.leftExpander.consumerMessage);m.leftExpander.messageFlipRequested=false;}}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
-    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.0";modelMonomodule->plugin=&receiverPlugin;
+    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.1";modelMonomodule->plugin=&receiverPlugin;
     {
         // TRIG: track 3 plays V/OCT's note while its gate is high, and ends when it falls.
         Trace trace;auto mm=std::make_unique<Monomodule>(factory(trace));auto& m=*mm;m.model=modelMonomodule;ready(m);
@@ -54,6 +54,57 @@ int main(){
         assert(json_integer_value(json_array_get(json_object_get(saved,"fxInputs"),0))==INP_AB);
         json_decref(saved);
         std::cout<<"INP A into the engine, and FX inputs saved with the patch, passed\n";
+    }
+    {
+        // Unplugging TRIG while a gate is high ends that note (review #5), here with a moving Gorgon on the
+        // left, so the link takes over; a channel count drop ends a note too.
+        Plugin providerPlugin;providerPlugin.slug="GorgonBridge";providerPlugin.version="2.4.0";
+        Model providerModel;providerModel.slug="Gorgon";providerModel.plugin=&providerPlugin;
+        Trace trace;auto mm=std::make_unique<Monomodule>(factory(trace));auto& m=*mm;m.model=modelMonomodule;ready(m);
+        for(auto& o:m.outputs)o.channels=1;
+        Module provider;provider.model=&providerModel;m.leftExpander.module=&provider;
+        m.inputs[Monomodule::TRIG].channels=6;
+        Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+        gorgon_sound::Packet packet;packet.moving=true;packet.transport=1;
+        bool linked=false;
+        for(int f=0;f<10000;++f){
+            args.frame=f;packet.frame=f;
+            *static_cast<gorgon_sound::Packet*>(m.leftExpander.producerMessage)=packet;m.leftExpander.messageFlipRequested=true;
+            if(f==3000)m.inputs[Monomodule::TRIG].channels=0;   // the cable is pulled out with tracks 2 and 3 high
+            else if(f<3000){m.inputs[Monomodule::TRIG].setVoltage(f>=300?10.f:0.f,1);m.inputs[Monomodule::TRIG].setVoltage(f>=400?10.f:0.f,2);}
+            if(f==5000){m.inputs[Monomodule::TRIG].channels=6;for(int c=0;c<6;++c)m.inputs[Monomodule::TRIG].setVoltage(0.f,c);}
+            if(f>=5300)m.inputs[Monomodule::TRIG].setVoltage(f<9000?10.f:0.f,4);
+            if(f==7000)m.inputs[Monomodule::TRIG].channels=4;   // track 5's channel goes away while its gate is high
+            m.process(args);flip(m);if(f%128==127)drain();
+            if(f==4000)linked=m.lights[Monomodule::LINK].getBrightness()>0;
+        }
+        drain();
+        m.leftExpander.module=nullptr;
+        assert(linked);
+        {std::lock_guard<std::mutex> guard(trace.mutex);
+            int on[tracks]={},off[tracks]={};for(const auto& e:trace.events)(e.release?off:on)[e.hit.track]++;
+            assert(on[1]==1&&off[1]==1&&on[2]==1&&off[2]==1&&on[4]==1&&off[4]==1);}
+        assert(std::abs(m.outputs[Monomodule::TRACKS_L].getVoltage(1))<1e-4f&&std::abs(m.outputs[Monomodule::TRACKS_L].getVoltage(2))<1e-4f);
+        assert(std::abs(m.outputs[Monomodule::TRACKS_L].getVoltage(4))<1e-4f);
+        std::cout<<"TRIG unplugged or narrowed with gates high: those notes end, passed\n";
+    }
+    {
+        // A 10-sample trigger at 48 kHz, shorter than one 16-frame engine block, still sounds: its release
+        // reaches the engine one block after its note (review #16).
+        Trace trace;auto mm=std::make_unique<Monomodule>(factory(trace));auto& m=*mm;m.model=modelMonomodule;ready(m);
+        for(auto& o:m.outputs)o.channels=1;
+        m.inputs[Monomodule::TRIG].channels=1;
+        Module::ProcessArgs args{};args.sampleRate=48000;args.sampleTime=1.f/48000;
+        for(int f=0;f<6000;++f){
+            args.frame=f;
+            m.inputs[Monomodule::TRIG].setVoltage(f>=301&&f<311?10.f:0.f,0);
+            m.process(args);if(f%128==127)drain();
+        }
+        drain();
+        {std::lock_guard<std::mutex> guard(trace.mutex);
+            assert(trace.events.size()==2&&!trace.events[0].release&&trace.events[1].release);
+            assert(trace.events[1].native==trace.events[0].native+nativeFrames);}
+        std::cout<<"A gate shorter than one engine block plays for one block, passed\n";
     }
     {
         // The sound link: lane 6's note and machine lock, and its release.

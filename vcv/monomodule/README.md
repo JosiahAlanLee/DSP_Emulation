@@ -22,7 +22,8 @@ never a copy. Not affiliated with Elektron, Akai or VCV.
    P1–P8 locks set its SYN page.
 3. **From TRIG:** a polyphonic gate cable, channel *n* = track *n*. A gate is a note,
    at V/OCT's pitch (C4 = 0 V; a mono cable reaches every track), ending when the gate
-   falls. A TRIG cable overrides the Gorgon link.
+   falls, when its channel goes away or when the cable is unplugged. A TRIG cable
+   overrides the Gorgon link.
 
 | Control | |
 | --- | --- |
@@ -64,8 +65,11 @@ latency includes.
 ## Timing and cost
 
 Notes are applied on the engine's 16-sample blocks at 44.1 kHz, never early, then
-converted to Rack's rate. The queue to the worker thread is 1024 host samples, plus the
-converter's delay; the menu shows the total. On a Ryzen 5 5600X the six engines cost
+converted to Rack's rate. A gate shorter than one block (about 0.36 ms) still plays,
+for one block. The queue to the worker thread is 1024 host samples, plus the
+converter's delay; the menu shows the total. An FX machine's DSP works on whole
+blocks, so audio through it (INP A/B or NEIBOR) is one more block late, 15–16 engine
+samples (about 0.35 ms), beyond the menu's total. On a Ryzen 5 5600X the six engines cost
 about a third of one core (0.11 ms of work per 0.36 ms block, at most 0.28 ms), on their
 own worker thread.
 
