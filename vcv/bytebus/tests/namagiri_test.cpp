@@ -439,6 +439,24 @@ static void depthAndQChanges() {
     assert(std::isfinite(out.c.real) && std::abs(out.c.mag) < 1);
 }
 
+static void convergenceInvalidatedByParameterChange() {
+    Namagiri m; Parameters p; Inputs in;
+    p.mode = ClockMode::Jack;
+    p.radius = .5; p.depth = 8; p.settle = 1e-12;
+    in.clock.clockConnected = true;
+    auto out = m.tick(p, in, 48000);
+    assert(!out.converged);
+    // Simulate a previously latched convergence; a changed q invalidates it.
+    m.converged = true;
+    p.turns = .125;
+    out = m.tick(p, in, 48000);
+    assert(!out.converged);
+    m.converged = true;
+    p.depth = 9;
+    out = m.tick(p, in, 48000);
+    assert(!out.converged);
+}
+
 static void internalAndEngine() {
     Namagiri m; Parameters p; Inputs in;
     p.mode = ClockMode::Internal; p.rateHz = 48000 / 8; p.depth = 4;
@@ -482,6 +500,7 @@ int main() {
     busAddress();
     strobeSeparation();
     depthAndQChanges();
+    convergenceInvalidatedByParameterChange();
     internalAndEngine();
     std::cout << "PASS: Namagiri convergents, controls and the note pattern against the HydraPy reference grids to 1e-9 (notes and rests exact); the maximum-radius std::polar roundoff stays on the O(DEPTH) path while out-of-domain q keeps the guarded reference; q = 0 and the guarded denominators; V/OCT mapping, GATE and VEL; phase-word encoding against spec section 6; clock stepping, wraps, EOC and held outputs; RESET priority and the fresh |R_1| delta on every reset; the CONVERGED latch; BUS IN step words; separate bus and clock strobes through a one-sample cable; DEPTH and q changes; internal and Engine clocks at 44.1/48/96 kHz\n";
 }
