@@ -33,7 +33,7 @@ jobs:
       - name: Build adapter, real Rack interop and optional firmware-test executable
         run: |
           cmake -S vcv/machinemodule -B vcv/machinemodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
-          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test -j2
+          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test mmu_test -j2
           cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
           ctest --test-dir vcv/machinemodule/build --output-on-failure
       - name: Sanitize adapter and worker without any firmware
@@ -48,7 +48,7 @@ jobs:
           python3 - <<'PY'
           import tarfile
           from pathlib import Path
-          source = Path('vcv/machinemodule/dist/MachinemoduleRack-2.2.2-source.tar.gz')
+          source = Path('vcv/machinemodule/dist/MachinemoduleRack-2.2.3-source.tar.gz')
           with tarfile.open(source) as tar:
               names = tar.getnames()
               assert any(n.endswith('asmjit/src/asmjit/core/builder.cpp') for n in names)
@@ -105,7 +105,7 @@ jobs:
       - name: Build and run native adapter, DSP JIT and Gorgon interop tests
         run: |
           cmake -S vcv/machinemodule -B vcv/machinemodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
-          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test -j2
+          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test mmu_test -j2
           cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
           ctest --test-dir vcv/machinemodule/build --output-on-failure
       - name: Verify DLL imports and package with corresponding source
@@ -117,7 +117,7 @@ jobs:
           fi
           python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
           python3 vcv/machinemodule/tools/package.py
-          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.2-win-x64.vcvplugin
+          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.3-win-x64.vcvplugin
           vcv/machinemodule/build/plugin_load_test.exe vcv/machinemodule/dist/MachinemoduleRack/plugin.dll
       - uses: actions/upload-artifact@v4
         with:
@@ -154,7 +154,7 @@ jobs:
           DYLD_LIBRARY_PATH: /tmp/Rack-SDK
         run: |
           cmake -S vcv/machinemodule -B vcv/machinemodule/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cpu }} -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DRACK_DIR=/tmp/Rack-SDK -DGORGON_DIR="$GITHUB_WORKSPACE/gorgon-reference"
-          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test -j3
+          cmake --build vcv/machinemodule/build --target plugin control_test renderer_test worker_test module_test plugin_load_test firmware_test jit_test mmu_test -j3
           cmp vcv/shared/GorgonSound.hpp gorgon-reference/spec/sound-link.hpp
           ctest --test-dir vcv/machinemodule/build --output-on-failure
           test "$(lipo -archs vcv/machinemodule/plugin.dylib)" = '${{ matrix.cpu }}'
@@ -164,7 +164,7 @@ jobs:
         run: |
           python3 vcv/machinemodule/tools/source_bundle.py vcv/machinemodule/_deps/machinemodule
           python3 vcv/machinemodule/tools/package.py
-          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.2-${{ matrix.arch }}.vcvplugin
+          test -f vcv/machinemodule/dist/MachinemoduleRack-2.2.3-${{ matrix.arch }}.vcvplugin
           otool -L vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib
           otool -L vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib | grep '/tmp/Rack2/libRack.dylib'
           codesign --verify --strict vcv/machinemodule/dist/MachinemoduleRack/plugin.dylib

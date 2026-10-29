@@ -119,6 +119,16 @@ prints a note and exits 77 (skipped). It passed on 2026-10-27 with OS 1.32B, at
 `make dist` writes the `.vcvplugin` and its corresponding-source archive. The shared
 emulated-instrument adapter is `../adapter` (its README draws the AGPL/BSD boundary).
 
+## Changes in 2.0.5
+
+Fixes an intermittent Rack crash on load (about 1 in 25 loads) when Monomodule and
+Machinemodule start together. dsp56300 gave each JIT cache block its own memory by
+unmapping the block and mapping it straight back. In that moment another thread's
+allocation could land in the gap and was then silently overwritten, so the two
+emulators shared pages. On Linux and macOS the build now compiles a patched copy of
+the pinned `mmuhelper.cpp` (`cmake/mmu-remap.cmake`) that replaces the block in one
+call and keeps its address range reserved. The new `mmu_test` checks this.
+
 ## Changes in 2.0.4
 
 Replacing the adjacent Gorgon ends the old sound-link session, even when the new
