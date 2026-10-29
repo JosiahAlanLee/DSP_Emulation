@@ -177,8 +177,8 @@ struct NamagiriDisplay : widget::Widget {
         nvgFillColor(args.vg, nvgRGB(143, 220, 196));
         std::string text;
         if (note) {
-            int root = module ? int(std::round(module->params[ByteNamagiri::ROOT].getValue())) : 48;
-            text = ByteNamagiri::noteName(std::max(0, std::min(127, root)));
+            int heldNote = module ? module->noteOut.load(std::memory_order_relaxed) : 48;
+            text = ByteNamagiri::noteName(std::max(0, std::min(127, heldNote)));
         } else {
             int step = module ? module->stepOut.load(std::memory_order_relaxed) : 1;
             text = string::f("%d", step);
