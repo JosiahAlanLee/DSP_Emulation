@@ -16,6 +16,7 @@
 #include "../src/ParallelSum.cpp"
 #include "../src/Wheel.cpp"
 #include "../src/Roulette.cpp"
+#include "../src/Namagiri.cpp"
 #include "../src/Lookup.cpp"
 #include "../../vastish/src/Vastish.cpp"
 #include <array>
@@ -1165,6 +1166,160 @@ static std::vector<int> rouletteChain(float sr, unsigned orderSeed) {
     return words;
 }
 
+// Namagiri with real ports: bounds, the phase word, EOC and the CONVERGED gate, persistence,
+// Initialize, RESET replay and the step word on BUS IN; then Counter CARRY -> Namagiri CLOCK
+// through one-sample cables in random module order at 44.1/48/96 kHz.
+static void namagiriPorts(float sr) {
+    using K = ByteNamagiri; auto a = args(sr);
+    K m; connectOutputs(m); m.model = modelNamagiri;
+    assert(m.params.size() == 9 && m.inputs.size() == 6 && m.outputs.size() == 11 && m.lights.size() == 12);
+    assert(std::string(K::noteName(48)) == "C3" && std::string(K::noteName(0)) == "C-1");
+    assert(std::string(K::noteName(127)) == "G9" && std::string(K::noteName(61)) == "C#4");
+    m.params[K::SOURCE].setValue(1);                       // Jack
+    m.inputs[K::CLOCK_IN].channels = 1;
+    m.params[K::DEPTH].setValue(8); m.params[K::RADIUS].setValue(.9f);
+    m.params[K::SETTLE].setValue(-2.f);                    // 0.25 V: below step 2, above the wrap jump
+    auto pulse = [](K& k, int t) { k.inputs[K::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0); };
+    int eoc = 0, strobes = 0, gateHigh = 0, gateLowAtEoc = 0, noteGates = 0, gateLowAtStep1 = 0;
+    for (int t = 0; t < 8 * 40; ++t) {                     // 40 edges, 5 cycles of 8
+        pulse(m, t); m.process(a);
+        assert(m.outputs[K::BUS_OUT].getChannels() == 9);
+        for (int o : {K::REAL_OUT, K::IMAG_OUT, K::PHASE_OUT})
+            assert(std::abs(m.outputs[o].getVoltage()) <= 5 + 1e-4f);
+        for (int o : {K::MAG_OUT, K::DELTA_OUT, K::VEL_OUT})
+            assert(m.outputs[o].getVoltage() >= -1e-4f && m.outputs[o].getVoltage() <= 10 + 1e-4f);
+        assert(std::abs(m.outputs[K::V_OCT_OUT].getVoltage()) <= 6);   // MIDI 0-127 -> -5..+5.58 V
+        bool isEoc = m.outputs[K::EOC_OUT].getVoltage() == 10;
+        eoc += isEoc; strobes += m.outputs[K::BUS_OUT].getVoltage(8) == 10;
+        gateHigh += m.outputs[K::CONVERGED_OUT].getVoltage() == 10;
+        gateLowAtEoc += isEoc && m.outputs[K::CONVERGED_OUT].getVoltage() == 0;
+        if (isEoc) assert(m.stepOut.load() == 1);
+        // q real positive: angle 0 -> note 48 + floor(24/2) = 60 -> V/OCT 0 V. Step 1 has
+        // velocity 0, so GATE stays low there and high on every other step of the cycle.
+        if (m.outputs[K::GATE_OUT].getVoltage() == 10) noteGates++;
+        gateLowAtStep1 += m.stepOut.load() == 1 && m.outputs[K::GATE_OUT].getVoltage() == 0;
+    }
+    assert(eoc == 5 && strobes >= 40 && gateHigh > 40 && gateLowAtEoc == 5);
+    assert(noteGates > 30 && gateLowAtStep1 >= 5 * 7);      // step 1 of each cycle never gates
+    assert(word(m.outputs[K::BUS_OUT]) == 0x80);           // q real positive: angle 0 -> 0x80
+    assert(m.outputs[K::REAL_OUT].getVoltage() > 0);
+    assert(std::abs(m.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);   // C4 = 0 V
+    // Save mid-cycle, restore into a fresh module, continue identically.
+    K q2; for (K* k : {&m, &q2}) { connectOutputs(*k); k->model = modelNamagiri; }
+    q2.params[K::SOURCE].setValue(1); q2.inputs[K::CLOCK_IN].channels = 1;
+    q2.params[K::DEPTH].setValue(8); q2.params[K::RADIUS].setValue(.9f); q2.params[K::SETTLE].setValue(-2.f);
+    for (int t = 0; t < 8 * 21; ++t) { pulse(m, t); m.process(a); }   // step 6 of the next cycle
+    json_t* saved = m.toJson();
+    q2.fromJson(saved); json_decref(saved);
+    assert(q2.stepOut.load() == m.stepOut.load());
+    q2.process(a);
+    for (int t = 0; t < 8 * 40; ++t) {
+        pulse(m, t); pulse(q2, t); m.process(a); q2.process(a);
+        assert(q2.stepOut.load() == m.stepOut.load());
+        assert(q2.outputs[K::REAL_OUT].getVoltage() == m.outputs[K::REAL_OUT].getVoltage());
+        assert(q2.outputs[K::BUS_OUT].getVoltage(8) == m.outputs[K::BUS_OUT].getVoltage(8));
+    }
+    json_t* bad = json_pack("{s:i,s:i}", "step", 999, "converged", -3);
+    q2.dataFromJson(bad); json_decref(bad);
+    assert(q2.stepOut.load() == dspemu::namagiri::MAX_DEPTH && !q2.state.converged);
+    q2.onReset(Module::ResetEvent{});                      // Initialize
+    assert(q2.stepOut.load() == 1 && q2.params[K::DEPTH].getValue() == 12);
+    q2.process(a); assert(q2.stepOut.load() == 1);
+    // RESET replay: two copies reset on the same sample stay identical.
+    K x, y; for (K* k : {&x, &y}) { connectOutputs(*k); k->model = modelNamagiri;
+        k->params[K::SOURCE].setValue(1); k->inputs[K::CLOCK_IN].channels = 1; k->inputs[K::RESET_IN].channels = 1; }
+    for (int t = 0; t < 8 * 24; ++t) {
+        for (K* k : {&x, &y}) { pulse(*k, t); k->inputs[K::RESET_IN].setVoltage(t == 8 * 17 + 3 ? 10 : 0); k->process(a); }
+        assert(x.outputs[K::REAL_OUT].getVoltage() == y.outputs[K::REAL_OUT].getVoltage());
+        assert(x.outputs[K::BUS_OUT].getVoltage(8) == y.outputs[K::BUS_OUT].getVoltage(8));
+    }
+    // A bus word sets the step directly, modulo DEPTH.
+    putBus(m.inputs[K::BUS_IN], 0x13);                     // unclocked: 19 % 8 + 1 = step 4
+    m.process(a); assert(m.stepOut.load() == 4);
+    m.inputs[K::BUS_IN].channels = 0; m.process(a);        // the clock owns n again
+    assert(m.stepOut.load() == 4);
+    // THRESH 0.1 with q = .9: step 2's velocity (.122) is the only event; the later steps rest,
+    // GATE opens for that one step each cycle and V/OCT holds the event's note across the rests.
+    K r; connectOutputs(r); r.model = modelNamagiri;
+    r.params[K::SOURCE].setValue(1); r.inputs[K::CLOCK_IN].channels = 1;
+    r.params[K::DEPTH].setValue(8); r.params[K::RADIUS].setValue(.9f); r.params[K::THRESH].setValue(.1f);
+    int openings = 0, gatedSamples = 0; bool prevGate = false;
+    for (int t = 0; t < 8 * 24; ++t) {                     // 24 edges, 3 cycles
+        pulse(r, t); r.process(a);
+        bool gate = r.outputs[K::GATE_OUT].getVoltage() == 10;
+        gatedSamples += gate;
+        openings += gate && !prevGate; prevGate = gate;
+        assert(r.outputs[K::VEL_OUT].getVoltage() < 1.3f);
+        if (t >= 4) assert(std::abs(r.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);  // note 60 held
+    }
+    assert(openings == 3 && gatedSamples == 24);           // one 8-sample gate per cycle
+    // Rest persistence: THRESH 1 rests every step, so the previous cycle's note
+    // stays held on V/OCT. Save during the rest and restore into a fresh module:
+    // the held note returns, so V/OCT still reads 0 V (MIDI 60), not the -5 V of
+    // a fallback MIDI 0, and a malformed or missing field stays bounded.
+    K heldNote; connectOutputs(heldNote); heldNote.model = modelNamagiri;
+    heldNote.params[K::SOURCE].setValue(1); heldNote.inputs[K::CLOCK_IN].channels = 1;
+    heldNote.params[K::DEPTH].setValue(8); heldNote.params[K::RADIUS].setValue(.9f);
+    for (int t = 0; t < 8 * 2; ++t) { pulse(heldNote, t); heldNote.process(a); }
+    heldNote.params[K::THRESH].setValue(1);               // every step is a rest now
+    for (int t = 0; t < 8 * 2; ++t) { pulse(heldNote, t); heldNote.process(a); }
+    assert(heldNote.state.rest && heldNote.noteOut.load() == 60);
+    assert(std::abs(heldNote.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);
+    json_t* restSaved = heldNote.toJson();
+    K restRestored; connectOutputs(restRestored); restRestored.model = modelNamagiri;
+    restRestored.params[K::SOURCE].setValue(1); restRestored.inputs[K::CLOCK_IN].channels = 1;
+    restRestored.params[K::DEPTH].setValue(8); restRestored.params[K::RADIUS].setValue(.9f);
+    restRestored.params[K::THRESH].setValue(1);
+    restRestored.fromJson(restSaved); json_decref(restSaved);
+    assert(restRestored.noteOut.load() == 60);
+    restRestored.inputs[K::CLOCK_IN].setVoltage(0); restRestored.process(a);
+    assert(restRestored.state.rest);
+    assert(std::abs(restRestored.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);
+    // A patch saved before the note was persisted has no "note": the documented
+    // bounded fallback is MIDI 0, so a rest reloads at -5 V until the next event.
+    json_t* oldPatch = json_pack("{s:i,s:f,s:f,s:i}", "step", 5,
+        "previousReal", 0.0, "previousImag", 0.0, "converged", 0);
+    K legacy; connectOutputs(legacy); legacy.model = modelNamagiri;
+    legacy.params[K::SOURCE].setValue(1); legacy.inputs[K::CLOCK_IN].channels = 1;
+    legacy.params[K::DEPTH].setValue(8); legacy.params[K::RADIUS].setValue(.9f);
+    legacy.params[K::THRESH].setValue(1);
+    legacy.dataFromJson(oldPatch); json_decref(oldPatch);
+    assert(legacy.noteOut.load() == 0);
+    legacy.process(a);
+    assert(legacy.state.rest);
+    assert(std::abs(legacy.outputs[K::V_OCT_OUT].getVoltage() + 5.f) < 1e-4f);
+    // Malformed note fields are ignored; out-of-range ones clamp to MIDI 0..127.
+    json_t* textNote = json_pack("{s:s}", "note", "high");
+    legacy.dataFromJson(textNote); json_decref(textNote);
+    assert(legacy.noteOut.load() == 0);
+    json_t* hugeNote = json_pack("{s:I}", "note", json_int_t(99999));
+    legacy.dataFromJson(hugeNote); json_decref(hugeNote);
+    assert(legacy.noteOut.load() == 127);
+    legacy.process(a);
+    assert(std::abs(legacy.outputs[K::V_OCT_OUT].getVoltage() - (127 - 60) / 12.f) < 1e-4f);
+    json_t* negativeNote = json_pack("{s:i}", "note", -9);
+    legacy.dataFromJson(negativeNote); json_decref(negativeNote);
+    assert(legacy.noteOut.load() == 0);
+}
+
+static int namagiriChain(float sr, unsigned orderSeed) {
+    using K = ByteNamagiri; using C = ByteCounter; auto a = args(sr);
+    K n; C c; connectOutputs(n); connectOutputs(c); n.model = modelNamagiri; c.model = modelCounter;
+    c.params[C::CLOCK_MODE].setValue(1); c.inputs[C::CLOCK_IN].channels = 1; c.params[C::MODULUS].setValue(8);
+    n.params[K::SOURCE].setValue(1); n.inputs[K::CLOCK_IN].channels = 1; n.params[K::DEPTH].setValue(16);
+    std::mt19937 order(orderSeed);
+    int carries = 0, eocs = 0;
+    for (int t = 0; t < 8 * 8 * 32; ++t) {                // 256 counter edges, 32 carries
+        c.inputs[C::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0);
+        copy(c.outputs[C::CARRY_OUT], n.inputs[K::CLOCK_IN]);
+        if (order() & 1) { c.process(a); n.process(a); } else { n.process(a); c.process(a); }
+        carries += c.outputs[C::CARRY_OUT].getVoltage() == 10;
+        eocs += n.outputs[K::EOC_OUT].getVoltage() == 10;
+    }
+    assert(carries == 32 && eocs == 2 && n.stepOut.load() == 1);
+    return eocs * 100 + n.stepOut.load();
+}
+
 static void latticeGapPortsRegression() {
     using L = ByteLattice;
     for (float sr : {44100.f, 48000.f, 96000.f}) {
@@ -1381,7 +1536,7 @@ static void initializeSweep() {
 int main(int argc, char** argv) {
     Context context; context.engine = new engine::Engine; contextSet(&context);
     Plugin plugin; plugin.slug = "ByteBusLab"; plugin.version = "2.0.0";
-    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); plugin.addModel(modelWheel); plugin.addModel(modelRoulette); pluginInstance = &plugin;
+    plugin.addModel(modelClockedRegister); plugin.addModel(modelCounter); plugin.addModel(modelSwitch); plugin.addModel(modelPipeline); plugin.addModel(modelLookup2); plugin.addModel(modelCounter2); plugin.addModel(modelFan); plugin.addModel(modelLattice); plugin.addModel(modelParallelSum); plugin.addModel(modelWheel); plugin.addModel(modelRoulette); plugin.addModel(modelNamagiri); pluginInstance = &plugin;
     rack::plugin::plugins.push_back(&plugin);
     if (argc == 2 && std::string(argv[1]) == "lattice-gap") { latticeGapPortsRegression(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "roulette-reset") { rouletteResetPortsRegression(); return 0; }
@@ -1443,6 +1598,9 @@ int main(int argc, char** argv) {
     roulettePorts();
     auto spun = rouletteChain(48000, 81);
     assert(rouletteChain(44100, 82) == spun && rouletteChain(96000, 83) == spun);
+    for (float sr : {44100.f, 48000.f, 96000.f}) namagiriPorts(sr);
+    auto converged = namagiriChain(48000, 91);
+    assert(namagiriChain(44100, 92) == converged && namagiriChain(96000, 93) == converged);
     rack::plugin::plugins.clear();
-    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz; Wheel ports against its engine at Engine rate with capture, LENGTH Off and another window, capture from the jack, persistence of both registers and Initialize, and Counter clock and CARRY -> Wheel capture in random order at 44.1/48/96 kHz; Roulette ports against its engine through rest, DIVIDE, a spin and coast with one RESULT, TRACK lock, RANGE CV and the edge comparator, persistence and Initialize, and a Counter -> DIVIDE chain past the 12-bit wrap in random order at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Rack ports, persistence, clocked/unclocked modes; real Vastish FUN feedback with one-sample cables, random module order, RESET replay, no gates, three seeds at 44.1/48/96 kHz; Counter ports, persistence, LOAD, Engine rate, Initialize, run modes with saved Pendulum direction and 2.3 patches, One-shot -> Lookup Curve 32 envelopes, CARRY -> Counter/Register chains and Counter -> Lookup Rhythm gates and Counter -> Lookup JUMP steps in random order at 44.1/48/96 kHz; One-shot -> Lookup Envelope and a Density build-up from CARRY -> JUMP; Switch ports, gate select, persistence, a Counter A/B commutator and Mix VCA in random order, and reclocking at 44.1/48/96 kHz; Pipeline canon of a Rhythm word with SPREAD in random order at 44.1/48/96 kHz, LOOP gate and button, history save/reload, CLEAR, Initialize; Counters -> Lookup2 with CARRY -> JUMP in random order at 44.1/48/96 kHz; Counter 2 polymeter, exact resume and bounded restore, RATIO words and a Lookup Ratio -> Counter 2 chain at 44.1/48/96 kHz; Fan ports, 16-channel cables both ways, one-hot counter mode, Hold, DIR gate, GLITCH, persistence and Initialize, and a Counter -> Fan chain in random order at 44.1/48/96 kHz; Lattice ports, the normalled raster, CV ranges, gates and lights, Follow/Load/BUS IN jumps through the panel, slew and slew CV, persistence and Initialize, and Counter -> Lattice BUS IN jumps under its own H clock in random order at 44.1/48/96 kHz; Parallel Sum ports, the B8/XNOR cycle with CV, AUDIO, GATE and lights, W CV, HOT, the MASK bus, INJECT, GATE -> INJECT feedback, persistence and Initialize, and a Counter -> MASK bus chain clocking it in random order at 44.1/48/96 kHz; Wheel ports against its engine at Engine rate with capture, LENGTH Off and another window, capture from the jack, persistence of both registers and Initialize, and Counter clock and CARRY -> Wheel capture in random order at 44.1/48/96 kHz; Roulette ports against its engine through rest, DIVIDE, a spin and coast with one RESULT, TRACK lock, RANGE CV and the edge comparator, persistence and Initialize, and a Counter -> DIVIDE chain past the 12-bit wrap in random order at 44.1/48/96 kHz; Namagiri ports, bounds, the phase word 0x80 at angle 0, EOC and the CONVERGED gate, persistence and Initialize, RESET replay, the BUS IN step word and a Counter CARRY -> Namagiri CLOCK chain in random order at 44.1/48/96 kHz\n";
 }

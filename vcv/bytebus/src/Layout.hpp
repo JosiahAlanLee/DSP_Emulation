@@ -497,4 +497,51 @@ constexpr float BIPOLAR_OUT_X = 120, BIPOLAR_OUT_Y = 362;
 constexpr float LEVEL_OUT_X = 198, LEVEL_OUT_Y = 362;
 } // namespace adapter
 
+namespace namagiri {
+constexpr float WIDTH = 240;
+constexpr float STEP_X = 12, STEP_Y = 53;
+constexpr float STEP_W = 52, STEP_H = 24;
+constexpr float NOTE_X = 68, NOTE_Y = 53;
+constexpr float NOTE_W = 52, NOTE_H = 24;
+constexpr float SOURCE_X = 12, SOURCE_Y = 116;
+constexpr float SOURCE_W = 76, SOURCE_H = 22;
+constexpr float RADIUS_X = 45, RADIUS_Y = 148;
+constexpr float ANGLE_X = 95, ANGLE_Y = 148;
+constexpr float DEPTH_X = 145, DEPTH_Y = 148;
+constexpr float SETTLE_X = 195, SETTLE_Y = 148;
+constexpr float ROOT_X = 45, ROOT_Y = 212;
+constexpr float SPAN_X = 95, SPAN_Y = 212;
+constexpr float THRESH_X = 145, THRESH_Y = 212;
+constexpr float RATE_X = 195, RATE_Y = 212;
+constexpr float RADIUS_CV_IN_X = 30, RADIUS_CV_IN_Y = 290;
+constexpr float ANGLE_CV_IN_X = 67.5, ANGLE_CV_IN_Y = 290;
+constexpr float DEPTH_CV_IN_X = 105, DEPTH_CV_IN_Y = 290;
+constexpr float CLOCK_IN_X = 142.5, CLOCK_IN_Y = 290;
+constexpr float RESET_IN_X = 180, RESET_IN_Y = 290;
+constexpr float BUS_IN_X = 217.5, BUS_IN_Y = 290;
+constexpr float RESET_LIGHT_X = 198, RESET_LIGHT_Y = 272;
+constexpr float CLOCK_LIGHT_X = 160.5, CLOCK_LIGHT_Y = 272;
+constexpr float REAL_OUT_X = 30, REAL_OUT_Y = 320;
+constexpr float IMAG_OUT_X = 67.5, IMAG_OUT_Y = 320;
+constexpr float MAG_OUT_X = 105, MAG_OUT_Y = 320;
+constexpr float PHASE_OUT_X = 142.5, PHASE_OUT_Y = 320;
+constexpr float V_OCT_OUT_X = 180, V_OCT_OUT_Y = 320;
+constexpr float GATE_OUT_X = 217.5, GATE_OUT_Y = 320;
+constexpr float DELTA_OUT_X = 36, DELTA_OUT_Y = 354;
+constexpr float CONVERGED_OUT_X = 78, CONVERGED_OUT_Y = 354;
+constexpr float EOC_OUT_X = 120, EOC_OUT_Y = 354;
+constexpr float VEL_OUT_X = 162, VEL_OUT_Y = 354;
+constexpr float BUS_OUT_X = 204, BUS_OUT_Y = 354;
+constexpr float CONVERGED_LIGHT_X = 96, CONVERGED_LIGHT_Y = 342;
+constexpr float EOC_LIGHT_X = 138, EOC_LIGHT_Y = 342;
+constexpr float BIT0_LIGHT_X = 214, BIT0_LIGHT_Y = 374;
+constexpr float BIT1_LIGHT_X = 198, BIT1_LIGHT_Y = 374;
+constexpr float BIT2_LIGHT_X = 182, BIT2_LIGHT_Y = 374;
+constexpr float BIT3_LIGHT_X = 166, BIT3_LIGHT_Y = 374;
+constexpr float BIT4_LIGHT_X = 150, BIT4_LIGHT_Y = 374;
+constexpr float BIT5_LIGHT_X = 134, BIT5_LIGHT_Y = 374;
+constexpr float BIT6_LIGHT_X = 118, BIT6_LIGHT_Y = 374;
+constexpr float BIT7_LIGHT_X = 102, BIT7_LIGHT_Y = 374;
+} // namespace namagiri
+
 } // namespace bytebus_layout
