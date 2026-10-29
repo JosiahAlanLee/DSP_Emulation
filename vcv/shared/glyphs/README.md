@@ -35,6 +35,7 @@ drawn by that project's generator with the seal ornament left off.
 | Parallel Sum | X Generative substrate | conditions beneath (the register's bit stream is the material the weights shape) |
 | Wheel | XI Reflexive loop | the map moves it (the loop feeds itself until a capture replaces it) |
 | Roulette | VI Regulation | returns to set point (the loop pulls the VCO to its input, or lets it come to rest) |
+| Namagiri | VI Regulation | returns to set point (each cycle's convergents settle onto R(q), and RESET returns to step 1) |
 | DrumLab Percussion | X Generative substrate | six synthesis models supply the material for each hit |
 | Machinemodule | X Generative substrate | the drum engine supplies the material for each track |
 

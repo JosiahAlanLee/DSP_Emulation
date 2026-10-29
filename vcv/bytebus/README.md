@@ -1,6 +1,6 @@
 # ByteBusLab
 
-Fourteen modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
+Fifteen modules for the [byte bus](../../docs/BYTE_BUS_SPEC.md), with exact bits,
 explicit clocking and original table content:
 
 | Module | Role | Manual |
@@ -19,8 +19,9 @@ explicit clocking and original table content:
 | **Parallel Sum**, 20 HP | An eight-stage shift register, XOR or XNOR feedback from a mask (a knob or a byte bus) plus an injected signal, summed through eight weights into a stepped CV and a zero-mean audio output: a timbre generator, a CV pattern and controllable noise, after the Nonlinearcircuits Burhans Timbre. | [Parallel Sum](docs/PARALLEL_SUM.md) |
 | **Wheel**, 14 HP | A 24-stage noise register that visits every 24-bit state once, and a loop of 1–24 steps that recirculates until CAPTURE refills it from the noise; both read through an eight-stage window as byte buses, a DAC and a bell-curve CV, after the Nonlinearcircuits Pseudo. | [Wheel](docs/WHEEL.md) |
 | **Roulette**, 14 HP | A phase-locked loop driving a 12-bit counter on two overlapping byte buses: a gate spins the VCO up and the loop filter lets it coast to rest, publishing the count at rest on RESULT; or it tracks an input, loosely or tightly, or divides a clock, after the Nonlinearcircuits Wangernumb. | [Roulette](docs/ROULETTE.md) |
+| **Namagiri**, 16 HP | The Rogers-Ramanujan continued fraction's convergents as clocked CV: RADIUS, ANGLE and DEPTH shape a phrase of complex values that swings, then converges, published as REAL, IMAG, MAG, PHASE and DELTA, with a CONVERGED gate, an EOC trigger and the phase as a byte word, after HydraPy's namagiri. | [Namagiri](docs/NAMAGIRI.md) |
 
-Plugin **ByteBusLab**, version **2.17.0**. For a first sound, patch a VCO saw into
+Plugin **ByteBusLab**, version **2.18.0**. For a first sound, patch a VCO saw into
 Lookup SIGNAL and its AUDIO output to your mixer; turn SHAPE and FAMILY.
 
 Build and check from the repository root:
@@ -67,6 +68,15 @@ FILL from the hit lanes. See the [Adapter manual](docs/ADAPTER.md) and
 
 Converter's outlined panel labels use DejaVu Sans; its
 [font license](docs/DEJAVU-LICENSE.txt) accompanies the generated SVG.
+
+## Changes in 2.18.0
+
+- Add Namagiri: the Rogers-Ramanujan continued fraction's convergents as
+  clocked CV, gates and a phase word. RADIUS, ANGLE and DEPTH shape the
+  phrase; REAL, IMAG, MAG, PHASE and DELTA publish each step, CONVERGED opens
+  when the phrase settles and EOC marks each wrap. The convergents match
+  HydraPy's namagiri.py to 1e-9 over a committed reference grid; BUS IN sets
+  the step directly.
 
 ## Changes in 2.17.0
 

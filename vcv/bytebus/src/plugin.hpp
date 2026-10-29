@@ -16,3 +16,4 @@ extern Model* modelParallelSum;
 extern Model* modelWheel;
 extern Model* modelRoulette;
 extern Model* modelAdapter;
+extern Model* modelNamagiri;

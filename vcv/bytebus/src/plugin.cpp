@@ -16,4 +16,5 @@ void init(Plugin* plugin) {
     plugin->addModel(modelWheel);
     plugin->addModel(modelRoulette);
     plugin->addModel(modelAdapter);
+    plugin->addModel(modelNamagiri);
 }

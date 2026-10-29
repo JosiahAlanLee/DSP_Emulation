@@ -467,6 +467,49 @@ def roulette(font):
     return p
 
 
+
+def namagiri(font):
+    p = Panel(240, font)
+    p.title('Namagiri', 'ROGERS\u2013RAMANUJAN CF / CONVERGENTS', 6)
+    p.component('STEP', 'readout', 12, 53, 52, 24, '12')
+    p.text('STEP', 38, 92, 7)
+    for k in range(8):
+        x = 214 - 16 * k
+        p.component(f'BIT{k}_LIGHT', 'light', x, 64)
+    p.text('PHASE WORD 8 ... 1', 158, 82, 6, DIM)
+    p.component('CLOCK_LIGHT', 'light', 84, 64)
+    p.text('CLK', 84, 78, 5.5, DIM)
+    p.component('SOURCE', 'selector', 12, 100, 76, 22, 'AUTO')
+    p.text('SOURCE', 50, 134, 7)
+    p.component('RATE', 'knob', 192, 100)
+    p.text('RATE', 192, 128)
+    p.text('Hz', 192, 139, 6, DIM)
+    for name, x, label in [('RADIUS', 45, 'RADIUS'), ('ANGLE', 95, 'ANGLE'),
+                           ('DEPTH', 145, 'DEPTH'), ('THRESH', 195, 'THRESH')]:
+        p.component(name, 'knob', x, 167)
+        p.text(label, x, 197, 7)
+    p.text('|q| 0\u20130.97', 45, 208, 6, DIM)
+    p.text('TURNS', 95, 208, 6, DIM)
+    p.text('1\u201332', 145, 208, 6, DIM)
+    p.text('DELTA V', 195, 208, 6, DIM)
+    p.rule(226)
+    for name, x, label in [('RADIUS_CV_IN', 30, 'R CV'), ('ANGLE_CV_IN', 67.5, 'A CV'),
+                           ('DEPTH_CV_IN', 105, 'D CV'), ('CLOCK_IN', 142.5, 'CLOCK'),
+                           ('RESET_IN', 180, 'RESET'), ('BUS_IN', 217.5, 'BUS IN')]:
+        p.jack(name, x, 258, label)
+    p.component('RESET_LIGHT', 'light', 198, 240)
+    p.block(12, 278, 216, 94)
+    for name, x, label in [('REAL_OUT', 45, 'REAL'), ('IMAG_OUT', 95, 'IMAG'),
+                           ('MAG_OUT', 145, 'MAG'), ('PHASE_OUT', 195, 'PHASE')]:
+        p.jack(name, x, 306, label, True)
+    for name, x, label in [('DELTA_OUT', 45, 'DELTA'), ('CONVERGED_OUT', 95, 'CONVERGED'),
+                           ('EOC_OUT', 145, 'EOC'), ('BUS_OUT', 195, 'BUS')]:
+        p.jack(name, x, 350, label, True)
+    p.component('CONVERGED_LIGHT', 'light', 113, 338)
+    p.component('EOC_LIGHT', 'light', 163, 338)
+    p.text('LSB FIRST / 8 BITS + CLK', 120, 376, 6, DIM)
+    return p
+
 def adapter(font):
     p = Panel(240, font)
     p.title('Adapter', 'BYTE FORMATS / ROUTING / RECLOCK', 4)
@@ -505,15 +548,15 @@ def main():
               'pipeline': pipeline(args.font), 'lookup2': lookup2(args.font),
               'counter2': counter2(args.font), 'fan': fan(args.font), 'lattice': lattice(args.font),
               'parallel_sum': parallel_sum(args.font), 'wheel': wheel(args.font),
-              'roulette': roulette(args.font), 'adapter': adapter(args.font)}
+              'roulette': roulette(args.font), 'adapter': adapter(args.font), 'namagiri': namagiri(args.font)}
     for name, filename in [('reg', 'Register'), ('lookup', 'Lookup'), ('converter', 'Converter'), ('counter', 'Counter'),
                            ('byte_switch', 'Switch'), ('pipeline', 'Pipeline'),
                            ('lookup2', 'Lookup2'), ('counter2', 'Counter2'), ('fan', 'Fan'), ('lattice', 'Lattice'),
                            ('parallel_sum', 'ParallelSum'), ('wheel', 'Wheel'), ('roulette', 'Roulette'),
-                           ('adapter', 'Adapter')]:
+                           ('adapter', 'Adapter'), ('namagiri', 'Namagiri')]:
         panels[name].write(ROOT, filename)
     write_layout(ROOT / 'src/Layout.hpp', 'bytebus_layout', panels)
-    print('Wrote fourteen ByteBusLab panels, previews and src/Layout.hpp')
+    print('Wrote fifteen ByteBusLab panels, previews and src/Layout.hpp')
 
 
 if __name__ == '__main__':
