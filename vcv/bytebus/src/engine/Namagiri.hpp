@@ -6,10 +6,12 @@
 // namagiri.convergents (finite definition, principal branch of q^(1/5), denominators guarded
 // below 1e-10 by substitution as in ops_namagiri, never a NaN); |q| is clamped to .97 at the
 // parameter layer as ops_namagiri does, where the guard cannot fire (the smallest reachable
-// denominator magnitude is about 6.5e-3). Clock ownership, RESET and strobes are the Clocked
-// Register's (ClockOwner.hpp); a BUS IN word sets n directly, modulo DEPTH. The word on the
-// bus is the phase, arg(R_n)/2pi quantized to n/256 (spec section 6, "phase"). Contract:
-// docs/NAMAGIRI.md.
+// denominator magnitude is about 6.5e-3). Each step also maps to a note event as HydraPy's
+// namagiri_pattern (phase 3, PR #94): velocity = change/(1+change) with HydraPy's per-cycle
+// delta (0 on step 1), note = root + floor((phase+pi)/2pi * span), a rest below the velocity
+// threshold. Clock ownership, RESET and strobes are the Clocked Register's (ClockOwner.hpp);
+// a BUS IN word sets n directly, modulo DEPTH. The word on the bus is the phase, arg(R_n)/2pi
+// as a signed fraction of pi in offset binary (spec section 6). Contract: docs/NAMAGIRI.md.
 #pragma once
 #include "ClockOwner.hpp"
 #include <array>
@@ -56,6 +58,15 @@ inline std::array<Controls, MAX_DEPTH> controls(const std::array<C, MAX_DEPTH>& 
     return c;
 }
 
+// HydraPy namagiri_pattern.pattern parity (phase 3, PR #94): the velocity is the convergent
+// change clipped to 0..1, and the note maps the phase into root..root+span semitones, clipped
+// to MIDI. A step is an event when its velocity reaches the threshold; unlike the DELTA jack,
+// this change is HydraPy's delta (0 on step 1 of every cycle, |R_n - R_(n-1)| after).
+inline double patternVelocity(double change) { return change / (1.0 + change); }
+inline int patternNote(double phase, int root, int span) {
+    return std::max(0, std::min(127, int(std::floor((phase + PI) / TAU * span)) + root));
+}
+
 // The phase as a byte word: the angle as a signed fraction of pi in offset binary, exactly
 // spec section 6's "bipolar" reading, so 0x80 is angle 0, 0x00 is -pi and 0xFF just below +pi;
 // a DAC stage reads (n - 128) / 128 * pi back out.
@@ -72,7 +83,10 @@ struct Parameters {
     double radius = .8;                     // |q|, 0..MAX_RADIUS
     double turns = 0;                       // arg q in turns, [0, 1)
     int depth = 12;                         // 1..MAX_DEPTH, the cycle length
-    double threshold = .02;                 // the CONVERGED latch, units of R (the module: volts / 5)
+    double settle = .02;                    // the CONVERGED latch, units of R (the module: volts / 5)
+    int root = 48;                          // MIDI root note, 0..127
+    int span = 24;                          // semitones above ROOT, 1..96
+    double velocityThreshold = 0;           // a step's velocity below this is a rest, 0..1
 };
 struct Inputs {
     clock_owner::Inputs clock;              // CLOCK and RESET
@@ -82,6 +96,10 @@ struct Output {
     int step = 0;                           // 1..depth
     Controls c;                             // the held values of this step
     uint8_t word = 0;                       // the phase word of the held step
+    int note = 0;                           // the held MIDI note (V/OCT), or the last event's on a rest
+    double velocity = 0;                    // the step's velocity, 0..1 (HydraPy's delta)
+    bool gate = false;                      // high for the step when it is an event above velocity 0
+    bool rest = false;                      // this step's velocity is below the threshold
     bool clocked = true, clk = false;
     bool loaded = false, advanced = false, eoc = false;
     bool converged = false;
@@ -96,6 +114,9 @@ struct Namagiri {
     bool converged = false, built = false, firstPublish = true;
     bool pending = false, strobe = false;
     Controls held{};
+    int note = 0;                           // the note in force (held across rests)
+    double velocity = 0;
+    bool gate = false, rest = false;
 
     void clear(int savedStep = 1, C savedPrevious = 0, bool savedConverged = false) {
         owner.clear();
@@ -104,23 +125,36 @@ struct Namagiri {
         depth = 0; step = std::max(1, std::min(MAX_DEPTH, savedStep));
         lastQ = std::nan(""); built = false; firstPublish = true;
         converged = savedConverged; pending = strobe = false; held = {};
+        note = 0; velocity = 0; gate = rest = false;
     }
-    // Re-hold the current step: the convergents, this step's change and the latch.
-    void hold(double threshold) {
+    // Re-hold the current step: the convergents, this step's change and the latch, plus the
+    // note pattern. The pattern's velocity uses HydraPy's delta (0 on step 1), separately from
+    // the DELTA jack's |R_n - previous|; the note holds across rests, the velocity does not.
+    void hold(double settle, int root, int span, double velocityThreshold) {
         held.real = r[step - 1].real();
         held.imag = r[step - 1].imag();
         held.mag = std::abs(r[step - 1]);
         held.phase = std::arg(r[step - 1]);
         held.delta = std::abs(r[step - 1] - previous);
         previous = r[step - 1];
-        converged = converged || held.delta < threshold;
+        converged = converged || held.delta < settle;
+        double change = step >= 2 ? std::abs(r[step - 1] - r[step - 2]) : 0;
+        velocity = patternVelocity(change);
+        rest = velocity < velocityThreshold;
+        if (!rest) note = patternNote(held.phase, root, span);
+        gate = !rest && velocity > 0;       // a velocity-0 event keeps its note but does not gate
     }
 
     Output tick(const Parameters& p, const Inputs& in, double sampleRate) {
         Output out;
         double radius = std::isfinite(p.radius) ? std::max(0., std::min(MAX_RADIUS, p.radius)) : .8;
-        double turns = std::isfinite(p.turns) ? p.turns - std::floor(p.turns) : 0;        int depthNew = std::max(1, std::min(MAX_DEPTH, p.depth));
-        double threshold = std::isfinite(p.threshold) ? std::max(0., p.threshold) : .02;
+        double turns = std::isfinite(p.turns) ? p.turns - std::floor(p.turns) : 0;
+        int depthNew = std::max(1, std::min(MAX_DEPTH, p.depth));
+        double settle = std::isfinite(p.settle) ? std::max(0., p.settle) : .02;
+        int root = std::max(0, std::min(127, p.root));
+        int span = std::max(1, std::min(96, p.span));
+        double velocityThreshold = std::isfinite(p.velocityThreshold)
+            ? std::max(0., std::min(1., p.velocityThreshold)) : 0;
         C q = std::polar(radius, TAU * turns);
 
         // The table rebuilds only when q or DEPTH changes, past a tolerance so a slow CV
@@ -129,7 +163,7 @@ struct Namagiri {
             build(q, depthNew, r);
             depth = depthNew; lastQ = q;
             if (step > depth) step = depth;
-            if (built) hold(threshold);
+            if (built) hold(settle, root, span, velocityThreshold);
             built = true;
         }
 
@@ -149,7 +183,7 @@ struct Namagiri {
             if (set != step) { step = set; publish = true; pending = true; }
         }
         if (s.loaded && firstPublish) publish = true;
-        if (publish) { hold(threshold); firstPublish = false; }
+        if (publish) { hold(settle, root, span, velocityThreshold); firstPublish = false; }
 
         out.clocked = s.clocked;
         if (!out.clocked) { strobe = false; pending = false; }
@@ -158,6 +192,7 @@ struct Namagiri {
         out.clk = s.clk || strobe;
         out.loaded = s.loaded; out.advanced = s.acquire;
         out.step = step; out.c = held; out.word = phaseWord(held.phase);
+        out.note = note; out.velocity = velocity; out.gate = gate; out.rest = rest;
         out.converged = converged;
         return out;
     }

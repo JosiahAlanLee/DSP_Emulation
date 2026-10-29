@@ -94,7 +94,7 @@
     {
       "slug": "Namagiri",
       "name": "Namagiri",
-      "description": "The Rogers-Ramanujan continued fraction's convergents as clocked CV: RADIUS, ANGLE and DEPTH shape a phrase of complex values that swings, then converges, published as REAL/IMAG/MAG/PHASE/DELTA, a CONVERGED gate, an EOC trigger and a phase word on a byte bus.",
+      "description": "The Rogers-Ramanujan continued fraction's convergents as clocked CV: RADIUS, ANGLE and DEPTH shape a phrase of complex values that swings, then converges, published as REAL/IMAG/MAG/PHASE/DELTA, a note on V/OCT with GATE and VEL, a CONVERGED gate, an EOC trigger and a phase word on a byte bus.",
       "tags": ["Sequencer", "Sample and hold", "Logic", "Polyphonic"]
     }
   ]

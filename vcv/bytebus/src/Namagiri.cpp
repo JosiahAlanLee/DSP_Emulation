@@ -6,9 +6,10 @@
 #include <atomic>
 
 struct ByteNamagiri : Module {
-    enum Params { SOURCE, RATE, RADIUS, ANGLE, DEPTH, THRESH, NUM_PARAMS };
+    enum Params { SOURCE, RATE, RADIUS, ANGLE, DEPTH, ROOT, SPAN, THRESH, SETTLE, NUM_PARAMS };
     enum Inputs { RADIUS_CV_IN, ANGLE_CV_IN, DEPTH_CV_IN, CLOCK_IN, RESET_IN, BUS_IN, NUM_INPUTS };
-    enum Outputs { REAL_OUT, IMAG_OUT, MAG_OUT, PHASE_OUT, DELTA_OUT, CONVERGED_OUT, EOC_OUT, BUS_OUT, NUM_OUTPUTS };
+    enum Outputs { REAL_OUT, IMAG_OUT, MAG_OUT, PHASE_OUT, V_OCT_OUT, GATE_OUT,
+        DELTA_OUT, VEL_OUT, CONVERGED_OUT, EOC_OUT, BUS_OUT, NUM_OUTPUTS };
     enum Lights { BIT0_LIGHT, BIT1_LIGHT, BIT2_LIGHT, BIT3_LIGHT, BIT4_LIGHT,
         BIT5_LIGHT, BIT6_LIGHT, BIT7_LIGHT, CLOCK_LIGHT, RESET_LIGHT, CONVERGED_LIGHT, EOC_LIGHT, NUM_LIGHTS };
     dspemu::bus::Writer writer;
@@ -19,6 +20,13 @@ struct ByteNamagiri : Module {
     std::atomic<double> previousReal{0}, previousImag{0};
     std::atomic<int> convergedOut{0};
 
+    static const char* noteName(int note) {
+        static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+        static std::string text;
+        text = string::f("%s%d", names[note % 12], note / 12 - 1);
+        return text.c_str();
+    }
+
     ByteNamagiri() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         configSwitch(SOURCE, 0, 3, 0, "Clock source",
@@ -28,8 +36,13 @@ struct ByteNamagiri : Module {
         configParam(ANGLE, 0, 1, 0, "Angle (arg q, in turns)");
         configParam(DEPTH, 1, dspemu::namagiri::MAX_DEPTH, 12, "Depth (steps per cycle)");
         getParamQuantity(DEPTH)->snapEnabled = true;
-        // The delta threshold, in the DELTA output's volts (1 mV - 10 V, logarithmic).
-        configParam(THRESH, -10, std::log2(10.f), std::log2(.1f), "Converged threshold (delta)", " V", 2.f);
+        configParam(ROOT, 0, 127, 48, "Root note (MIDI)");
+        getParamQuantity(ROOT)->snapEnabled = true;
+        configParam(SPAN, 1, 96, 24, "Span (semitones above ROOT)");
+        getParamQuantity(SPAN)->snapEnabled = true;
+        configParam(THRESH, 0, 1, 0, "Velocity threshold (a step below it is a rest)");
+        // The CONVERGED latch's threshold, in the DELTA output's volts (1 mV - 10 V, logarithmic).
+        configParam(SETTLE, -10, std::log2(10.f), std::log2(.1f), "Settle threshold (delta)", " V", 2.f);
         configInput(RADIUS_CV_IN, "Radius CV (10 V spans |q| 0 - .97)");
         configInput(ANGLE_CV_IN, "Angle CV (10 V spans one turn)");
         configInput(DEPTH_CV_IN, "Depth CV (10 V spans 32 steps)");
@@ -40,8 +53,11 @@ struct ByteNamagiri : Module {
         configOutput(IMAG_OUT, "Imaginary part of R(q), 5 V per unit, +/-5 V");
         configOutput(MAG_OUT, "Magnitude |R(q)|, 5 V per unit, 0-10 V");
         configOutput(PHASE_OUT, "Phase of R(q), +/-5 V for +/-pi");
+        configOutput(V_OCT_OUT, "Note pitch, (note - 60)/12 V, so C4 = 0 V; holds across rests");
+        configOutput(GATE_OUT, "Gate, high for the step when its velocity reaches THRESH and is above zero");
         configOutput(DELTA_OUT, "This step's change, 5 V per unit, 0-10 V");
-        configOutput(CONVERGED_OUT, "Converged gate (high once delta falls below THRESH, until the wrap)");
+        configOutput(VEL_OUT, "The step's velocity, 0-10 V (below THRESH on a rest)");
+        configOutput(CONVERGED_OUT, "Converged gate (high once delta falls below SETTLE, until the wrap)");
         configOutput(EOC_OUT, "End of cycle trigger at the wrap");
         configOutput(BUS_OUT, "Phase word (the angle as a signed fraction of pi, offset binary; 9 channels)");
         for (int k = 0; k < 8; ++k) configLight(BIT0_LIGHT + k, string::f("Phase word bit %d", k));
@@ -72,7 +88,10 @@ struct ByteNamagiri : Module {
         p.turns = params[ANGLE].getValue();
         p.turns = std::isfinite(p.turns) ? p.turns - std::floor(p.turns) : 0.f;
         p.depth = integer(DEPTH, 1, nm::MAX_DEPTH, 12);
-        p.threshold = std::exp2(clamp(finite(params[THRESH].getValue(), std::log2(.1f)), -10.f, std::log2(10.f))) / 5;
+        p.root = integer(ROOT, 0, 127, 48);
+        p.span = integer(SPAN, 1, 96, 24);
+        p.velocityThreshold = clamp(finite(params[THRESH].getValue(), 0.f), 0.f, 1.f);
+        p.settle = std::exp2(clamp(finite(params[SETTLE].getValue(), std::log2(.1f)), -10.f, std::log2(10.f))) / 5;
         nm::Inputs in;
         in.clock.clockConnected = inputs[CLOCK_IN].isConnected();
         in.clock.clock = inputs[CLOCK_IN].getVoltage();
@@ -93,7 +112,10 @@ struct ByteNamagiri : Module {
         outputs[IMAG_OUT].setVoltage(clip(5 * out.c.imag, -5, 5));
         outputs[MAG_OUT].setVoltage(clip(5 * out.c.mag, 0, 10));
         outputs[PHASE_OUT].setVoltage(clip(5 * out.c.phase / nm::PI, -5, 5));
+        outputs[V_OCT_OUT].setVoltage((out.note - 60) / 12.f);
+        outputs[GATE_OUT].setVoltage(out.gate ? dspemu::bus::HIGH : 0.f);
         outputs[DELTA_OUT].setVoltage(clip(5 * out.c.delta, 0, 10));
+        outputs[VEL_OUT].setVoltage(clip(10 * out.velocity, 0, 10));
         outputs[CONVERGED_OUT].setVoltage(out.converged ? dspemu::bus::HIGH : 0.f);
         outputs[EOC_OUT].setVoltage(out.eoc ? dspemu::bus::HIGH : 0.f);
         for (int k = 0; k < 8; ++k) lights[BIT0_LIGHT + k].setBrightness(out.word & (1u << k) ? 1.f : 0.f);
@@ -136,16 +158,24 @@ struct ByteNamagiri : Module {
 
 struct NamagiriDisplay : widget::Widget {
     ByteNamagiri* module = nullptr;
+    bool note = false;
     void draw(const DrawArgs& args) override {
         nvgBeginPath(args.vg); nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
         nvgFillColor(args.vg, nvgRGB(14, 20, 23)); nvgFill(args.vg);
         auto font = APP->window->uiFont;
         if (!font) return;
-        nvgFontFaceId(args.vg, font->handle); nvgFontSize(args.vg, 15);
+        nvgFontFaceId(args.vg, font->handle); nvgFontSize(args.vg, note ? 14 : 15);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         nvgFillColor(args.vg, nvgRGB(143, 220, 196));
-        int step = module ? module->stepOut.load(std::memory_order_relaxed) : 1;
-        nvgText(args.vg, box.size.x / 2, box.size.y / 2, string::f("%d", step).c_str(), nullptr);
+        std::string text;
+        if (note) {
+            int root = module ? int(std::round(module->params[ByteNamagiri::ROOT].getValue())) : 48;
+            text = ByteNamagiri::noteName(std::max(0, std::min(127, root)));
+        } else {
+            int step = module ? module->stepOut.load(std::memory_order_relaxed) : 1;
+            text = string::f("%d", step);
+        }
+        nvgText(args.vg, box.size.x / 2, box.size.y / 2, text.c_str(), nullptr);
     }
 };
 struct ByteNamagiriWidget : ModuleWidget {
@@ -156,8 +186,11 @@ struct ByteNamagiriWidget : ModuleWidget {
         setModule(module); setPanel(createPanel(asset::plugin(pluginInstance, "res/Namagiri.svg")));
         addChild(createWidget<ScrewSilver>(Vec(0, 0)));
         addChild(createWidget<ScrewSilver>(Vec(bytebus_layout::namagiri::WIDTH - 15, 365)));
-        auto* display = createWidget<NamagiriDisplay>(POS(STEP));
-        display->box.size = Vec(STEP_W, STEP_H); display->module = module; addChild(display);
+        for (bool note : {false, true}) {
+            auto* display = createWidget<NamagiriDisplay>(note ? POS(NOTE) : POS(STEP));
+            display->box.size = note ? Vec(NOTE_W, NOTE_H) : Vec(STEP_W, STEP_H);
+            display->module = module; display->note = note; addChild(display);
+        }
         const Vec bits[] = {POS(BIT0_LIGHT), POS(BIT1_LIGHT), POS(BIT2_LIGHT), POS(BIT3_LIGHT),
             POS(BIT4_LIGHT), POS(BIT5_LIGHT), POS(BIT6_LIGHT), POS(BIT7_LIGHT)};
         for (int k = 0; k < 8; ++k)
@@ -169,7 +202,10 @@ struct ByteNamagiriWidget : ModuleWidget {
         addParam(createParamCentered<RoundBlackKnob>(POS(RADIUS), module, R::RADIUS));
         addParam(createParamCentered<RoundBlackKnob>(POS(ANGLE), module, R::ANGLE));
         addParam(createParamCentered<RoundBlackSnapKnob>(POS(DEPTH), module, R::DEPTH));
+        addParam(createParamCentered<RoundBlackSnapKnob>(POS(ROOT), module, R::ROOT));
+        addParam(createParamCentered<RoundBlackSnapKnob>(POS(SPAN), module, R::SPAN));
         addParam(createParamCentered<RoundBlackKnob>(POS(THRESH), module, R::THRESH));
+        addParam(createParamCentered<RoundBlackKnob>(POS(SETTLE), module, R::SETTLE));
         addInput(createInputCentered<PJ301MPort>(POS(RADIUS_CV_IN), module, R::RADIUS_CV_IN));
         addInput(createInputCentered<PJ301MPort>(POS(ANGLE_CV_IN), module, R::ANGLE_CV_IN));
         addInput(createInputCentered<PJ301MPort>(POS(DEPTH_CV_IN), module, R::DEPTH_CV_IN));
@@ -180,7 +216,10 @@ struct ByteNamagiriWidget : ModuleWidget {
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(IMAG_OUT), module, R::IMAG_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(MAG_OUT), module, R::MAG_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(PHASE_OUT), module, R::PHASE_OUT));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(V_OCT_OUT), module, R::V_OCT_OUT));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(GATE_OUT), module, R::GATE_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(DELTA_OUT), module, R::DELTA_OUT));
+        addOutput(createOutputCentered<DarkPJ301MPort>(POS(VEL_OUT), module, R::VEL_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(CONVERGED_OUT), module, R::CONVERGED_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(EOC_OUT), module, R::EOC_OUT));
         addOutput(createOutputCentered<DarkPJ301MPort>(POS(BUS_OUT), module, R::BUS_OUT));

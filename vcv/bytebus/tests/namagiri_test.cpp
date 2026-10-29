@@ -2,6 +2,7 @@
 // their controls match HydraPy's namagiri.py to 1e-9 over the committed reference grid.
 #include "../src/engine/Namagiri.hpp"
 #include "namagiri_reference.h"
+#include "namagiri_pattern_reference.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -50,11 +51,75 @@ static void qZeroAndGuards() {
     }
     // Non-finite parameter voltages never reach the table: the tick clamps them.
     Namagiri m; Parameters p; Inputs in; p.radius = std::numeric_limits<double>::infinity();
-    p.turns = std::numeric_limits<double>::quiet_NaN(); p.depth = 0; p.threshold = -1;
+    p.turns = std::numeric_limits<double>::quiet_NaN(); p.depth = 0; p.settle = -1;
     auto out = m.tick(p, in, 48000);
     assert(std::isfinite(out.c.real) && std::isfinite(out.c.imag) && std::isfinite(out.c.delta));
     assert(std::isfinite(out.c.mag) && std::isfinite(out.c.phase));
     assert(out.step >= 1 && out.step <= MAX_DEPTH);
+}
+
+static void patternParity() {
+    // Every step matches HydraPy's namagiri_pattern.pattern: the velocity from HydraPy's delta
+    // (0 on step 1), the note from the phase, and a rest exactly where pattern() omits an event.
+    const double* data = namagiri_pattern_reference::DATA;
+    for (size_t s = 0; s < namagiri_pattern_reference::SETTINGS; ++s) {
+        int root = namagiri_pattern_reference::ROOTS[s / 9];
+        int span = namagiri_pattern_reference::SPANS[s / 3 % 3];
+        double threshold = namagiri_pattern_reference::THRESHOLDS[s % 3];
+        for (size_t c = 0; c < namagiri_pattern_reference::CASES; ++c) {
+            double radius = namagiri_reference::DATA[(c * namagiri_reference::DEPTH) * 7];
+            double turns = namagiri_reference::DATA[(c * namagiri_reference::DEPTH) * 7 + 1];
+            std::array<std::complex<double>, MAX_DEPTH> r{};
+            build(std::polar(radius, TAU * turns), MAX_DEPTH, r);
+            for (size_t n = 0; n < namagiri_pattern_reference::DEPTH; ++n) {
+                const double* ref = &data[((s * namagiri_pattern_reference::CASES + c) * namagiri_pattern_reference::DEPTH + n) * 2];
+                double change = n >= 1 ? std::abs(r[n] - r[n - 1]) : 0;
+                double velocity = patternVelocity(change);
+                assert(std::abs(velocity - ref[0]) < 1e-9);
+                bool rest = velocity < threshold;
+                if (!rest) {
+                    int note = patternNote(std::arg(r[n]), root, span);
+                    assert(note == int(ref[1]));
+                } else {
+                    assert(int(ref[1]) == 0);   // the generator writes 0 for rests
+                }
+            }
+        }
+    }
+}
+
+static void noteGateAndVelocity() {
+    // The engine walks a cycle with HydraPy's note mapping: q real positive, so every phase is
+    // angle 0 and every note is root + floor(span/2). Step 1 has velocity 0 (HydraPy's delta):
+    // an event at velocity 0 keeps its note and VEL, but GATE stays low by design.
+    Namagiri m; Parameters p; Inputs in;
+    p.mode = ClockMode::Jack; p.radius = .5; p.depth = 8;
+    p.root = 48; p.span = 24; p.velocityThreshold = 0;
+    in.clock.clockConnected = true;
+    auto out = m.tick(p, in, 48000);
+    assert(out.step == 1 && out.note == 48 + 24 / 2 && out.velocity == 0);
+    assert(!out.rest && !out.gate);                                     // velocity-0 event: no gate
+    for (int t = 0; t < 8 * 16; ++t) {
+        in.clock.clock = t % 8 == 4 ? 10 : 0;
+        out = m.tick(p, in, 48000);
+        if (out.advanced) {
+            assert(!out.rest);
+            assert(out.note == 60 && out.velocity >= 0 && out.velocity < 1);
+            assert(out.gate == (out.step != 1));                        // step 1 never gates
+        }
+    }
+    // A threshold above every velocity rests every step after the first: the note holds.
+    p.velocityThreshold = 1;
+    in.clock.clock = 0; m.tick(p, in, 48000);
+    in.clock.clock = 10; out = m.tick(p, in, 48000);
+    assert(out.rest && !out.gate && out.velocity < 1);
+    assert(out.note == 60);                                             // the held note survives rests
+    // The pattern controls clamp: root/span/threshold stay in range and every output is finite.
+    p.root = 500; p.span = 0; p.velocityThreshold = -1;
+    in.clock.clock = 0; m.tick(p, in, 48000);
+    in.clock.clock = 10; out = m.tick(p, in, 48000);
+    assert(out.note >= 0 && out.note <= 127 && std::isfinite(out.velocity));
+    assert(!out.rest && out.gate);                                      // step 3: a real event
 }
 
 static void phaseEncoding() {
@@ -129,11 +194,11 @@ static void resetPriority() {
 static void convergedGate() {
     Namagiri m; Parameters p; Inputs in;
     p.mode = ClockMode::Jack; p.radius = .5; p.depth = 8;
-    p.threshold = 1e9;                                                   // everything converges
+    p.settle = 1e9;                                                   // everything converges
     in.clock.clockConnected = true;
     auto out = m.tick(p, in, 48000);                                     // fresh publish: |R_1| < 1e9
     assert(out.converged);
-    p.threshold = 0;                                                     // nothing converges...
+    p.settle = 0;                                                     // nothing converges...
     Namagiri m2; Inputs in2; in2.clock.clockConnected = true;
     for (int t = 0; t < 8 * 12; ++t) {
         in2.clock.clock = t % 8 == 4 ? 10 : 0;
@@ -144,7 +209,7 @@ static void convergedGate() {
     // A mid-range threshold latches once a step's change falls below it and stays until the
     // wrap, where the gate drops: .02 is below step 2's change (.041) and step 3's (.004) but
     // above the wrap jump (.0377), so the latch lands on step 3 and clears at every wrap.
-    Namagiri n; p.threshold = .02; p.depth = 16;
+    Namagiri n; p.settle = .02; p.depth = 16;
     in.clock.clock = 0; n.tick(p, in, 48000);
     bool latched = false; int latchedAt = 0; int drops = 0;
     for (int t = 0; t < 8 * 78; ++t) {
@@ -242,7 +307,9 @@ static void internalAndEngine() {
 
 int main() {
     referenceParity();
+    patternParity();
     qZeroAndGuards();
+    noteGateAndVelocity();
     phaseEncoding();
     clockingAndWrap();
     resetPriority();
@@ -250,5 +317,5 @@ int main() {
     busAddress();
     depthAndQChanges();
     internalAndEngine();
-    std::cout << "PASS: Namagiri convergents and controls against the HydraPy reference grid to 1e-9; q = 0 and the guarded denominators; phase-word encoding against spec section 6; clock stepping, wraps, EOC and held outputs; RESET priority; the CONVERGED latch; BUS IN step words; DEPTH and q changes; internal and Engine clocks at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Namagiri convergents, controls and the note pattern against the HydraPy reference grids to 1e-9 (notes and rests exact); q = 0 and the guarded denominators; V/OCT mapping, GATE and VEL; phase-word encoding against spec section 6; clock stepping, wraps, EOC and held outputs; RESET priority; the CONVERGED latch; BUS IN step words; DEPTH and q changes; internal and Engine clocks at 44.1/48/96 kHz\n";
 }

@@ -1172,33 +1172,42 @@ static std::vector<int> rouletteChain(float sr, unsigned orderSeed) {
 static void namagiriPorts(float sr) {
     using K = ByteNamagiri; auto a = args(sr);
     K m; connectOutputs(m); m.model = modelNamagiri;
-    assert(m.params.size() == 6 && m.inputs.size() == 6 && m.outputs.size() == 8 && m.lights.size() == 12);
+    assert(m.params.size() == 9 && m.inputs.size() == 6 && m.outputs.size() == 11 && m.lights.size() == 12);
+    assert(std::string(K::noteName(48)) == "C3" && std::string(K::noteName(0)) == "C-1");
+    assert(std::string(K::noteName(127)) == "G9" && std::string(K::noteName(61)) == "C#4");
     m.params[K::SOURCE].setValue(1);                       // Jack
     m.inputs[K::CLOCK_IN].channels = 1;
     m.params[K::DEPTH].setValue(8); m.params[K::RADIUS].setValue(.9f);
-    m.params[K::THRESH].setValue(-2.f);                    // 0.25 V: below step 2, above the wrap jump
+    m.params[K::SETTLE].setValue(-2.f);                    // 0.25 V: below step 2, above the wrap jump
     auto pulse = [](K& k, int t) { k.inputs[K::CLOCK_IN].setVoltage(t % 8 == 4 ? 10 : 0); };
-    int eoc = 0, strobes = 0, gateHigh = 0, gateLowAtEoc = 0;
+    int eoc = 0, strobes = 0, gateHigh = 0, gateLowAtEoc = 0, noteGates = 0, gateLowAtStep1 = 0;
     for (int t = 0; t < 8 * 40; ++t) {                     // 40 edges, 5 cycles of 8
         pulse(m, t); m.process(a);
         assert(m.outputs[K::BUS_OUT].getChannels() == 9);
         for (int o : {K::REAL_OUT, K::IMAG_OUT, K::PHASE_OUT})
             assert(std::abs(m.outputs[o].getVoltage()) <= 5 + 1e-4f);
-        for (int o : {K::MAG_OUT, K::DELTA_OUT})
+        for (int o : {K::MAG_OUT, K::DELTA_OUT, K::VEL_OUT})
             assert(m.outputs[o].getVoltage() >= -1e-4f && m.outputs[o].getVoltage() <= 10 + 1e-4f);
+        assert(std::abs(m.outputs[K::V_OCT_OUT].getVoltage()) <= 6);   // MIDI 0-127 -> -5..+5.58 V
         bool isEoc = m.outputs[K::EOC_OUT].getVoltage() == 10;
         eoc += isEoc; strobes += m.outputs[K::BUS_OUT].getVoltage(8) == 10;
         gateHigh += m.outputs[K::CONVERGED_OUT].getVoltage() == 10;
         gateLowAtEoc += isEoc && m.outputs[K::CONVERGED_OUT].getVoltage() == 0;
         if (isEoc) assert(m.stepOut.load() == 1);
+        // q real positive: angle 0 -> note 48 + floor(24/2) = 60 -> V/OCT 0 V. Step 1 has
+        // velocity 0, so GATE stays low there and high on every other step of the cycle.
+        if (m.outputs[K::GATE_OUT].getVoltage() == 10) noteGates++;
+        gateLowAtStep1 += m.stepOut.load() == 1 && m.outputs[K::GATE_OUT].getVoltage() == 0;
     }
     assert(eoc == 5 && strobes >= 40 && gateHigh > 40 && gateLowAtEoc == 5);
+    assert(noteGates > 30 && gateLowAtStep1 >= 5 * 7);      // step 1 of each cycle never gates
     assert(word(m.outputs[K::BUS_OUT]) == 0x80);           // q real positive: angle 0 -> 0x80
     assert(m.outputs[K::REAL_OUT].getVoltage() > 0);
+    assert(std::abs(m.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);   // C4 = 0 V
     // Save mid-cycle, restore into a fresh module, continue identically.
     K q2; for (K* k : {&m, &q2}) { connectOutputs(*k); k->model = modelNamagiri; }
     q2.params[K::SOURCE].setValue(1); q2.inputs[K::CLOCK_IN].channels = 1;
-    q2.params[K::DEPTH].setValue(8); q2.params[K::RADIUS].setValue(.9f); q2.params[K::THRESH].setValue(-2.f);
+    q2.params[K::DEPTH].setValue(8); q2.params[K::RADIUS].setValue(.9f); q2.params[K::SETTLE].setValue(-2.f);
     for (int t = 0; t < 8 * 21; ++t) { pulse(m, t); m.process(a); }   // step 6 of the next cycle
     json_t* saved = m.toJson();
     q2.fromJson(saved); json_decref(saved);
@@ -1229,6 +1238,21 @@ static void namagiriPorts(float sr) {
     m.process(a); assert(m.stepOut.load() == 4);
     m.inputs[K::BUS_IN].channels = 0; m.process(a);        // the clock owns n again
     assert(m.stepOut.load() == 4);
+    // THRESH 0.1 with q = .9: step 2's velocity (.122) is the only event; the later steps rest,
+    // GATE opens for that one step each cycle and V/OCT holds the event's note across the rests.
+    K r; connectOutputs(r); r.model = modelNamagiri;
+    r.params[K::SOURCE].setValue(1); r.inputs[K::CLOCK_IN].channels = 1;
+    r.params[K::DEPTH].setValue(8); r.params[K::RADIUS].setValue(.9f); r.params[K::THRESH].setValue(.1f);
+    int openings = 0, gatedSamples = 0; bool prevGate = false;
+    for (int t = 0; t < 8 * 24; ++t) {                     // 24 edges, 3 cycles
+        pulse(r, t); r.process(a);
+        bool gate = r.outputs[K::GATE_OUT].getVoltage() == 10;
+        gatedSamples += gate;
+        openings += gate && !prevGate; prevGate = gate;
+        assert(r.outputs[K::VEL_OUT].getVoltage() < 1.3f);
+        if (t >= 4) assert(std::abs(r.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);  // note 60 held
+    }
+    assert(openings == 3 && gatedSamples == 24);           // one 8-sample gate per cycle
 }
 
 static int namagiriChain(float sr, unsigned orderSeed) {
