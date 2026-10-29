@@ -230,7 +230,12 @@ struct Namagiri {
             build(q, depthNew, r);
             depth = depthNew; lastQ = q;
             if (step > depth) step = depth;
-            if (built) hold(settle, root, span, velocityThreshold);
+            // Convergence belongs to a particular q and sequence depth.
+            // Parameter modulation invalidates the previous convergence latch.
+            if (built) {
+                converged = false;
+                hold(settle, root, span, velocityThreshold);
+            }
             built = true;
         }
 
