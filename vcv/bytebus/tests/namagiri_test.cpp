@@ -451,8 +451,15 @@ static void convergenceInvalidatedByParameterChange() {
     p.turns = .125;
     out = m.tick(p, in, 48000);
     assert(!out.converged);
+    // A depth-only change at step 1 re-evaluates the same R_1(q), so the
+    // immediately re-held value can legitimately satisfy the settle threshold.
     m.converged = true;
     p.depth = 9;
+    out = m.tick(p, in, 48000);
+    assert(out.converged);
+    // Changing q as well must invalidate the old latch when the held value moves.
+    m.converged = true;
+    p.turns = .25;
     out = m.tick(p, in, 48000);
     assert(!out.converged);
 }
