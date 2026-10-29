@@ -1253,6 +1253,53 @@ static void namagiriPorts(float sr) {
         if (t >= 4) assert(std::abs(r.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);  // note 60 held
     }
     assert(openings == 3 && gatedSamples == 24);           // one 8-sample gate per cycle
+    // Rest persistence: THRESH 1 rests every step, so the previous cycle's note
+    // stays held on V/OCT. Save during the rest and restore into a fresh module:
+    // the held note returns, so V/OCT still reads 0 V (MIDI 60), not the -5 V of
+    // a fallback MIDI 0, and a malformed or missing field stays bounded.
+    K heldNote; connectOutputs(heldNote); heldNote.model = modelNamagiri;
+    heldNote.params[K::SOURCE].setValue(1); heldNote.inputs[K::CLOCK_IN].channels = 1;
+    heldNote.params[K::DEPTH].setValue(8); heldNote.params[K::RADIUS].setValue(.9f);
+    for (int t = 0; t < 8 * 2; ++t) { pulse(heldNote, t); heldNote.process(a); }
+    heldNote.params[K::THRESH].setValue(1);               // every step is a rest now
+    for (int t = 0; t < 8 * 2; ++t) { pulse(heldNote, t); heldNote.process(a); }
+    assert(heldNote.state.rest && heldNote.noteOut.load() == 60);
+    assert(std::abs(heldNote.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);
+    json_t* restSaved = heldNote.toJson();
+    K restRestored; connectOutputs(restRestored); restRestored.model = modelNamagiri;
+    restRestored.params[K::SOURCE].setValue(1); restRestored.inputs[K::CLOCK_IN].channels = 1;
+    restRestored.params[K::DEPTH].setValue(8); restRestored.params[K::RADIUS].setValue(.9f);
+    restRestored.params[K::THRESH].setValue(1);
+    restRestored.fromJson(restSaved); json_decref(restSaved);
+    assert(restRestored.noteOut.load() == 60);
+    restRestored.inputs[K::CLOCK_IN].setVoltage(0); restRestored.process(a);
+    assert(restRestored.state.rest);
+    assert(std::abs(restRestored.outputs[K::V_OCT_OUT].getVoltage()) < 1e-4f);
+    // A patch saved before the note was persisted has no "note": the documented
+    // bounded fallback is MIDI 0, so a rest reloads at -5 V until the next event.
+    json_t* oldPatch = json_pack("{s:i,s:f,s:f,s:i}", "step", 5,
+        "previousReal", 0.0, "previousImag", 0.0, "converged", 0);
+    K legacy; connectOutputs(legacy); legacy.model = modelNamagiri;
+    legacy.params[K::SOURCE].setValue(1); legacy.inputs[K::CLOCK_IN].channels = 1;
+    legacy.params[K::DEPTH].setValue(8); legacy.params[K::RADIUS].setValue(.9f);
+    legacy.params[K::THRESH].setValue(1);
+    legacy.dataFromJson(oldPatch); json_decref(oldPatch);
+    assert(legacy.noteOut.load() == 0);
+    legacy.process(a);
+    assert(legacy.state.rest);
+    assert(std::abs(legacy.outputs[K::V_OCT_OUT].getVoltage() + 5.f) < 1e-4f);
+    // Malformed note fields are ignored; out-of-range ones clamp to MIDI 0..127.
+    json_t* textNote = json_pack("{s:s}", "note", "high");
+    legacy.dataFromJson(textNote); json_decref(textNote);
+    assert(legacy.noteOut.load() == 0);
+    json_t* hugeNote = json_pack("{s:I}", "note", json_int_t(99999));
+    legacy.dataFromJson(hugeNote); json_decref(hugeNote);
+    assert(legacy.noteOut.load() == 127);
+    legacy.process(a);
+    assert(std::abs(legacy.outputs[K::V_OCT_OUT].getVoltage() - (127 - 60) / 12.f) < 1e-4f);
+    json_t* negativeNote = json_pack("{s:i}", "note", -9);
+    legacy.dataFromJson(negativeNote); json_decref(negativeNote);
+    assert(legacy.noteOut.load() == 0);
 }
 
 static int namagiriChain(float sr, unsigned orderSeed) {

@@ -19,6 +19,7 @@ struct ByteNamagiri : Module {
     std::atomic<int> stepOut{1};
     std::atomic<double> previousReal{0}, previousImag{0};
     std::atomic<int> convergedOut{0};
+    std::atomic<int> noteOut{0};                  // the held note (V/OCT across rests)
 
     static const char* noteName(int note) {
         static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -73,7 +74,8 @@ struct ByteNamagiri : Module {
     }
     void onReset(const ResetEvent& e) override {
         Module::onReset(e); state.clear(); addressReader.reset();
-        stepOut.store(1); previousReal.store(0); previousImag.store(0); convergedOut.store(0);
+        stepOut.store(1); previousReal.store(0); previousImag.store(0);
+        convergedOut.store(0); noteOut.store(0);
     }
     void process(const ProcessArgs& args) override {
         namespace nm = dspemu::namagiri;
@@ -127,6 +129,7 @@ struct ByteNamagiri : Module {
         previousReal.store(state.previous.real(), std::memory_order_relaxed);
         previousImag.store(state.previous.imag(), std::memory_order_relaxed);
         convergedOut.store(state.converged, std::memory_order_relaxed);
+        noteOut.store(out.note, std::memory_order_relaxed);
     }
     json_t* dataToJson() override {
         json_t* root = json_object();
@@ -134,6 +137,7 @@ struct ByteNamagiri : Module {
         json_object_set_new(root, "previousReal", json_real(previousReal.load(std::memory_order_relaxed)));
         json_object_set_new(root, "previousImag", json_real(previousImag.load(std::memory_order_relaxed)));
         json_object_set_new(root, "converged", json_integer(convergedOut.load(std::memory_order_relaxed)));
+        json_object_set_new(root, "note", json_integer(noteOut.load(std::memory_order_relaxed)));
         return root;
     }
     void dataFromJson(json_t* root) override {
@@ -148,11 +152,15 @@ struct ByteNamagiri : Module {
         int step = int(integerOf("step", 1, dspemu::namagiri::MAX_DEPTH, 1));
         std::complex<double> previous(realOf("previousReal", 0), realOf("previousImag", 0));
         bool converged = integerOf("converged", 0, 1, 0) != 0;
-        state.clear(step, previous, converged); addressReader.reset();
+        // Patches saved before the held note was persisted have no "note":
+        // fall back to MIDI 0, the old restore behavior until the next event.
+        int note = int(integerOf("note", 0, 127, 0));
+        state.clear(step, previous, converged, note); addressReader.reset();
         stepOut.store(step, std::memory_order_relaxed);
         previousReal.store(state.previous.real(), std::memory_order_relaxed);
         previousImag.store(state.previous.imag(), std::memory_order_relaxed);
         convergedOut.store(state.converged, std::memory_order_relaxed);
+        noteOut.store(state.note, std::memory_order_relaxed);
     }
 };
 

@@ -6,6 +6,7 @@
 /tests/engine_test
 /tests/namagiri_test
 /tests/namagiri_asan
+/tests/namagiri_bench
 /tests/module_test
 /tests/feedback_test
 /tests/*_asan

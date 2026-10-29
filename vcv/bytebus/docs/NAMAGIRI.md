@@ -110,7 +110,14 @@ converged). RESET clears it.
 The table rebuilds only when q or DEPTH changes, never per sample; turning
 RADIUS, ANGLE or DEPTH re-holds the current step at once (without a strobe),
 so the phrase reshapes live. Changing DEPTH clamps the current step to the
-new length.
+new length. Each rebuild evaluates every convergent in one pass through the
+continued fraction's convergent recurrence (O(DEPTH) complex operations)
+rather than recomputing each nested tail with complex powers (O(DEPTH²)
+powers and divisions); outside the guarded `|q| ≤ .97` disk, or if a partial
+denominator vanishes, it falls back to the nested evaluation with the
+DENOM_MIN guard, exactly as before. A 1 Hz ANGLE LFO at DEPTH 32 used to
+rebuild for 1.7 CPU seconds per audio second at 48 kHz; it now takes about
+0.04 s (`tests/namagiri_bench.cpp`).
 
 ## Notes, gates and velocity
 
@@ -149,17 +156,25 @@ Identical to the Clocked Register's clock ownership and
 [clock and reset timing](MANUAL.md#clock-ownership) through the shared
 `src/engine/ClockOwner.hpp`: RESET publishes step 1 with acquisition
 suppressed for that strobe and the low sample after it, RESET priority over a
-simultaneous edge, and one-sample strobes with a mandatory low sample. A bus
-update on BUS IN publishes with the same strobe rules, deferred past a low
-sample rather than following a strobe directly.
+simultaneous edge, and one-sample strobes with a mandatory low sample. RESET
+returns *previous* to zero before the hold, so its publication's DELTA is
+`|R_1|` — the same fresh move out of silence — on a repeated reset and from
+any step, and CONVERGED clears. A bus update on BUS IN publishes with the same
+strobe rules: its word changes at once, but if the previous sample's CLK was
+high it waits one low sample and then raises its own edge, so a bus update
+right after a clock edge or a load is never merged into that high. Engine mode
+has no CLK channel, and a simultaneous clock edge and bus word publish once.
 
 ## Saving and reset
 
-Rack saves the controls, the current step, the last published value and the
-CONVERGED latch, so a reloaded Namagiri continues the same cycle. Values are
-bounded on load. Reload publishes the saved step; it does not resume the
-fractional internal clock phase. Initialize restores RADIUS 0.8, ANGLE 0,
-DEPTH 12 and step 1.
+Rack saves the controls, the current step, the last published value, the
+CONVERGED latch and the held MIDI note, so a reloaded Namagiri continues the
+same cycle and V/OCT stays put even when the saved step is a rest. Values are
+bounded on load: an out-of-range note clamps to 0–127, and a patch saved
+before the held note was persisted has no `note` field, so it reloads with
+MIDI 0 (V/OCT −5 V) until the next event, as older builds did. Reload
+publishes the saved step; it does not resume the fractional internal clock
+phase. Initialize restores RADIUS 0.8, ANGLE 0, DEPTH 12 and step 1.
 
 ## First patch
 
@@ -193,24 +208,31 @@ THRESH settings — every velocity to 1e-9 and every note and rest exact (both
 regenerated with `tools/generate_namagiri_reference.py --check`, from HydraPy
 main); q = 0 and the guarded denominators; the V/OCT mapping and the GATE and
 VEL corner cases; the phase-word encoding against spec §6; clock stepping,
-wraps, EOC and held outputs; RESET priority; the CONVERGED latch; BUS IN step
-words; DEPTH and q changes; internal and Engine clocks at 44.1/48/96 kHz.
+wraps, EOC and held outputs; RESET priority, the fresh `|R_1|` delta on
+repeated resets and resets from other steps; the CONVERGED latch; BUS IN step
+words; separate clock and bus strobes through a one-sample cable Reader,
+including adjacent and simultaneous updates; DEPTH and q changes; internal and
+Engine clocks at 44.1/48/96 kHz. `tests/namagiri_bench.cpp` (make bench) runs a
+bounded continuous-modulation benchmark and prints CPU time against real time;
+it makes no timing assertion.
 
 Rack API tests (`tests/module_test.cpp`): real ports; output bounds; V/OCT
 0 V at C4 and its MIDI range; GATE and VEL under THRESH, including the
 held-note rests and step 1's silent gate; the note-name readout; the phase
 word 0x80 at angle 0; EOC and the CONVERGED gate; persistence and bounded
-restores; Initialize; RESET replay; the BUS IN step word; and a Counter
-CARRY → Namagiri CLOCK chain through one-sample cables in random module order
-at 44.1/48/96 kHz.
+restores, including the held note saved and reloaded during a THRESH-1 rest
+with V/OCT asserted after reload and the missing-field fallback; Initialize;
+RESET replay; the BUS IN step word; and a Counter CARRY → Namagiri CLOCK chain
+through one-sample cables in random module order at 44.1/48/96 kHz.
 
 Software tests do not establish physical clock transport.
 
 ## First sample after Initialize or restore
 
 A fresh instance and Initialize publish step 1 with delta `|R_1|`. Restore
-starts from the saved step and its saved previous value, so DELTA on the
-first publication is the change since the save. The first sample publishes
+starts from the saved step, its saved previous value and its held note, so
+DELTA on the first publication is the change since the save and V/OCT holds
+the saved note through a resting step. The first sample publishes
 without acquiring from an already-high clock. A RESET already high on that
 sample takes priority and loads step 1 instead; holding it high does not
 reload or block later clock edges. A BUS IN word already present tracks
