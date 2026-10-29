@@ -11,6 +11,8 @@
 #include GORGON_SOURCE
 #endif
 #include <cassert>
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -102,9 +104,65 @@ static void linkSourceChanges(Plugin& providerPlugin){
     assert(m->block.count==7&&m->block.events[5].release&&!m->block.events[6].panic);
     std::cout<<"Link provider pointer/ID changes, stale packets, loop reset, TRIG and Initialize passed\n";
 }
+// GAIN scales every output linearly: 100% puts the engine's full scale at 5 V. It reaches 800%, a new
+// module starts at 400%, and a patch saved before 2.1.0 (GAIN 0-200%) keeps its value.
+static void gainStaging(){
+    Trace trace;auto mm=std::make_unique<Monomodule>(factory(trace));auto& m=*mm;m.model=modelMonomodule;ready(m);
+    for(auto& o:m.outputs)o.channels=1;
+    auto* q=m.paramQuantities[Monomodule::GAIN];
+    assert(q->getMinValue()==0&&q->getMaxValue()==8&&q->getDefaultValue()==4&&m.params[Monomodule::GAIN].getValue()==4);
+    Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+    auto run=[&](int count){for(int f=0;f<count;++f){++args.frame;m.process(args);if(f%128==127)drain();}};
+    m.inputs[Monomodule::TRIG].channels=1;run(64);m.inputs[Monomodule::TRIG].setVoltage(10,0);   // a gate high at the cable's first sample doesn't play
+    const float level=11/127.f;   // the fake's track 1: its note's P1, at the default 11
+    for(float gain:{0.f,1.f,2.f,4.f,8.f}){
+        m.params[Monomodule::GAIN].setValue(gain);run(2048);
+        const float want=level*5*gain;
+        assert(std::abs(m.outputs[Monomodule::TRACKS_L].getVoltage(0)-want)<1e-4f);
+        assert(std::abs(m.outputs[Monomodule::TRACKS_R].getVoltage(0)-want)<1e-4f);
+        assert(std::abs(m.outputs[Monomodule::LEFT].getVoltage()-want)<1e-4f);
+    }
+    // Rack restores a saved patch's GAIN as it was: an old 100% or 200% stays where it was.
+    for(double old:{1.0,2.0}){
+        json_t* saved=json_pack("[{s:i,s:f}]","id",int(Monomodule::GAIN),"value",old);
+        auto copy=std::make_unique<Monomodule>(factory(trace));copy->paramsFromJson(saved);json_decref(saved);
+        assert(copy->params[Monomodule::GAIN].getValue()==float(old));
+    }
+    std::cout<<"GAIN: linear on every output to 800%, new modules at 400%, saved values kept, passed\n";
+}
+// With MNM_OS set to the OS 1.32B .syx: the level of one SWAVE SAW bass track (C2, the machine's
+// defaults) at TRACKS L, through the real engines at the default GAIN. Skipped without it.
+static void realTrackLevel(){
+    const char* os=std::getenv("MNM_OS");
+    if(!os||!*os){std::cout<<"Track level: set MNM_OS to the OS 1.32B .syx to measure it (skipped)\n";return;}
+    auto mm=std::make_unique<Monomodule>();auto& m=*mm;m.model=modelMonomodule;
+    m.loadFirmware(os);
+    auto end=std::chrono::steady_clock::now()+std::chrono::seconds(120);
+    while(!m.worker.ready){assert(std::chrono::steady_clock::now()<end);std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+    for(auto& o:m.outputs)o.channels=1;
+    m.params[Monomodule::MACHINE].setValue(4);   // SWAVE SAW
+    m.inputs[Monomodule::TRIG].channels=1;m.inputs[Monomodule::VOCT].channels=1;m.inputs[Monomodule::VOCT].setVoltage(-2);
+    Module::ProcessArgs args{};args.sampleRate=44100;args.sampleTime=1.f/44100;
+    double sum=0,peak=0;int counted=0;bool started=false;
+    for(int f=0;f<3*44100&&counted<22050;++f){
+        args.frame=f;
+        m.inputs[Monomodule::TRIG].setVoltage(f>=2048?10.f:0.f,0);
+        m.process(args);if(f%128==127)drain();
+        const double v=m.outputs[Monomodule::TRACKS_L].getVoltage(0);
+        started=started||std::abs(v)>1e-3;
+        if(started){sum+=v*v;peak=std::max(peak,std::abs(v));++counted;}
+    }
+    assert(counted==22050);
+    const double rms=std::sqrt(sum/counted);
+    std::cout<<"Track level: SWAVE SAW at C2, first 0.5 s at TRACKS L, GAIN "<<int(Monomodule::defaultGain*100)<<"%: RMS "<<rms
+             <<" V, peak "<<peak<<" V (at 100%: RMS "<<rms/Monomodule::defaultGain<<" V); missed blocks "<<m.underruns.load()<<"\n";
+    // Machinemodule's kit measured 0.13 V RMS at its GAIN 180%; at 100% this track was a quarter of that.
+    assert(m.underruns.load()==0);
+    assert(rms>.09&&rms<.18);
+}
 int main(){
     Context context;context.engine=new engine::Engine;contextSet(&context);
-    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.0.5";modelMonomodule->plugin=&receiverPlugin;
+    Plugin receiverPlugin;receiverPlugin.slug="MonomoduleRack";receiverPlugin.version="2.1.0";modelMonomodule->plugin=&receiverPlugin;
     Plugin linkPlugin;linkPlugin.slug="GorgonBridge";linkPlugin.version="2.4.0";
     linkSourceChanges(linkPlugin);
     {
@@ -193,6 +251,7 @@ int main(){
         assert(m.outputs[Monomodule::TRACKS_L].getChannels()==6&&m.outputs[Monomodule::TRACKS_R].getChannels()==6);
         std::cout<<"TRIG: gate on V/OCT's note, held until it falls, on track 3 passed\n";
         // INP A reaches the engine (the fake plays it back on track 6) after the queue; FX inputs are settings.
+        m.params[Monomodule::GAIN].setValue(1);   // 100%: full scale at 5 V
         m.inputs[Monomodule::INP_A].channels=1;m.inputs[Monomodule::INP_A].setVoltage(2.5f);
         m.fxSource[3]=INP_B;
         for(int f=6000;f<6000+3000;++f){args.frame=f;m.process(args);if(f%128==127)drain();}
@@ -203,6 +262,8 @@ int main(){
         json_decref(saved);
         std::cout<<"INP A into the engine, and FX inputs saved with the patch, passed\n";
     }
+    gainStaging();
+    realTrackLevel();
     {
         // Unplugging TRIG while a gate is high ends that note (review #5), here with a moving Gorgon on the
         // left, so the link takes over; a channel count drop ends a note too.

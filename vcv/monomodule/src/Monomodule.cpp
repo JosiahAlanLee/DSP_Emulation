@@ -11,6 +11,7 @@
 #include <cstdlib>
 
 struct Monomodule : Module {
+    static constexpr float maxGain=8.f, defaultGain=4.f;
     enum Params { MACHINE, TEMPO, GAIN, P1, NUM_PARAMS=P1+8 };
     enum Inputs { TRIG, VOCT, MACHINE_CV, RESET, P1_CV, INP_A=P1_CV+8, INP_B, NUM_INPUTS };
     enum Outputs { LEFT, RIGHT, TRACKS_L, TRACKS_R, NUM_OUTPUTS };
@@ -40,7 +41,10 @@ struct Monomodule : Module {
         configSwitch(MACHINE,0,21,4,"Machine (when neither the hit nor MACHINE CV picks one)",[]{
             std::vector<std::string> names;for(auto m:mnm_rack::machineOrder)names.push_back(mnm::host::machineDef(m)->name);return names;}());
         configParam(TEMPO,30,300,120,"Engine tempo for synced LFOs and delays"," BPM");
-        configParam(GAIN,0,2,1,"Output gain","%",0,100);
+        // The OS leaves each track's defaults (LEV 100, AMP VOL 64) about 15 dB under full scale, and only the
+        // SYN page is playable here, so a track alone is quiet at 100%. GAIN reaches 800% (+18 dB); a new module
+        // starts at 400% (+12 dB). Saved patches keep their value, so they play as before.
+        configParam(GAIN,0,maxGain,defaultGain,"Output gain (100% = the engine's level, full scale at 5 V)","%",0,100);
         configInput(TRIG,"Gates · 6 polyphonic tracks; each gate is a note, held until it falls · cable overrides Gorgon link");
         configInput(VOCT,"V/OCT · the note at each TRIG gate, C4 = 0 V · mono reaches every track");
         configInput(MACHINE_CV,"Machine · 0–10 V spans the 22 machines · overrides the selector when the hit has no machine");
@@ -49,7 +53,7 @@ struct Monomodule : Module {
         configInput(INP_A,"INP A · audio for FX machines · 5 V = full scale");
         configInput(INP_B,"INP B · audio for FX machines · 5 V = full scale");
         resetFxInputs();
-        configOutput(LEFT,"Main left (OUT BUS AB) · 5 V per full scale");configOutput(RIGHT,"Main right (OUT BUS AB) · 5 V per full scale");
+        configOutput(LEFT,"Main left (OUT BUS AB) · 5 V per full scale at 100% GAIN");configOutput(RIGHT,"Main right (OUT BUS AB) · 5 V per full scale at 100% GAIN");
         configOutput(TRACKS_L,"Tracks 1–6, left · polyphonic audio");configOutput(TRACKS_R,"Tracks 1–6, right · polyphonic audio");
         leftExpander.producerMessage=&messages[0];leftExpander.consumerMessage=&messages[1];
     }
@@ -172,7 +176,7 @@ struct Monomodule : Module {
             // A missed block is dropped in full even if the worker finishes it later.
             if(available&&missedBlock!=start)std::copy(output->samples[wanted-start],output->samples[wanted-start]+mnm_rack::channels,sample);
         }
-        float gain=5.f*mnm_rack::finite(params[GAIN].getValue(),0,2,1);
+        float gain=5.f*mnm_rack::finite(params[GAIN].getValue(),0,maxGain,defaultGain);
         outputs[LEFT].setVoltage(mnm_rack::finite(sample[0],-4,4)*gain);
         outputs[RIGHT].setVoltage(mnm_rack::finite(sample[1],-4,4)*gain);
         for(int t=0;t<mnm_rack::tracks;++t){

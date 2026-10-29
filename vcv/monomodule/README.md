@@ -34,14 +34,14 @@ Loading an OS, as opening a patch does, starts every track on GND.
 | --- | --- |
 | MACHINE | The machine for notes that don't name one: the 22 machines in the hardware's order. MACHINE CV (0–10 V) overrides it. |
 | TEMPO | The engine tempo for synced LFOs and delays. Set it to Gorgon's. |
-| GAIN | Output level. |
+| GAIN | Output level for every output, 0–800%. At 100% the engine's full scale is 5 V; a new module starts at 400% (+12 dB). See [Levels](#levels). |
 | P1–P8 + CV | Raw offsets to the SYN page, added to each note's locks or the machine's defaults, sampled at the note. The menu lists the selected machine's parameter names. |
 | RESET | A rising edge ends every note. Each track keeps its machine and settings, and an FX track keeps processing its input. Patching Gorgon’s RESET output here ends held notes at every loop wrap; use the sound link, or a gate that fires only on stop/seek, to preserve held notes across loops. |
 | INP A / INP B | Audio for the FX machines. |
 
 | Output | |
 | --- | --- |
-| LEFT / RIGHT | The main pair, OUT BUS AB, 5 V per full scale. |
+| LEFT / RIGHT | The main pair, OUT BUS AB, 5 V per full scale at 100% GAIN. |
 | TRACKS L / TRACKS R | Each track on its own channel, tracks 1–6, left and right. |
 
 **FX machines** (THRU, REVERB, CHORUS, DYNAMIX, RINGMOD, PHASER, FLANGER) process
@@ -58,6 +58,26 @@ Track 1 starts on INP A+B and tracks 2–6 on NEIBOR, as in Monomodule Six. The 
 is saved with the patch. INP A and INP B take audio at 5 V per full scale. At any rate
 but 44.1 kHz they cross a converter to the engine's rate and back, which the menu's
 latency includes.
+
+## Levels
+
+A track on its own is quiet at 100% GAIN, and that is the hardware's level, not an
+error in the conversion. The engine's output is the Monomachine's own DAC word, and
+100% puts its full scale at 5 V, as Machinemodule does. A track reaches full scale
+only at LEV 127 and AMP VOL 127. Monomodule runs every track at the kit's LEV 100, and
+the AMP page stays at the OS defaults (VOL 64, DEC 64), so a track peaks about 15 dB
+under full scale. That leaves room for six tracks in the main mix, as on the
+hardware, where you would raise VOL. Here only the SYN page is playable, so GAIN
+supplies the makeup.
+
+Measured with OS 1.32B on 2026-10-28, a SWAVE SAW bass note (C2, the machine's
+defaults) has an RMS of 0.031 V over its first half second at TRACKS L at 100%, and
+0.125 V at 400%. Machinemodule's kit gave about 0.13 V at its GAIN 180%. GND SIN at
+its defaults peaks at 0.18 of full scale, 0.9 V at 100% and 3.6 V at 400%.
+
+At high GAIN the main pair can run past 10 V when several loud tracks play together:
+six default-level tracks peaked at 0.7 of full scale, 14 V at 400%. For a full mix,
+take LEFT/RIGHT at a lower GAIN or mix TRACKS L/R yourself.
 
 ## Pitch
 
@@ -105,7 +125,14 @@ make deps    # Monomodule and its pinned, patched dsp56300 (tools/fetch-core.sh)
 make RACK_DIR=/path/to/Rack-SDK test
 # Optional real-engine comparison, with your own OS (not a CI fixture):
 build/firmware_test /path/to/your/OS1.32B.syx
+# Optional track-level measurement through the module, with your own OS:
+MNM_OS=/path/to/your/OS1.32B.syx LD_LIBRARY_PATH=/path/to/Rack-SDK build/module_test
 ```
+
+`module_test` always checks GAIN's scaling on the deterministic backend. With
+`MNM_OS` set, it also plays a SWAVE SAW note at C2 through the real engines at the
+default GAIN and checks that its RMS at TRACKS L lies between 0.09 V and 0.18 V. It
+measured 0.125 V on 2026-10-28.
 
 The [platform workflow](../../.github/workflows/monomodule.yml) builds `firmware_test`
 but can't run it: CI has no OS image, and `ctest` (and `make test`) leave it out. Run
@@ -118,6 +145,20 @@ prints a note and exits 77 (skipped). It passed on 2026-10-27 with OS 1.32B, at
 
 `make dist` writes the `.vcvplugin` and its corresponding-source archive. The shared
 emulated-instrument adapter is `../adapter` (its README draws the AGPL/BSD boundary).
+
+## Changes in 2.1.0
+
+GAIN now reaches 800% (+18 dB), up from 200%, and a new module starts at 400%
+(+12 dB), up from 100%. Monomodule's tracks were very quiet. The engine's level was
+right, but the OS defaults leave a track about 15 dB under full scale, and the AMP
+page that would raise it isn't playable here (see [Levels](#levels)). A SWAVE SAW
+bass track now sits near Machinemodule's level without stacking mixer inputs.
+
+Existing patches sound the same, because Rack restores GAIN's saved value and the
+scaling of each value is unchanged. Two things do get louder, by 12 dB: a newly
+added Monomodule, and **Initialize** or a double-click on GAIN, which now go to
+400%. The knob's travel now spans 0–800%, so an old patch's 100% sits at an eighth
+of the way round.
 
 ## Changes in 2.0.5
 
