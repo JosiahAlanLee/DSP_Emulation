@@ -115,9 +115,13 @@ continued fraction's convergent recurrence (O(DEPTH) complex operations)
 rather than recomputing each nested tail with complex powers (O(DEPTH²)
 powers and divisions); outside the guarded `|q| ≤ .97` disk, or if a partial
 denominator vanishes, it falls back to the nested evaluation with the
-DENOM_MIN guard, exactly as before. A 1 Hz ANGLE LFO at DEPTH 32 used to
-rebuild for 1.7 CPU seconds per audio second at 48 kHz; it now takes about
-0.04 s (`tests/namagiri_bench.cpp`).
+DENOM_MIN guard, exactly as before. The disk edge gets four ulps of floating-
+point slack, because `std::polar` rounds its components and the clamped
+maximum radius can measure one ulp above .97; that keeps legal
+maximum-radius modulation on the fast path without admitting a material
+out-of-domain radius. A 1 Hz ANGLE LFO at DEPTH 32 used to rebuild for 1.7
+CPU seconds per audio second at 48 kHz; it now takes about 0.04 s at both
+radius .5 and the maximum .97 (`tests/namagiri_bench.cpp`).
 
 ## Notes, gates and velocity
 
@@ -212,9 +216,12 @@ wraps, EOC and held outputs; RESET priority, the fresh `|R_1|` delta on
 repeated resets and resets from other steps; the CONVERGED latch; BUS IN step
 words; separate clock and bus strobes through a one-sample cable Reader,
 including adjacent and simultaneous updates; DEPTH and q changes; internal and
-Engine clocks at 44.1/48/96 kHz. `tests/namagiri_bench.cpp` (make bench) runs a
-bounded continuous-modulation benchmark and prints CPU time against real time;
-it makes no timing assertion.
+Engine clocks at 44.1/48/96 kHz. The maximum-radius regression checks that
+10,000 `std::polar(.97, angle)` tables take the recurrence, while a real step
+outside the disk and `q = -1 + 1e-13` still take the guarded nested reference.
+`tests/namagiri_bench.cpp` (make bench) runs a bounded continuous-modulation
+benchmark at radius .5 and .97 and prints CPU time against real time; it makes
+no timing assertion.
 
 Rack API tests (`tests/module_test.cpp`): real ports; output bounds; V/OCT
 0 V at C4 and its MIDI range; GATE and VEL under THRESH, including the

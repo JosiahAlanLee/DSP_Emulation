@@ -17,6 +17,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <limits>
 
 namespace dspemu::namagiri {
 using clock_owner::ClockMode;
@@ -43,6 +44,21 @@ inline void buildNested(const C& q, int depth, std::array<C, MAX_DEPTH>& r) {
     }
 }
 
+// The parameter layer clamps |q| to MAX_RADIUS, but std::polar rounds its
+// components and std::abs adds their squares, so |std::polar(MAX_RADIUS,
+// angle)| can land above MAX_RADIUS. Over 11M angles the excess was at most
+// one ulp (1.11e-16); allow four ulps, about 4.4e-16, which keeps every legal
+// maximum-radius modulation on the fast path without admitting a material
+// out-of-domain radius (near -1 is thousands of ulps beyond).
+static_assert(MAX_RADIUS >= .5 && MAX_RADIUS < 1, "ulp size below assumes [.5, 1)");
+constexpr double MAX_RADIUS_ULP = std::numeric_limits<double>::epsilon() / 2;
+constexpr double BUILD_RADIUS_SLACK = 4 * MAX_RADIUS_ULP;
+inline bool inBuildDomain(const C& q) {
+    double radius = std::abs(q);
+    return std::isfinite(q.real()) && std::isfinite(q.imag()) &&
+           radius <= MAX_RADIUS + BUILD_RADIUS_SLACK;
+}
+
 // The same finite continued fractions through the standard convergent
 // recurrence: with tail_n = 1 + q/(1 + q^2/(... + q^n/1)),
 //     A_k = A_(k-1) + q^k A_(k-2),  B_k = B_(k-1) + q^k B_(k-2),
@@ -55,9 +71,13 @@ inline void buildNested(const C& q, int depth, std::array<C, MAX_DEPTH>& r) {
 // around 3e-11 on the worst-conditioned |q| < .97 tables. If a coefficient
 // loses the denominator, or q is outside the guarded disk, fall back to the
 // reference nested evaluation so the guard behaves exactly as before.
-inline void build(const C& q, int depth, std::array<C, MAX_DEPTH>& r) {
-    double radius = std::abs(q);
-    if (!(radius <= MAX_RADIUS) || !std::isfinite(q.real()) || !std::isfinite(q.imag())) {
+// `usedNested` (optional) reports which path ran, so tests can pin the fast
+// path at MAX_RADIUS without timing.
+inline void build(const C& q, int depth, std::array<C, MAX_DEPTH>& r,
+                  bool* usedNested = nullptr) {
+    if (usedNested) *usedNested = false;
+    if (!inBuildDomain(q)) {
+        if (usedNested) *usedNested = true;
         buildNested(q, depth, r);
         return;
     }
@@ -72,6 +92,7 @@ inline void build(const C& q, int depth, std::array<C, MAX_DEPTH>& r) {
         bool guarded = std::abs(a) < DENOM_MIN * std::abs(b);
         if (!std::isfinite(a.real()) || !std::isfinite(a.imag()) ||
             !std::isfinite(b.real()) || !std::isfinite(b.imag()) || guarded) {
+            if (usedNested) *usedNested = true;
             buildNested(q, depth, r);
             return;
         }

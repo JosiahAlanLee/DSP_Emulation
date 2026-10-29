@@ -32,6 +32,32 @@ static void referenceParity() {
     }
 }
 
+static void maximumRadiusFastPath() {
+    // tick() clamps |q| to MAX_RADIUS, but std::polar's component rounding can
+    // put a legal maximum-radius q one ulp outside the exact bound (1063 of
+    // 10000 uniform angles in the review probe). Those must stay on the
+    // O(DEPTH) recurrence; a real step outside the disk still takes the guarded
+    // nested reference. usedNested pins the path with no timing assertion.
+    std::array<C, MAX_DEPTH> r{};
+    for (int k = 0; k < 10000; ++k) {
+        C q = std::polar(MAX_RADIUS, TAU * (k / 10000.0));
+        bool nested = true;
+        build(q, MAX_DEPTH, r, &nested);
+        assert(!nested);
+        assert(std::isfinite(r[0].real()) && std::isfinite(r[MAX_DEPTH - 1].imag()));
+    }
+    assert(inBuildDomain(std::polar(MAX_RADIUS, .37)));
+    assert(!inBuildDomain(std::polar(MAX_RADIUS + 32 * MAX_RADIUS_ULP, .37)));
+    bool nested = false;
+    build(std::polar(MAX_RADIUS * (1 + 1e-12), .37), MAX_DEPTH, r, &nested);
+    assert(nested);                                  // thousands of ulps out
+    nested = false;
+    build(C(-1 + 1e-13, 0), MAX_DEPTH, r, &nested);
+    assert(nested);                                  // the guarded reference path
+    for (int n = 0; n < MAX_DEPTH; ++n)
+        assert(std::isfinite(r[n].real()) && std::isfinite(r[n].imag()) && std::abs(r[n]) < 2e13);
+}
+
 static void qZeroAndGuards() {
     // q = 0 is defined: R = 0, and every output stays finite.
     std::array<std::complex<double>, MAX_DEPTH> r{};
@@ -445,6 +471,7 @@ static void internalAndEngine() {
 int main() {
     referenceParity();
     patternParity();
+    maximumRadiusFastPath();
     qZeroAndGuards();
     noteGateAndVelocity();
     phaseEncoding();
@@ -456,5 +483,5 @@ int main() {
     strobeSeparation();
     depthAndQChanges();
     internalAndEngine();
-    std::cout << "PASS: Namagiri convergents, controls and the note pattern against the HydraPy reference grids to 1e-9 (notes and rests exact); q = 0 and the guarded denominators; V/OCT mapping, GATE and VEL; phase-word encoding against spec section 6; clock stepping, wraps, EOC and held outputs; RESET priority and the fresh |R_1| delta on every reset; the CONVERGED latch; BUS IN step words; separate bus and clock strobes through a one-sample cable; DEPTH and q changes; internal and Engine clocks at 44.1/48/96 kHz\n";
+    std::cout << "PASS: Namagiri convergents, controls and the note pattern against the HydraPy reference grids to 1e-9 (notes and rests exact); the maximum-radius std::polar roundoff stays on the O(DEPTH) path while out-of-domain q keeps the guarded reference; q = 0 and the guarded denominators; V/OCT mapping, GATE and VEL; phase-word encoding against spec section 6; clock stepping, wraps, EOC and held outputs; RESET priority and the fresh |R_1| delta on every reset; the CONVERGED latch; BUS IN step words; separate bus and clock strobes through a one-sample cable; DEPTH and q changes; internal and Engine clocks at 44.1/48/96 kHz\n";
 }
