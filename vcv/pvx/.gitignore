@@ -1,0 +1,8 @@
+build/
+dist/
+plugin.so
+tests/core_test
+tests/pvx_corrections_test
+tests/bench
+tests/regression_test
+tests/module_test
