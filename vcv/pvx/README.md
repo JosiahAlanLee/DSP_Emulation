@@ -1,0 +1,15 @@
+# PVX
+
+PVX is an eight-voice subtractive instrument: two saw/pulse oscillators with hard sync, noise, a two-pole state-variable filter with saturation inside its integrator loop, LP/BP modes, two AR/ADSR envelopes and output overdrive. The portable C++ engine contains no Rack dependencies; `src/plugin.cpp` supplies Rack controls, cables and voltage scaling.
+
+The filter is inspired by the programmable-op-amp integrators in Vladimir Kuzmin's Polivoks. This is an original behavioral approximation from published circuit behavior, not a component-accurate emulation or a measured match to Josiah's instrument. The generic module name is PVX. DSP implementation and numerical correction work were delegated to DeepSeek; Codex reviewed and integrated the engine, wrapper and capture rig.
+
+Build with `make RACK_DIR=/path/to/Rack-SDK`. The workstation SDK defaults to `/home/echevarian/dev/Rack-SDK`. Build products stay here; do not use `make install` for the private test rig. `res/PVX.svg` has outlined labels; regenerate with `tools/make_panel.py` using Python with fontTools installed. DejaVu license: docs/DEJAVU-LICENSE.txt.
+
+Pitch, gate and external audio accept up to eight polyphonic channels. A mono cable broadcasts to the active voices. Pitch is 1 V/oct with C4 at 0 V. External audio is normalized from 5 V full scale and mixed before the filter. Cutoff CV is global 1 V/oct; resonance CV is global, 10 V for the full range. Additional polyphonic cutoff/resonance channels are not independent modulation lanes. Unused channels retire in the engine; the Rack output count follows the active input count, capped at eight.
+
+VOICE is the LP/BP-selected, driven, envelope-controlled signal. LOW PASS and BAND PASS expose the raw filter taps; ENV 1 and ENV 2 output 0–10 V. The module has no velocity input: the industrial rig applies note velocity per channel at its audited mixer. Use a high gate for standalone filter/calibration tests. The two envelope rows use logarithmic attack/decay/release time knobs; AR ignores decay/sustain. Filter-envelope depth is in octaves. Default oversampling is 4×. A windowed-sinc FIR decimates the voice and both filter taps. At 48 kHz the usable cutoff caps are approximately 19.2 kHz (4×), 9.6 kHz (2×) and 4.8 kHz (1×); the reduced-bandwidth modes trade bandwidth for CPU. The FIR adds about 30 internal samples of group delay, approximately 0.156 ms at 48 kHz/4× (0.313 ms at 2×). Changing oversampling can cause a short filter/history transient; use 4× for the supplied rig.
+
+Calibration hooks and provisional constants are documented in docs/CALIBRATION.md. Final numerical acceptance results belong in docs/VALIDATION.md and the external delivery report. No hardware measurements or listening review should be inferred from a successful build.
+
+Portable checks: `make -C tests test`. Real-SDK wrapper checks: `make -C tests module-check RACK_DIR=/path/to/Rack-SDK`. CPU measurement: `make -C tests bench`; outputs are consumed by a checksum to prevent dead-code elimination.
